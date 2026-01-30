@@ -28,13 +28,13 @@ export interface ParsedCite {
 // Extract all cites from message content
 export function extractCites(content: unknown): ParsedCite[] {
   if (!content || !Array.isArray(content)) return [];
-  
+
   const cites: ParsedCite[] = [];
-  
+
   for (const verse of content) {
     if (verse?.block?.cite && typeof verse.block.cite === "object") {
       const cite = verse.block.cite;
-      
+
       if (cite.chan && typeof cite.chan === "object") {
         const { nest, where } = cite.chan;
         const whereMatch = where?.match(/\/msg\/(~[a-z-]+)\/(.+)/);
@@ -59,7 +59,7 @@ export function extractCites(content: unknown): ParsedCite[] {
       }
     }
   }
-  
+
   return cites;
 }
 
@@ -91,28 +91,28 @@ export function isBotMentioned(
   nickname?: string
 ): boolean {
   if (!messageText || !botShipName) return false;
-  
+
   // Check for @all mention
   if (/@all\b/i.test(messageText)) return true;
-  
+
   // Check for ship mention
   const normalizedBotShip = normalizeShip(botShipName);
   const escapedShip = normalizedBotShip.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const mentionPattern = new RegExp(`(^|\\s)${escapedShip}(?=\\s|$)`, "i");
   if (mentionPattern.test(messageText)) return true;
-  
+
   // Check for nickname mention (case-insensitive, word boundary)
   if (nickname) {
     const escapedNickname = nickname.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const nicknamePattern = new RegExp(`(^|\\s)${escapedNickname}(?=\\s|$|[,!?.])`, "i");
     if (nicknamePattern.test(messageText)) return true;
   }
-  
+
   return false;
 }
 
 export function isDmAllowed(senderShip: string, allowlist: string[] | undefined): boolean {
-  if (!allowlist || allowlist.length === 0) return true;
+  if (!allowlist || allowlist.length === 0) return false;
   const normalizedSender = normalizeShip(senderShip);
   return allowlist
     .map((ship) => normalizeShip(ship))
@@ -175,36 +175,36 @@ export function extractMessageText(content: unknown): string {
           })
           .join("");
       }
-      
+
       // Handle block content (images, code blocks, etc.)
       if (verse.block && typeof verse.block === "object") {
         const block = verse.block;
-        
+
         // Image blocks
         if (block.image && block.image.src) {
           const alt = block.image.alt ? ` (${block.image.alt})` : "";
           return `\n${block.image.src}${alt}\n`;
         }
-        
+
         // Code blocks
         if (block.code && typeof block.code === "object") {
           const lang = block.code.lang || "";
           const code = block.code.code || "";
           return `\n\`\`\`${lang}\n${code}\n\`\`\`\n`;
         }
-        
+
         // Header blocks
         if (block.header && typeof block.header === "object") {
-          const text = block.header.content?.map((item: any) => 
+          const text = block.header.content?.map((item: any) =>
             typeof item === "string" ? item : ""
           ).join("") || "";
           return `\n## ${text}\n`;
         }
-        
+
         // Cite/quote blocks - parse the reference structure
         if (block.cite && typeof block.cite === "object") {
           const cite = block.cite;
-          
+
           // ChanCite - reference to a channel message
           if (cite.chan && typeof cite.chan === "object") {
             const { nest, where } = cite.chan;
@@ -216,26 +216,26 @@ export function extractMessageText(content: unknown): string {
             }
             return `\n> [quoted from ${nest}]\n`;
           }
-          
+
           // GroupCite - reference to a group
           if (cite.group && typeof cite.group === "string") {
             return `\n> [ref: group ${cite.group}]\n`;
           }
-          
+
           // DeskCite - reference to an app/desk
           if (cite.desk && typeof cite.desk === "object") {
             return `\n> [ref: ${cite.desk.flag}]\n`;
           }
-          
+
           // BaitCite - reference with group+graph context
           if (cite.bait && typeof cite.bait === "object") {
             return `\n> [ref: ${cite.bait.graph} in ${cite.bait.group}]\n`;
           }
-          
+
           return `\n> [quoted message]\n`;
         }
       }
-      
+
       return "";
     })
     .join("\n")
