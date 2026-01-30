@@ -606,6 +606,113 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       runtime.log?.(`[tlon] Settings subscription not available: ${String(err)}`);
     }
 
+    // Subscribe to groups-ui for real-time channel additions (when invites are accepted)
+    try {
+      await api!.subscribe({
+        app: "groups",
+        path: "/groups/ui",
+        event: async (event: any) => {
+          try {
+            // Handle group/channel join events
+            // Event structure: { group: { flag: "~host/group-name", ... }, channels: { ... } }
+            if (event && typeof event === "object") {
+              // Check for new channels being added to groups
+              if (event.channels && typeof event.channels === "object") {
+                const channels = event.channels as Record<string, any>;
+                for (const [channelNest, channelData] of Object.entries(channels)) {
+                  // Only monitor chat channels
+                  if (!channelNest.startsWith("chat/")) continue;
+                  
+                  // If this is a new channel we're not watching yet, add it
+                  if (!watchedChannels.has(channelNest)) {
+                    watchedChannels.add(channelNest);
+                    runtime.log?.(`[tlon] Auto-detected new channel (invite accepted): ${channelNest}`);
+                    
+                    // Persist to settings store so it survives restarts
+                    if (account.autoAcceptGroupInvites) {
+                      try {
+                        const currentChannels = currentSettings.groupChannels || [];
+                        if (!currentChannels.includes(channelNest)) {
+                          const updatedChannels = [...currentChannels, channelNest];
+                          // Poke settings store to persist
+                          await api!.poke({
+                            app: "settings",
+                            mark: "settings-event",
+                            json: {
+                              "put-entry": {
+                                "bucket-key": "tlon",
+                                "entry-key": "groupChannels",
+                                "value": updatedChannels,
+                                "desk": "moltbot"
+                              }
+                            }
+                          });
+                          runtime.log?.(`[tlon] Persisted ${channelNest} to settings store`);
+                        }
+                      } catch (err) {
+                        runtime.error?.(`[tlon] Failed to persist channel to settings: ${String(err)}`);
+                      }
+                    }
+                  }
+                }
+              }
+              
+              // Also check for the "join" event structure
+              if (event.join && typeof event.join === "object") {
+                const join = event.join as { group?: string; channels?: string[] };
+                if (join.channels) {
+                  for (const channelNest of join.channels) {
+                    if (!channelNest.startsWith("chat/")) continue;
+                    if (!watchedChannels.has(channelNest)) {
+                      watchedChannels.add(channelNest);
+                      runtime.log?.(`[tlon] Auto-detected joined channel: ${channelNest}`);
+                      
+                      // Persist to settings store
+                      if (account.autoAcceptGroupInvites) {
+                        try {
+                          const currentChannels = currentSettings.groupChannels || [];
+                          if (!currentChannels.includes(channelNest)) {
+                            const updatedChannels = [...currentChannels, channelNest];
+                            await api!.poke({
+                              app: "settings",
+                              mark: "settings-event",
+                              json: {
+                                "put-entry": {
+                                  "bucket-key": "tlon",
+                                  "entry-key": "groupChannels",
+                                  "value": updatedChannels,
+                                  "desk": "moltbot"
+                                }
+                              }
+                            });
+                            runtime.log?.(`[tlon] Persisted ${channelNest} to settings store`);
+                          }
+                        } catch (err) {
+                          runtime.error?.(`[tlon] Failed to persist channel to settings: ${String(err)}`);
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          } catch (error: any) {
+            runtime.error?.(`[tlon] Error handling groups-ui event: ${error?.message ?? String(error)}`);
+          }
+        },
+        err: (error) => {
+          runtime.error?.(`[tlon] Groups-ui subscription error: ${String(error)}`);
+        },
+        quit: () => {
+          runtime.log?.("[tlon] Groups-ui subscription ended");
+        },
+      });
+      runtime.log?.("[tlon] Subscribed to groups-ui for real-time channel detection");
+    } catch (err) {
+      // Groups-ui subscription is optional - channel discovery will still work via polling
+      runtime.log?.(`[tlon] Groups-ui subscription failed (will rely on polling): ${String(err)}`);
+    }
+
     // Discover channels to watch
     if (account.autoDiscoverChannels !== false) {
       const discoveredChannels = await fetchAllChannels(api!, runtime);
