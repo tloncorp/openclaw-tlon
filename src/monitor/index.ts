@@ -318,7 +318,9 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
             .join("\n");
           
           // Prepend thread context to the message
-          messageText = `[Thread context - ${threadHistory.length} previous replies in thread]\n${threadContext}\n\n[Current message]\n${messageText}`;
+          // Include note about ongoing conversation for agent judgment
+          const contextNote = `[Thread conversation - ${threadHistory.length} previous replies. You are participating in this thread. Only respond if relevant or helpful - you don't need to reply to every message.]`;
+          messageText = `${contextNote}\n\n[Previous messages]\n${threadContext}\n\n[Current message]\n${messageText}`;
           runtime?.log?.(`[tlon] Added thread context (${threadHistory.length} replies) to message`);
         }
       } catch (error: any) {
