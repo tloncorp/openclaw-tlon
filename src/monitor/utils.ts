@@ -22,12 +22,30 @@ export function formatModelName(modelString?: string | null): string {
     .join(" ");
 }
 
-export function isBotMentioned(messageText: string, botShipName: string): boolean {
+export function isBotMentioned(
+  messageText: string,
+  botShipName: string,
+  nickname?: string
+): boolean {
   if (!messageText || !botShipName) return false;
+  
+  // Check for @all mention
+  if (/@all\b/i.test(messageText)) return true;
+  
+  // Check for ship mention
   const normalizedBotShip = normalizeShip(botShipName);
   const escapedShip = normalizedBotShip.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const mentionPattern = new RegExp(`(^|\\s)${escapedShip}(?=\\s|$)`, "i");
-  return mentionPattern.test(messageText);
+  if (mentionPattern.test(messageText)) return true;
+  
+  // Check for nickname mention (case-insensitive, word boundary)
+  if (nickname) {
+    const escapedNickname = nickname.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const nicknamePattern = new RegExp(`(^|\\s)${escapedNickname}(?=\\s|$|[,!?.])`, "i");
+    if (nicknamePattern.test(messageText)) return true;
+  }
+  
+  return false;
 }
 
 export function isDmAllowed(senderShip: string, allowlist: string[] | undefined): boolean {
@@ -36,6 +54,24 @@ export function isDmAllowed(senderShip: string, allowlist: string[] | undefined)
   return allowlist
     .map((ship) => normalizeShip(ship))
     .some((ship) => ship === normalizedSender);
+}
+
+// Helper to recursively extract text from inline content
+function extractInlineText(items: any[]): string {
+  return items.map((item: any) => {
+    if (typeof item === "string") return item;
+    if (item && typeof item === "object") {
+      if (item.ship) return item.ship;
+      if ("sect" in item) return `@${item.sect || "all"}`;
+      if (item["inline-code"]) return `\`${item["inline-code"]}\``;
+      if (item.code) return `\`${item.code}\``;
+      if (item.link && item.link.href) return item.link.content || item.link.href;
+      if (item.bold && Array.isArray(item.bold)) return `**${extractInlineText(item.bold)}**`;
+      if (item.italics && Array.isArray(item.italics)) return `*${extractInlineText(item.italics)}*`;
+      if (item.strike && Array.isArray(item.strike)) return `~~${extractInlineText(item.strike)}~~`;
+    }
+    return "";
+  }).join("");
 }
 
 export function extractMessageText(content: unknown): string {
@@ -50,19 +86,26 @@ export function extractMessageText(content: unknown): string {
             if (typeof item === "string") return item;
             if (item && typeof item === "object") {
               if (item.ship) return item.ship;
+              // Handle sect (role mentions like @all)
+              if ("sect" in item) return `@${item.sect || "all"}`;
               if (item.break !== undefined) return "\n";
               if (item.link && item.link.href) return item.link.href;
-              // Handle inline code
+              // Handle inline code (Tlon uses "inline-code" key)
+              if (item["inline-code"]) return `\`${item["inline-code"]}\``;
               if (item.code) return `\`${item.code}\``;
-              // Handle bold/italic/strike
+              // Handle bold/italic/strike - recursively extract text
               if (item.bold && Array.isArray(item.bold)) {
-                return item.bold.map((b: any) => typeof b === "string" ? b : "").join("");
+                return `**${extractInlineText(item.bold)}**`;
               }
               if (item.italics && Array.isArray(item.italics)) {
-                return item.italics.map((i: any) => typeof i === "string" ? i : "").join("");
+                return `*${extractInlineText(item.italics)}*`;
               }
               if (item.strike && Array.isArray(item.strike)) {
-                return item.strike.map((s: any) => typeof s === "string" ? s : "").join("");
+                return `~~${extractInlineText(item.strike)}~~`;
+              }
+              // Handle blockquote inline
+              if (item.blockquote && Array.isArray(item.blockquote)) {
+                return `> ${extractInlineText(item.blockquote)}`;
               }
             }
             return "";
