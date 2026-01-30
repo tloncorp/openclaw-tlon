@@ -772,42 +772,50 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     {
       const processedGroupInvites = new Set<string>();
       
+      // Helper to process pending invites
+      const processPendingInvites = async (foreigns: Foreigns) => {
+        if (!effectiveAutoAcceptGroupInvites) return;
+        if (!foreigns || typeof foreigns !== "object") return;
+        
+        for (const [groupFlag, foreign] of Object.entries(foreigns)) {
+          if (processedGroupInvites.has(groupFlag)) continue;
+          if (!foreign.invites || foreign.invites.length === 0) continue;
+          
+          const validInvite = foreign.invites.find(inv => inv.valid);
+          if (!validInvite) continue;
+          
+          try {
+            await api!.poke({
+              app: "groups",
+              mark: "group-join",
+              json: {
+                flag: groupFlag,
+                "join-all": true,
+              },
+            });
+            processedGroupInvites.add(groupFlag);
+            runtime.log?.(`[tlon] Auto-accepted group invite: ${groupFlag} (from ${validInvite.from})`);
+          } catch (err) {
+            runtime.error?.(`[tlon] Failed to auto-accept group ${groupFlag}: ${String(err)}`);
+          }
+        }
+      };
+      
+      // Initial check for existing pending invites
+      try {
+        const existingForeigns = await api!.scry("/groups/v1/foreigns.json") as Foreigns;
+        await processPendingInvites(existingForeigns);
+      } catch (err) {
+        runtime.log?.(`[tlon] Could not check existing foreigns: ${String(err)}`);
+      }
+      
       try {
         await api!.subscribe({
           app: "groups",
           path: "/v1/foreigns",
           event: async (event: Foreigns) => {
             try {
-              // Check setting at event time (supports hot-reload)
-              if (!effectiveAutoAcceptGroupInvites) return;
-              if (!event || typeof event !== "object") return;
-              
-              // Process each group with pending invites
-              for (const [groupFlag, foreign] of Object.entries(event)) {
-                // Skip if already processed or no valid invites
-                if (processedGroupInvites.has(groupFlag)) continue;
-                if (!foreign.invites || foreign.invites.length === 0) continue;
-                
-                // Check for valid invites
-                const validInvite = foreign.invites.find(inv => inv.valid);
-                if (!validInvite) continue;
-                
-                // Auto-accept the group invite
-                try {
-                  await api!.poke({
-                    app: "groups",
-                    mark: "group-join",
-                    json: {
-                      flag: groupFlag,
-                      "join-all": true,
-                    },
-                  });
-                  processedGroupInvites.add(groupFlag);
-                  runtime.log?.(`[tlon] Auto-accepted group invite: ${groupFlag} (from ${validInvite.from})`);
-                } catch (err) {
-                  runtime.error?.(`[tlon] Failed to auto-accept group ${groupFlag}: ${String(err)}`);
-                }
-              }
+              await processPendingInvites(event);
             } catch (error: any) {
               runtime.error?.(`[tlon] Error handling foreigns event: ${error?.message ?? String(error)}`);
             }
