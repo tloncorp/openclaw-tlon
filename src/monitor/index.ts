@@ -122,6 +122,8 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
   // Reactive state that can be updated via settings store
   let effectiveDmAllowlist: string[] = account.dmAllowlist;
   let effectiveShowModelSig: boolean = account.showModelSignature ?? false;
+  let effectiveAutoAcceptDmInvites: boolean = account.autoAcceptDmInvites ?? false;
+  let effectiveAutoAcceptGroupInvites: boolean = account.autoAcceptGroupInvites ?? false;
   let currentSettings: TlonSettingsStore = {};
 
   // Fetch bot's nickname from contacts
@@ -182,6 +184,14 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     }
     if (currentSettings.showModelSig !== undefined) {
       effectiveShowModelSig = currentSettings.showModelSig;
+    }
+    if (currentSettings.autoAcceptDmInvites !== undefined) {
+      effectiveAutoAcceptDmInvites = currentSettings.autoAcceptDmInvites;
+      runtime.log?.(`[tlon] Using autoAcceptDmInvites from settings store: ${effectiveAutoAcceptDmInvites}`);
+    }
+    if (currentSettings.autoAcceptGroupInvites !== undefined) {
+      effectiveAutoAcceptGroupInvites = currentSettings.autoAcceptGroupInvites;
+      runtime.log?.(`[tlon] Using autoAcceptGroupInvites from settings store: ${effectiveAutoAcceptGroupInvites}`);
     }
   } catch (err) {
     runtime.log?.(`[tlon] Settings store not available, using file config: ${String(err)}`);
@@ -476,7 +486,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     try {
       // Handle DM invite lists (arrays)
       if (Array.isArray(event)) {
-        if (account.autoAcceptDmInvites) {
+        if (effectiveAutoAcceptDmInvites) {
           for (const invite of event as DmInvite[]) {
             const ship = normalizeShip(invite.ship || "");
             if (!ship || processedDmInvites.has(ship)) continue;
@@ -629,6 +639,18 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         effectiveShowModelSig = newSettings.showModelSig;
         runtime.log?.(`[tlon] Settings: showModelSig = ${effectiveShowModelSig}`);
       }
+      
+      // Update auto-accept DM invites setting
+      if (newSettings.autoAcceptDmInvites !== undefined) {
+        effectiveAutoAcceptDmInvites = newSettings.autoAcceptDmInvites;
+        runtime.log?.(`[tlon] Settings: autoAcceptDmInvites = ${effectiveAutoAcceptDmInvites}`);
+      }
+      
+      // Update auto-accept group invites setting
+      if (newSettings.autoAcceptGroupInvites !== undefined) {
+        effectiveAutoAcceptGroupInvites = newSettings.autoAcceptGroupInvites;
+        runtime.log?.(`[tlon] Settings: autoAcceptGroupInvites = ${effectiveAutoAcceptGroupInvites}`);
+      }
     });
     
     try {
@@ -661,7 +683,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
                     runtime.log?.(`[tlon] Auto-detected new channel (invite accepted): ${channelNest}`);
                     
                     // Persist to settings store so it survives restarts
-                    if (account.autoAcceptGroupInvites) {
+                    if (effectiveAutoAcceptGroupInvites) {
                       try {
                         const currentChannels = currentSettings.groupChannels || [];
                         if (!currentChannels.includes(channelNest)) {
@@ -700,7 +722,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
                       runtime.log?.(`[tlon] Auto-detected joined channel: ${channelNest}`);
                       
                       // Persist to settings store
-                      if (account.autoAcceptGroupInvites) {
+                      if (effectiveAutoAcceptGroupInvites) {
                         try {
                           const currentChannels = currentSettings.groupChannels || [];
                           if (!currentChannels.includes(channelNest)) {
@@ -746,7 +768,8 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     }
 
     // Subscribe to foreigns for auto-accepting group invites
-    if (account.autoAcceptGroupInvites) {
+    // Always subscribe so we can hot-reload the setting via settings store
+    {
       const processedGroupInvites = new Set<string>();
       
       try {
@@ -755,6 +778,8 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
           path: "/v1/foreigns",
           event: async (event: Foreigns) => {
             try {
+              // Check setting at event time (supports hot-reload)
+              if (!effectiveAutoAcceptGroupInvites) return;
               if (!event || typeof event !== "object") return;
               
               // Process each group with pending invites
