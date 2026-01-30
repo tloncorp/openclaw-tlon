@@ -85,3 +85,79 @@ export async function getChannelHistory(
   );
   return await fetchChannelHistory(api, channelNest, count, runtime);
 }
+
+/**
+ * Fetch thread/reply history for a specific parent post.
+ * Used to get context when entering a thread conversation.
+ */
+export async function fetchThreadHistory(
+  api: { scry: (path: string) => Promise<unknown> },
+  channelNest: string,
+  parentId: string,
+  count = 50,
+  runtime?: RuntimeEnv,
+): Promise<TlonHistoryEntry[]> {
+  try {
+    // Tlon API: fetch replies to a specific post
+    // Format: /channels/v4/{nest}/posts/post/{parentId}/replies/newest/{count}/outline.json
+    const scryPath = `/channels/v4/${channelNest}/posts/post/${parentId}/replies/newest/${count}/outline.json`;
+    runtime?.log?.(`[tlon] Fetching thread history: ${scryPath}`);
+
+    const data: any = await api.scry(scryPath);
+    if (!data) {
+      runtime?.log?.(`[tlon] No thread history data returned`);
+      return [];
+    }
+
+    let replies: any[] = [];
+    if (Array.isArray(data)) {
+      replies = data;
+    } else if (data.replies && Array.isArray(data.replies)) {
+      replies = data.replies;
+    } else if (typeof data === "object") {
+      replies = Object.values(data);
+    }
+
+    const messages = replies
+      .map((item) => {
+        // Thread replies use 'memo' structure
+        const memo = item.memo || item["r-reply"]?.set?.memo || item;
+        const seal = item.seal || item["r-reply"]?.set?.seal;
+
+        return {
+          author: memo?.author || "unknown",
+          content: extractMessageText(memo?.content || []),
+          timestamp: memo?.sent || Date.now(),
+          id: seal?.id || item.id,
+        } as TlonHistoryEntry;
+      })
+      .filter((msg) => msg.content);
+
+    runtime?.log?.(`[tlon] Extracted ${messages.length} thread replies from history`);
+    return messages;
+  } catch (error: any) {
+    runtime?.log?.(`[tlon] Error fetching thread history: ${error?.message ?? String(error)}`);
+    // Fall back to trying alternate path structure
+    try {
+      const altPath = `/channels/v4/${channelNest}/posts/post/${parentId}.json`;
+      runtime?.log?.(`[tlon] Trying alternate path: ${altPath}`);
+      const data: any = await api.scry(altPath);
+      
+      if (data?.seal?.meta?.replyCount > 0 && data?.replies) {
+        const replies = Array.isArray(data.replies) ? data.replies : Object.values(data.replies);
+        const messages = replies.map((reply: any) => ({
+          author: reply.memo?.author || "unknown",
+          content: extractMessageText(reply.memo?.content || []),
+          timestamp: reply.memo?.sent || Date.now(),
+          id: reply.seal?.id,
+        })).filter((msg: TlonHistoryEntry) => msg.content);
+        
+        runtime?.log?.(`[tlon] Extracted ${messages.length} replies from post data`);
+        return messages;
+      }
+    } catch (altError: any) {
+      runtime?.log?.(`[tlon] Alternate path also failed: ${altError?.message ?? String(altError)}`);
+    }
+    return [];
+  }
+}

@@ -8,7 +8,7 @@ import { normalizeShip, parseChannelNest } from "../targets.js";
 import { authenticate } from "../urbit/auth.js";
 import { UrbitSSEClient } from "../urbit/sse-client.js";
 import { sendDm, sendGroupMessage } from "../urbit/send.js";
-import { cacheMessage, getChannelHistory } from "./history.js";
+import { cacheMessage, getChannelHistory, fetchThreadHistory } from "./history.js";
 import { createProcessedMessageTracker } from "./processed-messages.js";
 import {
   extractMessageText,
@@ -303,6 +303,26 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     const { messageId, senderShip, isGroup, channelNest, hostShip, channelName, timestamp, parentId, isThreadReply } = params;
     const groupChannel = channelNest; // For compatibility
     let messageText = params.messageText;
+
+    // Fetch thread context when entering a thread for the first time
+    if (isThreadReply && parentId && groupChannel) {
+      try {
+        const threadHistory = await fetchThreadHistory(api!, groupChannel, parentId, 20, runtime);
+        if (threadHistory.length > 0) {
+          const threadContext = threadHistory
+            .slice(-10) // Last 10 messages for context
+            .map((msg) => `${msg.author}: ${msg.content}`)
+            .join("\n");
+          
+          // Prepend thread context to the message
+          messageText = `[Thread context - ${threadHistory.length} previous replies in thread]\n${threadContext}\n\n[Current message]\n${messageText}`;
+          runtime?.log?.(`[tlon] Added thread context (${threadHistory.length} replies) to message`);
+        }
+      } catch (error: any) {
+        runtime?.log?.(`[tlon] Could not fetch thread context: ${error?.message ?? String(error)}`);
+        // Continue without thread context - not critical
+      }
+    }
 
     if (isGroup && groupChannel && isSummarizationRequest(messageText)) {
       try {
