@@ -10,6 +10,8 @@ export type TlonResolvedAccount = {
   code: string | null;
   groupChannels: string[];
   dmAllowlist: string[];
+  /** Ships allowed to invite us to groups (security: prevent malicious group invites) */
+  groupInviteAllowlist: string[];
   autoDiscoverChannels: boolean | null;
   showModelSignature: boolean | null;
   autoAcceptDmInvites: boolean | null;
@@ -26,6 +28,7 @@ export function resolveTlonAccount(cfg: MoltbotConfig, accountId?: string | null
         code?: string;
         groupChannels?: string[];
         dmAllowlist?: string[];
+        groupInviteAllowlist?: string[];
         autoDiscoverChannels?: boolean;
         showModelSignature?: boolean;
         autoAcceptDmInvites?: boolean;
@@ -45,8 +48,11 @@ export function resolveTlonAccount(cfg: MoltbotConfig, accountId?: string | null
       code: null,
       groupChannels: [],
       dmAllowlist: [],
+      groupInviteAllowlist: [],
       autoDiscoverChannels: null,
       showModelSignature: null,
+      autoAcceptDmInvites: null,
+      autoAcceptGroupInvites: null,
     };
   }
 
@@ -58,6 +64,7 @@ export function resolveTlonAccount(cfg: MoltbotConfig, accountId?: string | null
   const code = (account?.code ?? base.code ?? null) as string | null;
   const groupChannels = (account?.groupChannels ?? base.groupChannels ?? []) as string[];
   const dmAllowlist = (account?.dmAllowlist ?? base.dmAllowlist ?? []) as string[];
+  const groupInviteAllowlist = (account?.groupInviteAllowlist ?? base.groupInviteAllowlist ?? []) as string[];
   const autoDiscoverChannels =
     (account?.autoDiscoverChannels ?? base.autoDiscoverChannels ?? null) as boolean | null;
   const showModelSignature =
@@ -78,6 +85,7 @@ export function resolveTlonAccount(cfg: MoltbotConfig, accountId?: string | null
     code,
     groupChannels,
     dmAllowlist,
+    groupInviteAllowlist,
     autoDiscoverChannels,
     showModelSignature,
     autoAcceptDmInvites,

@@ -124,6 +124,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
   let effectiveShowModelSig: boolean = account.showModelSignature ?? false;
   let effectiveAutoAcceptDmInvites: boolean = account.autoAcceptDmInvites ?? false;
   let effectiveAutoAcceptGroupInvites: boolean = account.autoAcceptGroupInvites ?? false;
+  let effectiveGroupInviteAllowlist: string[] = account.groupInviteAllowlist;
   let currentSettings: TlonSettingsStore = {};
 
   // Fetch bot's nickname from contacts
@@ -196,6 +197,10 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     if (currentSettings.autoAcceptGroupInvites !== undefined) {
       effectiveAutoAcceptGroupInvites = currentSettings.autoAcceptGroupInvites;
       runtime.log?.(`[tlon] Using autoAcceptGroupInvites from settings store: ${effectiveAutoAcceptGroupInvites}`);
+    }
+    if (currentSettings.groupInviteAllowlist?.length) {
+      effectiveGroupInviteAllowlist = currentSettings.groupInviteAllowlist;
+      runtime.log?.(`[tlon] Using groupInviteAllowlist from settings store: ${effectiveGroupInviteAllowlist.join(", ")}`);
     }
   } catch (err) {
     runtime.log?.(`[tlon] Settings store not available, using file config: ${String(err)}`);
@@ -655,6 +660,14 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         effectiveAutoAcceptGroupInvites = newSettings.autoAcceptGroupInvites;
         runtime.log?.(`[tlon] Settings: autoAcceptGroupInvites = ${effectiveAutoAcceptGroupInvites}`);
       }
+      
+      // Update group invite allowlist
+      if (newSettings.groupInviteAllowlist !== undefined) {
+        effectiveGroupInviteAllowlist = newSettings.groupInviteAllowlist.length > 0 
+          ? newSettings.groupInviteAllowlist 
+          : account.groupInviteAllowlist;
+        runtime.log?.(`[tlon] Settings: groupInviteAllowlist updated to ${effectiveGroupInviteAllowlist.join(", ")}`);
+      }
     });
     
     try {
@@ -787,6 +800,24 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
           
           const validInvite = foreign.invites.find(inv => inv.valid);
           if (!validInvite) continue;
+          
+          // SECURITY: Check if inviter is on allowlist
+          // If allowlist is empty, accept all (backward-compatible, but logged as warning)
+          const inviterShip = validInvite.from;
+          if (effectiveGroupInviteAllowlist.length > 0) {
+            const normalizedInviter = normalizeShip(inviterShip);
+            const isAllowed = effectiveGroupInviteAllowlist
+              .map(s => normalizeShip(s))
+              .some(s => s === normalizedInviter);
+            
+            if (!isAllowed) {
+              runtime.log?.(`[tlon] Rejected group invite from ${inviterShip} (not in groupInviteAllowlist): ${groupFlag}`);
+              processedGroupInvites.add(groupFlag); // Mark as processed to avoid spam
+              continue;
+            }
+          } else {
+            runtime.log?.(`[tlon] ⚠️ No groupInviteAllowlist configured - accepting invite from any ship`);
+          }
           
           try {
             await api!.poke({
