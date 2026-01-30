@@ -12,12 +12,15 @@ import { cacheMessage, getChannelHistory } from "./history.js";
 import { createProcessedMessageTracker } from "./processed-messages.js";
 import {
   extractMessageText,
+  extractCites,
   formatModelName,
   isBotMentioned,
   isDmAllowed,
   isSummarizationRequest,
+  type ParsedCite,
 } from "./utils.js";
 import { fetchAllChannels } from "./discovery.js";
+import { createSettingsManager, type TlonSettingsStore } from "../settings.js";
 
 export type MonitorTlonOpts = {
   runtime?: RuntimeEnv;
@@ -30,9 +33,14 @@ type ChannelAuthorization = {
   allowedShips?: string[];
 };
 
+/**
+ * Resolve channel authorization by merging file config with settings store.
+ * Settings store takes precedence for fields it defines.
+ */
 function resolveChannelAuthorization(
   cfg: MoltbotConfig,
   channelNest: string,
+  settings?: TlonSettingsStore,
 ): { mode: "restricted" | "open"; allowedShips: string[] } {
   const tlonConfig = cfg.channels?.tlon as
     | {
@@ -40,9 +48,18 @@ function resolveChannelAuthorization(
         defaultAuthorizedShips?: string[];
       }
     | undefined;
-  const rules = tlonConfig?.authorization?.channelRules ?? {};
-  const rule = rules[channelNest];
-  const allowedShips = rule?.allowedShips ?? tlonConfig?.defaultAuthorizedShips ?? [];
+  
+  // Merge channel rules: settings override file config
+  const fileRules = tlonConfig?.authorization?.channelRules ?? {};
+  const settingsRules = settings?.channelRules ?? {};
+  const rule = settingsRules[channelNest] ?? fileRules[channelNest];
+  
+  // Merge default authorized ships: settings override file config
+  const defaultShips = settings?.defaultAuthorizedShips 
+    ?? tlonConfig?.defaultAuthorizedShips 
+    ?? [];
+  
+  const allowedShips = rule?.allowedShips ?? defaultShips;
   const mode = rule?.mode ?? "restricted";
   return { mode, allowedShips };
 }
@@ -94,6 +111,17 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
   const processedTracker = createProcessedMessageTracker(2000);
   let groupChannels: string[] = [];
   let botNickname: string | null = null;
+  
+  // Settings store manager for hot-reloading config
+  const settingsManager = createSettingsManager(api!, {
+    log: (msg) => runtime.log?.(msg),
+    error: (msg) => runtime.error?.(msg),
+  });
+  
+  // Reactive state that can be updated via settings store
+  let effectiveDmAllowlist: string[] = account.dmAllowlist;
+  let effectiveShowModelSig: boolean = account.showModelSignature ?? false;
+  let currentSettings: TlonSettingsStore = {};
 
   // Fetch bot's nickname from contacts
   try {
@@ -131,6 +159,67 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     );
   } else {
     runtime.log?.("[tlon] No group channels to monitor (DMs only)");
+  }
+
+  // Load settings from settings store (hot-reloadable config)
+  try {
+    currentSettings = await settingsManager.load();
+    
+    // Apply settings overrides
+    if (currentSettings.groupChannels?.length) {
+      groupChannels = currentSettings.groupChannels;
+      runtime.log?.(`[tlon] Using groupChannels from settings store: ${groupChannels.join(", ")}`);
+    }
+    if (currentSettings.dmAllowlist?.length) {
+      effectiveDmAllowlist = currentSettings.dmAllowlist;
+      runtime.log?.(`[tlon] Using dmAllowlist from settings store: ${effectiveDmAllowlist.join(", ")}`);
+    }
+    if (currentSettings.showModelSig !== undefined) {
+      effectiveShowModelSig = currentSettings.showModelSig;
+    }
+  } catch (err) {
+    runtime.log?.(`[tlon] Settings store not available, using file config: ${String(err)}`);
+  }
+
+  // Helper to resolve cited message content
+  async function resolveCiteContent(cite: ParsedCite): Promise<string | null> {
+    if (cite.type !== "chan" || !cite.nest || !cite.postId) return null;
+    
+    try {
+      // Scry for the specific post: /v4/{nest}/posts/post/{postId}
+      const scryPath = `/channels/v4/${cite.nest}/posts/post/${cite.postId}.json`;
+      runtime.log?.(`[tlon] Fetching cited post: ${scryPath}`);
+      
+      const data: any = await api!.scry(scryPath);
+      
+      // Extract text from the post's essay content
+      if (data?.essay?.content) {
+        const text = extractMessageText(data.essay.content);
+        return text || null;
+      }
+      
+      return null;
+    } catch (err) {
+      runtime.log?.(`[tlon] Failed to fetch cited post: ${String(err)}`);
+      return null;
+    }
+  }
+
+  // Resolve all cites in message content and return quoted text
+  async function resolveAllCites(content: unknown): Promise<string> {
+    const cites = extractCites(content);
+    if (cites.length === 0) return "";
+    
+    const resolved: string[] = [];
+    for (const cite of cites) {
+      const text = await resolveCiteContent(cite);
+      if (text) {
+        const author = cite.author || "unknown";
+        resolved.push(`> ${author} wrote: ${text}`);
+      }
+    }
+    
+    return resolved.length > 0 ? resolved.join("\n") + "\n\n" : "";
   }
 
   const processMessage = async (params: {
@@ -256,7 +345,8 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
           let replyText = payload.text;
           if (!replyText) return;
 
-          const showSignature = account.showModelSignature ?? cfg.channels?.tlon?.showModelSignature ?? false;
+          // Use settings store value if set, otherwise fall back to file config
+          const showSignature = effectiveShowModelSig;
           if (showSignature) {
             const modelInfo =
               payload.metadata?.model || payload.model || route.model || cfg.agents?.defaults?.model?.primary;
@@ -320,8 +410,11 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       const senderShip = normalizeShip(content.author ?? "");
       if (!senderShip || senderShip === botShipName) return;
 
-      const messageText = extractMessageText(content.content);
-      if (!messageText) return;
+      // Resolve any cited/quoted messages first
+      const citedContent = await resolveAllCites(content.content);
+      const rawText = extractMessageText(content.content);
+      const messageText = citedContent + rawText;
+      if (!messageText.trim()) return;
 
       cacheMessage(nest, {
         author: senderShip,
@@ -333,7 +426,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       const mentioned = isBotMentioned(messageText, botShipName, botNickname ?? undefined);
       if (!mentioned) return;
 
-      const { mode, allowedShips } = resolveChannelAuthorization(cfg, nest);
+      const { mode, allowedShips } = resolveChannelAuthorization(cfg, nest, currentSettings);
       if (mode === "restricted") {
         if (allowedShips.length === 0) {
           runtime.log?.(`[tlon] Access denied: ${senderShip} in ${nest} (no allowlist)`);
@@ -389,11 +482,14 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       const senderShip = normalizeShip(essay.author ?? "");
       if (!senderShip || senderShip === botShipName) return;
 
-      const messageText = extractMessageText(essay.content);
-      if (!messageText) return;
+      // Resolve any cited/quoted messages first
+      const citedContent = await resolveAllCites(essay.content);
+      const rawText = extractMessageText(essay.content);
+      const messageText = citedContent + rawText;
+      if (!messageText.trim()) return;
 
-      // For DMs, check allowlist
-      if (!isDmAllowed(senderShip, account.dmAllowlist)) {
+      // For DMs, check allowlist (uses settings store if available)
+      if (!isDmAllowed(senderShip, effectiveDmAllowlist)) {
         runtime.log?.(`[tlon] Blocked DM from ${senderShip}: not in allowlist`);
         return;
       }
@@ -470,6 +566,45 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       },
     });
     runtime.log?.("[tlon] Subscribed to contacts updates (/v1/news)");
+
+    // Subscribe to settings store for hot-reloading config
+    settingsManager.onChange((newSettings) => {
+      currentSettings = newSettings;
+      
+      // Update watched channels if settings changed
+      if (newSettings.groupChannels?.length) {
+        const newChannels = newSettings.groupChannels;
+        for (const ch of newChannels) {
+          if (!watchedChannels.has(ch)) {
+            watchedChannels.add(ch);
+            runtime.log?.(`[tlon] Settings: now watching channel ${ch}`);
+          }
+        }
+        // Note: we don't remove channels from watchedChannels to avoid missing messages
+        // during transitions. The authorization check handles access control.
+      }
+      
+      // Update DM allowlist
+      if (newSettings.dmAllowlist !== undefined) {
+        effectiveDmAllowlist = newSettings.dmAllowlist.length > 0 
+          ? newSettings.dmAllowlist 
+          : account.dmAllowlist;
+        runtime.log?.(`[tlon] Settings: dmAllowlist updated to ${effectiveDmAllowlist.join(", ")}`);
+      }
+      
+      // Update model signature setting
+      if (newSettings.showModelSig !== undefined) {
+        effectiveShowModelSig = newSettings.showModelSig;
+        runtime.log?.(`[tlon] Settings: showModelSig = ${effectiveShowModelSig}`);
+      }
+    });
+    
+    try {
+      await settingsManager.startSubscription();
+    } catch (err) {
+      // Settings subscription is optional - don't fail if it doesn't work
+      runtime.log?.(`[tlon] Settings subscription not available: ${String(err)}`);
+    }
 
     // Discover channels to watch
     if (account.autoDiscoverChannels !== false) {
