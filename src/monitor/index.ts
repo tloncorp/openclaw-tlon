@@ -127,6 +127,9 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
   let effectiveGroupInviteAllowlist: string[] = account.groupInviteAllowlist;
   let currentSettings: TlonSettingsStore = {};
 
+  // Track threads we've participated in (by parentId) - respond without mention requirement
+  const participatedThreads = new Set<string>();
+
   // Fetch bot's nickname from contacts
   try {
     const selfProfile = await api.scry("/contacts/v1/self.json");
@@ -450,6 +453,11 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
               text: replyText,
               replyToId: parentId ?? undefined,
             });
+            // Track thread participation for future replies without mention
+            if (parentId) {
+              participatedThreads.add(String(parentId));
+              runtime.log?.(`[tlon] Now tracking thread for future replies: ${parentId}`);
+            }
           } else {
             await sendDm({ api: api!, fromShip: botShipName, toShip: senderShip, text: replyText });
           }
@@ -509,8 +517,26 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         id: messageId,
       });
 
+      // Get thread info early for participation check
+      const seal = isThreadReply
+        ? response?.post?.["r-post"]?.reply?.["r-reply"]?.set?.seal
+        : response?.post?.["r-post"]?.set?.seal;
+      const parentId = seal?.["parent-id"] || seal?.parent || null;
+
+      // Check if we should respond:
+      // 1. Direct mention always triggers response
+      // 2. Thread replies where we've participated - respond if relevant (let agent decide)
       const mentioned = isBotMentioned(messageText, botShipName, botNickname ?? undefined);
-      if (!mentioned) return;
+      const inParticipatedThread = isThreadReply && parentId && participatedThreads.has(String(parentId));
+      
+      if (!mentioned && !inParticipatedThread) {
+        return;
+      }
+      
+      // Log why we're responding
+      if (inParticipatedThread && !mentioned) {
+        runtime.log?.(`[tlon] Responding to thread we participated in (no mention): ${parentId}`);
+      }
 
       const { mode, allowedShips } = resolveChannelAuthorization(cfg, nest, currentSettings);
       if (mode === "restricted") {
@@ -524,11 +550,6 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
           return;
         }
       }
-
-      const seal = isThreadReply
-        ? response?.post?.["r-post"]?.reply?.["r-reply"]?.set?.seal
-        : response?.post?.["r-post"]?.set?.seal;
-      const parentId = seal?.["parent-id"] || seal?.parent || null;
 
       const parsed = parseChannelNest(nest);
       await processMessage({
