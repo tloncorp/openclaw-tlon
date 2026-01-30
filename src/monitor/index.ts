@@ -174,9 +174,50 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     runtime.log?.("[tlon] No group channels to monitor (DMs only)");
   }
 
+  // Migrate file config to settings store (seed on first run)
+  async function migrateConfigToSettings() {
+    const migrations: Array<{ key: string; fileValue: unknown; settingsValue: unknown }> = [
+      { key: "dmAllowlist", fileValue: account.dmAllowlist, settingsValue: currentSettings.dmAllowlist },
+      { key: "groupInviteAllowlist", fileValue: account.groupInviteAllowlist, settingsValue: currentSettings.groupInviteAllowlist },
+      { key: "groupChannels", fileValue: account.groupChannels, settingsValue: currentSettings.groupChannels },
+      { key: "autoAcceptDmInvites", fileValue: account.autoAcceptDmInvites, settingsValue: currentSettings.autoAcceptDmInvites },
+      { key: "autoAcceptGroupInvites", fileValue: account.autoAcceptGroupInvites, settingsValue: currentSettings.autoAcceptGroupInvites },
+      { key: "showModelSig", fileValue: account.showModelSignature, settingsValue: currentSettings.showModelSig },
+    ];
+
+    for (const { key, fileValue, settingsValue } of migrations) {
+      // Only migrate if file has a value and settings store doesn't
+      const hasFileValue = Array.isArray(fileValue) ? fileValue.length > 0 : fileValue != null;
+      const hasSettingsValue = Array.isArray(settingsValue) ? settingsValue.length > 0 : settingsValue != null;
+      
+      if (hasFileValue && !hasSettingsValue) {
+        try {
+          await api!.poke({
+            app: "settings",
+            mark: "settings-event",
+            json: {
+              "put-entry": {
+                "bucket-key": "tlon",
+                "entry-key": key,
+                "value": fileValue,
+                "desk": "moltbot"
+              }
+            }
+          });
+          runtime.log?.(`[tlon] Migrated ${key} from config to settings store`);
+        } catch (err) {
+          runtime.log?.(`[tlon] Failed to migrate ${key}: ${String(err)}`);
+        }
+      }
+    }
+  }
+
   // Load settings from settings store (hot-reloadable config)
   try {
     currentSettings = await settingsManager.load();
+    
+    // Migrate file config to settings store if not already present
+    await migrateConfigToSettings();
     
     // Apply settings overrides
     if (currentSettings.groupChannels?.length) {
