@@ -148,9 +148,14 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     }
   }
 
-  if (groupChannels.length === 0 && account.groupChannels.length > 0) {
-    groupChannels = account.groupChannels;
-    runtime.log?.(`[tlon] Using manual groupChannels config: ${groupChannels.join(", ")}`);
+  // Merge manual config with auto-discovered channels
+  if (account.groupChannels.length > 0) {
+    for (const ch of account.groupChannels) {
+      if (!groupChannels.includes(ch)) {
+        groupChannels.push(ch);
+      }
+    }
+    runtime.log?.(`[tlon] Added ${account.groupChannels.length} manual groupChannels to monitoring`);
   }
 
   if (groupChannels.length > 0) {
