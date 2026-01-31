@@ -1,4 +1,4 @@
-import type { RuntimeEnv } from "clawdbot/plugin-sdk";
+import type { RuntimeEnv } from "openclaw/plugin-sdk";
 
 import { extractMessageText } from "./utils.js";
 
@@ -117,7 +117,7 @@ export async function fetchThreadHistory(
     // parentId needs @ud formatting (dots every 3 digits)
     const formattedParentId = formatUd(parentId);
     runtime?.log?.(`[tlon] Thread history - parentId: ${parentId} -> formatted: ${formattedParentId}`);
-    
+
     const scryPath = `/channels/v4/${channelNest}/posts/post/id/${formattedParentId}/replies/newest/${count}.json`;
     runtime?.log?.(`[tlon] Fetching thread history: ${scryPath}`);
 
@@ -160,7 +160,7 @@ export async function fetchThreadHistory(
       const altPath = `/channels/v4/${channelNest}/posts/post/id/${formattedParentId}.json`;
       runtime?.log?.(`[tlon] Trying alternate path: ${altPath}`);
       const data: any = await api.scry(altPath);
-      
+
       if (data?.seal?.meta?.replyCount > 0 && data?.replies) {
         const replies = Array.isArray(data.replies) ? data.replies : Object.values(data.replies);
         const messages = replies.map((reply: any) => ({
@@ -169,7 +169,7 @@ export async function fetchThreadHistory(
           timestamp: reply.memo?.sent || Date.now(),
           id: reply.seal?.id,
         })).filter((msg: TlonHistoryEntry) => msg.content);
-        
+
         runtime?.log?.(`[tlon] Extracted ${messages.length} replies from post data`);
         return messages;
       }
