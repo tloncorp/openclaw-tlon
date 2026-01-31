@@ -1,6 +1,6 @@
 import { format } from "node:util";
 
-import type { RuntimeEnv, ReplyPayload, MoltbotConfig } from "clawdbot/plugin-sdk";
+import type { RuntimeEnv, ReplyPayload, MoltbotConfig } from "openclaw/plugin-sdk";
 
 import { getTlonRuntime } from "../runtime.js";
 import { resolveTlonAccount } from "../types.js";
@@ -49,17 +49,17 @@ function resolveChannelAuthorization(
         defaultAuthorizedShips?: string[];
       }
     | undefined;
-  
+
   // Merge channel rules: settings override file config
   const fileRules = tlonConfig?.authorization?.channelRules ?? {};
   const settingsRules = settings?.channelRules ?? {};
   const rule = settingsRules[channelNest] ?? fileRules[channelNest];
-  
+
   // Merge default authorized ships: settings override file config
-  const defaultShips = settings?.defaultAuthorizedShips 
-    ?? tlonConfig?.defaultAuthorizedShips 
+  const defaultShips = settings?.defaultAuthorizedShips
+    ?? tlonConfig?.defaultAuthorizedShips
     ?? [];
-  
+
   const allowedShips = rule?.allowedShips ?? defaultShips;
   const mode = rule?.mode ?? "restricted";
   return { mode, allowedShips };
@@ -112,13 +112,13 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
   const processedTracker = createProcessedMessageTracker(2000);
   let groupChannels: string[] = [];
   let botNickname: string | null = null;
-  
+
   // Settings store manager for hot-reloading config
   const settingsManager = createSettingsManager(api!, {
     log: (msg) => runtime.log?.(msg),
     error: (msg) => runtime.error?.(msg),
   });
-  
+
   // Reactive state that can be updated via settings store
   let effectiveDmAllowlist: string[] = account.dmAllowlist;
   let effectiveShowModelSig: boolean = account.showModelSignature ?? false;
@@ -192,7 +192,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       // Only migrate if file has a value and settings store doesn't
       const hasFileValue = Array.isArray(fileValue) ? fileValue.length > 0 : fileValue != null;
       const hasSettingsValue = Array.isArray(settingsValue) ? settingsValue.length > 0 : settingsValue != null;
-      
+
       if (hasFileValue && !hasSettingsValue) {
         try {
           await api!.poke({
@@ -218,10 +218,10 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
   // Load settings from settings store (hot-reloadable config)
   try {
     currentSettings = await settingsManager.load();
-    
+
     // Migrate file config to settings store if not already present
     await migrateConfigToSettings();
-    
+
     // Apply settings overrides
     if (currentSettings.groupChannels?.length) {
       groupChannels = currentSettings.groupChannels;
@@ -253,20 +253,20 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
   // Helper to resolve cited message content
   async function resolveCiteContent(cite: ParsedCite): Promise<string | null> {
     if (cite.type !== "chan" || !cite.nest || !cite.postId) return null;
-    
+
     try {
       // Scry for the specific post: /v4/{nest}/posts/post/{postId}
       const scryPath = `/channels/v4/${cite.nest}/posts/post/${cite.postId}.json`;
       runtime.log?.(`[tlon] Fetching cited post: ${scryPath}`);
-      
+
       const data: any = await api!.scry(scryPath);
-      
+
       // Extract text from the post's essay content
       if (data?.essay?.content) {
         const text = extractMessageText(data.essay.content);
         return text || null;
       }
-      
+
       return null;
     } catch (err) {
       runtime.log?.(`[tlon] Failed to fetch cited post: ${String(err)}`);
@@ -278,7 +278,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
   async function resolveAllCites(content: unknown): Promise<string> {
     const cites = extractCites(content);
     if (cites.length === 0) return "";
-    
+
     const resolved: string[] = [];
     for (const cite of cites) {
       const text = await resolveCiteContent(cite);
@@ -287,7 +287,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         resolved.push(`> ${author} wrote: ${text}`);
       }
     }
-    
+
     return resolved.length > 0 ? resolved.join("\n") + "\n\n" : "";
   }
 
@@ -316,7 +316,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
             .slice(-10) // Last 10 messages for context
             .map((msg) => `${msg.author}: ${msg.content}`)
             .join("\n");
-          
+
           // Prepend thread context to the message
           // Include note about ongoing conversation for agent judgment
           const contextNote = `[Thread conversation - ${threadHistory.length} previous replies. You are participating in this thread. Only respond if relevant or helpful - you don't need to reply to every message.]`;
@@ -530,11 +530,11 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       // 2. Thread replies where we've participated - respond if relevant (let agent decide)
       const mentioned = isBotMentioned(messageText, botShipName, botNickname ?? undefined);
       const inParticipatedThread = isThreadReply && parentId && participatedThreads.has(String(parentId));
-      
+
       if (!mentioned && !inParticipatedThread) {
         return;
       }
-      
+
       // Log why we're responding
       if (inParticipatedThread && !mentioned) {
         runtime.log?.(`[tlon] Responding to thread we participated in (no mention): ${parentId}`);
@@ -583,7 +583,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
           for (const invite of event as DmInvite[]) {
             const ship = normalizeShip(invite.ship || "");
             if (!ship || processedDmInvites.has(ship)) continue;
-            
+
             // Only auto-accept from ships in the allowlist
             if (isDmAllowed(ship, effectiveDmAllowlist)) {
               try {
@@ -705,7 +705,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     // Subscribe to settings store for hot-reloading config
     settingsManager.onChange((newSettings) => {
       currentSettings = newSettings;
-      
+
       // Update watched channels if settings changed
       if (newSettings.groupChannels?.length) {
         const newChannels = newSettings.groupChannels;
@@ -718,42 +718,42 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         // Note: we don't remove channels from watchedChannels to avoid missing messages
         // during transitions. The authorization check handles access control.
       }
-      
+
       // Update DM allowlist
       if (newSettings.dmAllowlist !== undefined) {
-        effectiveDmAllowlist = newSettings.dmAllowlist.length > 0 
-          ? newSettings.dmAllowlist 
+        effectiveDmAllowlist = newSettings.dmAllowlist.length > 0
+          ? newSettings.dmAllowlist
           : account.dmAllowlist;
         runtime.log?.(`[tlon] Settings: dmAllowlist updated to ${effectiveDmAllowlist.join(", ")}`);
       }
-      
+
       // Update model signature setting
       if (newSettings.showModelSig !== undefined) {
         effectiveShowModelSig = newSettings.showModelSig;
         runtime.log?.(`[tlon] Settings: showModelSig = ${effectiveShowModelSig}`);
       }
-      
+
       // Update auto-accept DM invites setting
       if (newSettings.autoAcceptDmInvites !== undefined) {
         effectiveAutoAcceptDmInvites = newSettings.autoAcceptDmInvites;
         runtime.log?.(`[tlon] Settings: autoAcceptDmInvites = ${effectiveAutoAcceptDmInvites}`);
       }
-      
+
       // Update auto-accept group invites setting
       if (newSettings.autoAcceptGroupInvites !== undefined) {
         effectiveAutoAcceptGroupInvites = newSettings.autoAcceptGroupInvites;
         runtime.log?.(`[tlon] Settings: autoAcceptGroupInvites = ${effectiveAutoAcceptGroupInvites}`);
       }
-      
+
       // Update group invite allowlist
       if (newSettings.groupInviteAllowlist !== undefined) {
-        effectiveGroupInviteAllowlist = newSettings.groupInviteAllowlist.length > 0 
-          ? newSettings.groupInviteAllowlist 
+        effectiveGroupInviteAllowlist = newSettings.groupInviteAllowlist.length > 0
+          ? newSettings.groupInviteAllowlist
           : account.groupInviteAllowlist;
         runtime.log?.(`[tlon] Settings: groupInviteAllowlist updated to ${effectiveGroupInviteAllowlist.join(", ")}`);
       }
     });
-    
+
     try {
       await settingsManager.startSubscription();
     } catch (err) {
@@ -777,12 +777,12 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
                 for (const [channelNest, channelData] of Object.entries(channels)) {
                   // Only monitor chat channels
                   if (!channelNest.startsWith("chat/")) continue;
-                  
+
                   // If this is a new channel we're not watching yet, add it
                   if (!watchedChannels.has(channelNest)) {
                     watchedChannels.add(channelNest);
                     runtime.log?.(`[tlon] Auto-detected new channel (invite accepted): ${channelNest}`);
-                    
+
                     // Persist to settings store so it survives restarts
                     if (effectiveAutoAcceptGroupInvites) {
                       try {
@@ -811,7 +811,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
                   }
                 }
               }
-              
+
               // Also check for the "join" event structure
               if (event.join && typeof event.join === "object") {
                 const join = event.join as { group?: string; channels?: string[] };
@@ -821,7 +821,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
                     if (!watchedChannels.has(channelNest)) {
                       watchedChannels.add(channelNest);
                       runtime.log?.(`[tlon] Auto-detected joined channel: ${channelNest}`);
-                      
+
                       // Persist to settings store
                       if (effectiveAutoAcceptGroupInvites) {
                         try {
@@ -872,19 +872,19 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     // Always subscribe so we can hot-reload the setting via settings store
     {
       const processedGroupInvites = new Set<string>();
-      
+
       // Helper to process pending invites
       const processPendingInvites = async (foreigns: Foreigns) => {
         if (!effectiveAutoAcceptGroupInvites) return;
         if (!foreigns || typeof foreigns !== "object") return;
-        
+
         for (const [groupFlag, foreign] of Object.entries(foreigns)) {
           if (processedGroupInvites.has(groupFlag)) continue;
           if (!foreign.invites || foreign.invites.length === 0) continue;
-          
+
           const validInvite = foreign.invites.find(inv => inv.valid);
           if (!validInvite) continue;
-          
+
           // SECURITY: Check if inviter is on allowlist
           // If allowlist is empty, accept all (backward-compatible, but logged as warning)
           const inviterShip = validInvite.from;
@@ -893,7 +893,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
             const isAllowed = effectiveGroupInviteAllowlist
               .map(s => normalizeShip(s))
               .some(s => s === normalizedInviter);
-            
+
             if (!isAllowed) {
               runtime.log?.(`[tlon] Rejected group invite from ${inviterShip} (not in groupInviteAllowlist): ${groupFlag}`);
               processedGroupInvites.add(groupFlag); // Mark as processed to avoid spam
@@ -905,7 +905,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
             processedGroupInvites.add(groupFlag);
             continue;
           }
-          
+
           try {
             await api!.poke({
               app: "groups",
@@ -922,12 +922,12 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
           }
         }
       };
-      
+
       // Process existing pending invites from init data
       if (initForeigns) {
         await processPendingInvites(initForeigns);
       }
-      
+
       try {
         await api!.subscribe({
           app: "groups",

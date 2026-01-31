@@ -3,12 +3,12 @@ import type {
   ChannelPlugin,
   ChannelSetupInput,
   MoltbotConfig,
-} from "clawdbot/plugin-sdk";
+} from "openclaw/plugin-sdk";
 import {
   applyAccountNameToChannelSection,
   DEFAULT_ACCOUNT_ID,
   normalizeAccountId,
-} from "clawdbot/plugin-sdk";
+} from "openclaw/plugin-sdk";
 
 import { resolveTlonAccount, listTlonAccountIds } from "./types.js";
 import { formatTargetHint, normalizeShip, parseTlonTarget } from "./targets.js";
@@ -25,7 +25,7 @@ async function createHttpPokeApi(params: { url: string; code: string; ship: stri
   const channelId = `${Math.floor(Date.now() / 1000)}-${Math.random().toString(36).substring(2, 8)}`;
   const channelUrl = `${params.url}/~/channel/${channelId}`;
   const shipName = params.ship.replace(/^~/, "");
-  
+
   return {
     poke: async (pokeParams: { app: string; mark: string; json: unknown }) => {
       const pokeId = Date.now();
@@ -214,7 +214,7 @@ const tlonOutbound: ChannelOutboundAdapter = {
     try {
       const fromShip = normalizeShip(account.ship);
       const story = buildMediaStory(text, mediaUrl);
-      
+
       if (parsed.kind === "dm") {
         return await sendDmWithStory({
           api,
