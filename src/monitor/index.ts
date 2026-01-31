@@ -19,6 +19,7 @@ import {
   isSummarizationRequest,
   type ParsedCite,
 } from "./utils.js";
+import { downloadMessageImages } from "./media.js";
 import { fetchAllChannels, fetchInitData } from "./discovery.js";
 import { createSettingsManager, type TlonSettingsStore } from "../settings.js";
 import type { Foreigns, DmInvite } from "../urbit/foreigns.js";
@@ -295,6 +296,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     messageId: string;
     senderShip: string;
     messageText: string;
+    messageContent?: unknown; // Raw Tlon content for media extraction
     isGroup: boolean;
     channelNest?: string;
     hostShip?: string;
@@ -303,9 +305,22 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     parentId?: string | null;
     isThreadReply?: boolean;
   }) => {
-    const { messageId, senderShip, isGroup, channelNest, hostShip, channelName, timestamp, parentId, isThreadReply } = params;
+    const { messageId, senderShip, isGroup, channelNest, hostShip, channelName, timestamp, parentId, isThreadReply, messageContent } = params;
     const groupChannel = channelNest; // For compatibility
     let messageText = params.messageText;
+
+    // Download any images from the message content
+    let attachments: Array<{ path: string; contentType: string }> = [];
+    if (messageContent) {
+      try {
+        attachments = await downloadMessageImages(messageContent);
+        if (attachments.length > 0) {
+          runtime.log?.(`[tlon] Downloaded ${attachments.length} image(s) from message`);
+        }
+      } catch (error: any) {
+        runtime.log?.(`[tlon] Failed to download images: ${error?.message ?? String(error)}`);
+      }
+    }
 
     // Fetch thread context when entering a thread for the first time
     if (isThreadReply && parentId && groupChannel) {
@@ -394,11 +409,21 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     });
 
     const fromLabel = isGroup ? `${senderShip} in ${channelNest}` : senderShip;
+    
+    // Prepend attachment annotations to message body (similar to Signal format)
+    let bodyWithAttachments = messageText;
+    if (attachments.length > 0) {
+      const mediaLines = attachments
+        .map(a => `[media attached: ${a.path} (${a.contentType}) | ${a.path}]`)
+        .join("\n");
+      bodyWithAttachments = mediaLines + "\n" + messageText;
+    }
+    
     const body = core.channel.reply.formatAgentEnvelope({
       channel: "Tlon",
       from: fromLabel,
       timestamp,
-      body: messageText,
+      body: bodyWithAttachments,
     });
 
     const ctxPayload = core.channel.reply.finalizeInboundContext({
@@ -416,6 +441,8 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       Provider: "tlon",
       Surface: "tlon",
       MessageSid: messageId,
+      // Include downloaded media attachments
+      ...(attachments.length > 0 && { Attachments: attachments }),
       OriginatingChannel: "tlon",
       OriginatingTo: `tlon:${isGroup ? groupChannel : botShipName}`,
     });
@@ -558,6 +585,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         messageId: messageId ?? "",
         senderShip,
         messageText,
+        messageContent: content.content, // Pass raw content for media extraction
         isGroup: true,
         channelNest: nest,
         hostShip: parsed?.hostShip,
@@ -633,6 +661,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         messageId: messageId ?? "",
         senderShip,
         messageText,
+        messageContent: essay.content, // Pass raw content for media extraction
         isGroup: false,
         timestamp: essay.sent || Date.now(),
       });
