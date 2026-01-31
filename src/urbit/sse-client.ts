@@ -344,11 +344,16 @@ export class UrbitSSEClient {
       return;
     }
 
+    // Reset after max attempts with extended backoff, then continue trying forever
     if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-      this.logger.error?.(
-        `[SSE] Max reconnection attempts (${this.maxReconnectAttempts}) reached. Giving up.`,
+      this.logger.log?.(
+        `[SSE] Max reconnection attempts (${this.maxReconnectAttempts}) reached. Will reset and retry after extended backoff...`,
       );
-      return;
+      // Wait 5 minutes before resetting and trying again
+      const extendedBackoff = 300000; // 5 minutes
+      await new Promise((resolve) => setTimeout(resolve, extendedBackoff));
+      this.reconnectAttempts = 0; // Reset counter to continue trying
+      this.logger.log?.("[SSE] Reconnection attempts reset, resuming reconnection...");
     }
 
     this.reconnectAttempts += 1;
