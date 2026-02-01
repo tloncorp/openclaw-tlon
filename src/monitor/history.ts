@@ -7,17 +7,17 @@ import { extractMessageText } from "./utils.js";
  */
 function formatUd(id: string | number): string {
   const str = String(id).replace(/\./g, ""); // Remove any existing dots
-  const reversed = str.split("").reverse();
+  const reversed = str.split("").toReversed();
   const chunks: string[] = [];
   for (let i = 0; i < reversed.length; i += 3) {
     chunks.push(
       reversed
         .slice(i, i + 3)
-        .reverse()
+        .toReversed()
         .join(""),
     );
   }
-  return chunks.reverse().join(".");
+  return chunks.toReversed().join(".");
 }
 
 export type TlonHistoryEntry = {
@@ -35,7 +35,9 @@ export function cacheMessage(channelNest: string, message: TlonHistoryEntry) {
     messageCache.set(channelNest, []);
   }
   const cache = messageCache.get(channelNest);
-  if (!cache) return;
+  if (!cache) {
+    return;
+  }
   cache.unshift(message);
   if (cache.length > MAX_CACHED_MESSAGES) {
     cache.pop();
@@ -53,7 +55,9 @@ export async function fetchChannelHistory(
     runtime?.log?.(`[tlon] Fetching history: ${scryPath}`);
 
     const data: any = await api.scry(scryPath);
-    if (!data) return [];
+    if (!data) {
+      return [];
+    }
 
     let posts: any[] = [];
     if (Array.isArray(data)) {

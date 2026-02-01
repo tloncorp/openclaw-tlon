@@ -185,20 +185,26 @@ export class UrbitSSEClient {
       if (!this.aborted) {
         this.logger.error?.(`Stream error: ${String(error)}`);
         for (const { err } of this.eventHandlers.values()) {
-          if (err) err(error);
+          if (err) {
+            err(error);
+          }
         }
       }
     });
   }
 
   async processStream(body: ReadableStream<Uint8Array> | Readable | null) {
-    if (!body) return;
+    if (!body) {
+      return;
+    }
     const stream = body instanceof ReadableStream ? Readable.fromWeb(body) : body;
     let buffer = "";
 
     try {
       for await (const chunk of stream) {
-        if (this.aborted) break;
+        if (this.aborted) {
+          break;
+        }
         buffer += chunk.toString();
         let eventEnd;
         while ((eventEnd = buffer.indexOf("\n\n")) !== -1) {
@@ -230,7 +236,9 @@ export class UrbitSSEClient {
       }
     }
 
-    if (!data) return;
+    if (!data) {
+      return;
+    }
 
     // Track event ID and send ack if needed
     if (eventId !== null && !isNaN(eventId)) {
@@ -250,7 +258,9 @@ export class UrbitSSEClient {
       if (parsed.response === "quit") {
         if (parsed.id) {
           const handlers = this.eventHandlers.get(parsed.id);
-          if (handlers?.quit) handlers.quit();
+          if (handlers?.quit) {
+            handlers.quit();
+          }
         }
         return;
       }
@@ -262,7 +272,9 @@ export class UrbitSSEClient {
         }
       } else if (parsed.json) {
         for (const { event } of this.eventHandlers.values()) {
-          if (event) event(parsed.json);
+          if (event) {
+            event(parsed.json);
+          }
         }
       }
     } catch (error) {

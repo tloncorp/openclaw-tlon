@@ -1,4 +1,4 @@
-import type { RuntimeEnv, ReplyPayload, MoltbotConfig } from "openclaw/plugin-sdk";
+import type { RuntimeEnv, ReplyPayload, OpenClawConfig } from "openclaw/plugin-sdk";
 import { format } from "node:util";
 import type { Foreigns, DmInvite } from "../urbit/foreigns.js";
 import { getTlonRuntime } from "../runtime.js";
@@ -38,7 +38,7 @@ type ChannelAuthorization = {
  * Settings store takes precedence for fields it defines.
  */
 function resolveChannelAuthorization(
-  cfg: MoltbotConfig,
+  cfg: OpenClawConfig,
   channelNest: string,
   settings?: TlonSettingsStore,
 ): { mode: "restricted" | "open"; allowedShips: string[] } {
@@ -64,8 +64,8 @@ function resolveChannelAuthorization(
 
 export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<void> {
   const core = getTlonRuntime();
-  const cfg = core.config.loadConfig() as MoltbotConfig;
-  if (cfg.channels?.tlon?.enabled === false) return;
+  const cfg = core.config.loadConfig() as OpenClawConfig;
+  if (cfg.channels?.tlon?.enabled === false) {return;}
 
   const logger = core.logging.getChildLogger({ module: "tlon-auto-reply" });
   const formatRuntimeMessage = (...args: Parameters<RuntimeEnv["log"]>) => format(...args);
@@ -82,7 +82,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
   };
 
   const account = resolveTlonAccount(cfg, opts.accountId ?? undefined);
-  if (!account.enabled) return;
+  if (!account.enabled) {return;}
   if (!account.configured || !account.ship || !account.url || !account.code) {
     throw new Error("Tlon account not configured (ship/url/code required)");
   }
@@ -111,7 +111,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
   let botNickname: string | null = null;
 
   // Settings store manager for hot-reloading config
-  const settingsManager = createSettingsManager(api!, {
+  const settingsManager = createSettingsManager(api, {
     log: (msg) => runtime.log?.(msg),
     error: (msg) => runtime.error?.(msg),
   });
@@ -285,7 +285,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
 
   // Helper to resolve cited message content
   async function resolveCiteContent(cite: ParsedCite): Promise<string | null> {
-    if (cite.type !== "chan" || !cite.nest || !cite.postId) return null;
+    if (cite.type !== "chan" || !cite.nest || !cite.postId) {return null;}
 
     try {
       // Scry for the specific post: /v4/{nest}/posts/post/{postId}
@@ -310,7 +310,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
   // Resolve all cites in message content and return quoted text
   async function resolveAllCites(content: unknown): Promise<string> {
     const cites = extractCites(content);
-    if (cites.length === 0) return "";
+    if (cites.length === 0) {return "";}
 
     const resolved: string[] = [];
     for (const cite of cites) {
@@ -342,8 +342,8 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       senderShip,
       isGroup,
       channelNest,
-      hostShip,
-      channelName,
+      _hostShip,
+      _channelName,
       timestamp,
       parentId,
       isThreadReply,
@@ -368,7 +368,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     // Fetch thread context when entering a thread for the first time
     if (isThreadReply && parentId && groupChannel) {
       try {
-        const threadHistory = await fetchThreadHistory(api!, groupChannel, parentId, 20, runtime);
+        const threadHistory = await fetchThreadHistory(api, groupChannel, parentId, 20, runtime);
         if (threadHistory.length > 0) {
           const threadContext = threadHistory
             .slice(-10) // Last 10 messages for context
@@ -391,7 +391,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
 
     if (isGroup && groupChannel && isSummarizationRequest(messageText)) {
       try {
-        const history = await getChannelHistory(api!, groupChannel, 50, runtime);
+        const history = await getChannelHistory(api, groupChannel, 50, runtime);
         if (history.length === 0) {
           const noHistoryMsg =
             "I couldn't fetch any messages for this channel. It might be empty or there might be a permissions issue.";
@@ -399,16 +399,16 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
             const parsed = parseChannelNest(groupChannel);
             if (parsed) {
               await sendGroupMessage({
-                api: api!,
+                api: api,
                 fromShip: botShipName,
-                hostShip: parsed.hostShip,
-                channelName: parsed.channelName,
+                hostShip: parsed._hostShip,
+                channelName: parsed._channelName,
                 text: noHistoryMsg,
               });
             }
           } else {
             await sendDm({
-              api: api!,
+              api: api,
               fromShip: botShipName,
               toShip: senderShip,
               text: noHistoryMsg,
@@ -436,15 +436,15 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
           const parsed = parseChannelNest(groupChannel);
           if (parsed) {
             await sendGroupMessage({
-              api: api!,
+              api: api,
               fromShip: botShipName,
-              hostShip: parsed.hostShip,
-              channelName: parsed.channelName,
+              hostShip: parsed._hostShip,
+              channelName: parsed._channelName,
               text: errorMsg,
             });
           }
         } else {
-          await sendDm({ api: api!, fromShip: botShipName, toShip: senderShip, text: errorMsg });
+          await sendDm({ api: api, fromShip: botShipName, toShip: senderShip, text: errorMsg });
         }
         return;
       }
@@ -515,7 +515,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         humanDelay,
         deliver: async (payload: ReplyPayload) => {
           let replyText = payload.text;
-          if (!replyText) return;
+          if (!replyText) {return;}
 
           // Use settings store value if set, otherwise fall back to file config
           const showSignature = effectiveShowModelSig;
@@ -530,12 +530,12 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
 
           if (isGroup && groupChannel) {
             const parsed = parseChannelNest(groupChannel);
-            if (!parsed) return;
+            if (!parsed) {return;}
             await sendGroupMessage({
-              api: api!,
+              api: api,
               fromShip: botShipName,
-              hostShip: parsed.hostShip,
-              channelName: parsed.channelName,
+              hostShip: parsed._hostShip,
+              channelName: parsed._channelName,
               text: replyText,
               replyToId: parentId ?? undefined,
             });
@@ -545,7 +545,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
               runtime.log?.(`[tlon] Now tracking thread for future replies: ${parentId}`);
             }
           } else {
-            await sendDm({ api: api!, fromShip: botShipName, toShip: senderShip, text: replyText });
+            await sendDm({ api: api, fromShip: botShipName, toShip: senderShip, text: replyText });
           }
         },
         onError: (err, info) => {
@@ -560,39 +560,39 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
 
   // Track which channels we're interested in for filtering firehose events
   const watchedChannels = new Set<string>(groupChannels);
-  const watchedDMs = new Set<string>();
+  const _watchedDMs = new Set<string>();
 
   // Firehose handler for all channel messages (/v2)
   const handleChannelsFirehose = async (event: any) => {
     try {
       const nest = event?.nest;
-      if (!nest) return;
+      if (!nest) {return;}
 
       // Only process channels we're watching
-      if (!watchedChannels.has(nest)) return;
+      if (!watchedChannels.has(nest)) {return;}
 
       const response = event?.response;
-      if (!response) return;
+      if (!response) {return;}
 
       // Handle post responses (new posts and replies)
       const essay = response?.post?.["r-post"]?.set?.essay;
       const memo = response?.post?.["r-post"]?.reply?.["r-reply"]?.set?.memo;
-      if (!essay && !memo) return;
+      if (!essay && !memo) {return;}
 
       const content = memo || essay;
       const isThreadReply = Boolean(memo);
       const messageId = isThreadReply ? response?.post?.["r-post"]?.reply?.id : response?.post?.id;
 
-      if (!processedTracker.mark(messageId)) return;
+      if (!processedTracker.mark(messageId)) {return;}
 
       const senderShip = normalizeShip(content.author ?? "");
-      if (!senderShip || senderShip === botShipName) return;
+      if (!senderShip || senderShip === botShipName) {return;}
 
       // Resolve any cited/quoted messages first
       const citedContent = await resolveAllCites(content.content);
       const rawText = extractMessageText(content.content);
       const messageText = citedContent + rawText;
-      if (!messageText.trim()) return;
+      if (!messageText.trim()) {return;}
 
       cacheMessage(nest, {
         author: senderShip,
@@ -646,8 +646,8 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         messageContent: content.content, // Pass raw content for media extraction
         isGroup: true,
         channelNest: nest,
-        hostShip: parsed?.hostShip,
-        channelName: parsed?.channelName,
+        hostShip: parsed?._hostShip,
+        channelName: parsed?._channelName,
         timestamp: content.sent || Date.now(),
         parentId,
         isThreadReply,
@@ -670,12 +670,12 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         if (effectiveAutoAcceptDmInvites) {
           for (const invite of event as DmInvite[]) {
             const ship = normalizeShip(invite.ship || "");
-            if (!ship || processedDmInvites.has(ship)) continue;
+            if (!ship || processedDmInvites.has(ship)) {continue;}
 
             // Only auto-accept from ships in the allowlist
             if (isDmAllowed(ship, effectiveDmAllowlist)) {
               try {
-                await api!.poke({
+                await api.poke({
                   app: "chat",
                   mark: "chat-dm-rsvp",
                   json: { ship, ok: true },
@@ -690,26 +690,26 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         }
         return;
       }
-      if (!("whom" in event) || !("response" in event)) return;
+      if (!("whom" in event) || !("response" in event)) {return;}
 
-      const whom = event.whom; // DM partner ship or club ID
+      const _whom = event.whom; // DM partner ship or club ID
       const messageId = event.id;
       const response = event.response;
 
       // Handle add events (new messages)
       const essay = response?.add?.essay;
-      if (!essay) return;
+      if (!essay) {return;}
 
-      if (!processedTracker.mark(messageId)) return;
+      if (!processedTracker.mark(messageId)) {return;}
 
       const senderShip = normalizeShip(essay.author ?? "");
-      if (!senderShip || senderShip === botShipName) return;
+      if (!senderShip || senderShip === botShipName) {return;}
 
       // Resolve any cited/quoted messages first
       const citedContent = await resolveAllCites(essay.content);
       const rawText = extractMessageText(essay.content);
       const messageText = citedContent + rawText;
-      if (!messageText.trim()) return;
+      if (!messageText.trim()) {return;}
 
       // For DMs, check allowlist (uses settings store if available)
       if (!isDmAllowed(senderShip, effectiveDmAllowlist)) {
@@ -736,7 +736,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     runtime.log?.("[tlon] Subscribing to firehose updates...");
 
     // Subscribe to channels firehose (/v2)
-    await api!.subscribe({
+    await api.subscribe({
       app: "channels",
       path: "/v2",
       event: handleChannelsFirehose,
@@ -750,7 +750,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     runtime.log?.("[tlon] Subscribed to channels firehose (/v2)");
 
     // Subscribe to chat/DM firehose (/v3)
-    await api!.subscribe({
+    await api.subscribe({
       app: "chat",
       path: "/v3",
       event: handleChatFirehose,
@@ -764,7 +764,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     runtime.log?.("[tlon] Subscribed to chat firehose (/v3)");
 
     // Subscribe to contacts updates to track nickname changes
-    await api!.subscribe({
+    await api.subscribe({
       app: "contacts",
       path: "/v1/news",
       event: (event: any) => {
@@ -860,7 +860,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
 
     // Subscribe to groups-ui for real-time channel additions (when invites are accepted)
     try {
-      await api!.subscribe({
+      await api.subscribe({
         app: "groups",
         path: "/groups/ui",
         event: async (event: any) => {
@@ -871,9 +871,9 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
               // Check for new channels being added to groups
               if (event.channels && typeof event.channels === "object") {
                 const channels = event.channels as Record<string, any>;
-                for (const [channelNest, channelData] of Object.entries(channels)) {
+                for (const [channelNest, _channelData] of Object.entries(channels)) {
                   // Only monitor chat channels
-                  if (!channelNest.startsWith("chat/")) continue;
+                  if (!channelNest.startsWith("chat/")) {continue;}
 
                   // If this is a new channel we're not watching yet, add it
                   if (!watchedChannels.has(channelNest)) {
@@ -889,7 +889,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
                         if (!currentChannels.includes(channelNest)) {
                           const updatedChannels = [...currentChannels, channelNest];
                           // Poke settings store to persist
-                          await api!.poke({
+                          await api.poke({
                             app: "settings",
                             mark: "settings-event",
                             json: {
@@ -918,7 +918,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
                 const join = event.join as { group?: string; channels?: string[] };
                 if (join.channels) {
                   for (const channelNest of join.channels) {
-                    if (!channelNest.startsWith("chat/")) continue;
+                    if (!channelNest.startsWith("chat/")) {continue;}
                     if (!watchedChannels.has(channelNest)) {
                       watchedChannels.add(channelNest);
                       runtime.log?.(`[tlon] Auto-detected joined channel: ${channelNest}`);
@@ -929,7 +929,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
                           const currentChannels = currentSettings.groupChannels || [];
                           if (!currentChannels.includes(channelNest)) {
                             const updatedChannels = [...currentChannels, channelNest];
-                            await api!.poke({
+                            await api.poke({
                               app: "settings",
                               mark: "settings-event",
                               json: {
@@ -980,15 +980,15 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
 
       // Helper to process pending invites
       const processPendingInvites = async (foreigns: Foreigns) => {
-        if (!effectiveAutoAcceptGroupInvites) return;
-        if (!foreigns || typeof foreigns !== "object") return;
+        if (!effectiveAutoAcceptGroupInvites) {return;}
+        if (!foreigns || typeof foreigns !== "object") {return;}
 
         for (const [groupFlag, foreign] of Object.entries(foreigns)) {
-          if (processedGroupInvites.has(groupFlag)) continue;
-          if (!foreign.invites || foreign.invites.length === 0) continue;
+          if (processedGroupInvites.has(groupFlag)) {continue;}
+          if (!foreign.invites || foreign.invites.length === 0) {continue;}
 
           const validInvite = foreign.invites.find((inv) => inv.valid);
-          if (!validInvite) continue;
+          if (!validInvite) {continue;}
 
           // SECURITY: Check if inviter is on allowlist
           // If allowlist is empty, accept all (backward-compatible, but logged as warning)
@@ -1016,7 +1016,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
           }
 
           try {
-            await api!.poke({
+            await api.poke({
               app: "groups",
               mark: "group-join",
               json: {
@@ -1040,7 +1040,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       }
 
       try {
-        await api!.subscribe({
+        await api.subscribe({
           app: "groups",
           path: "/v1/foreigns",
           event: async (event: Foreigns) => {
@@ -1069,7 +1069,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
 
     // Discover channels to watch
     if (account.autoDiscoverChannels !== false) {
-      const discoveredChannels = await fetchAllChannels(api!, runtime);
+      const discoveredChannels = await fetchAllChannels(api, runtime);
       for (const channelNest of discoveredChannels) {
         watchedChannels.add(channelNest);
       }
@@ -1082,7 +1082,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     }
 
     runtime.log?.("[tlon] All subscriptions registered, connecting to SSE stream...");
-    await api!.connect();
+    await api.connect();
     runtime.log?.("[tlon] Connected! Firehose subscriptions active");
 
     // Periodically refresh channel discovery
@@ -1091,7 +1091,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         if (!opts.abortSignal?.aborted) {
           try {
             if (account.autoDiscoverChannels !== false) {
-              const discoveredChannels = await fetchAllChannels(api!, runtime);
+              const discoveredChannels = await fetchAllChannels(api, runtime);
               for (const channelNest of discoveredChannels) {
                 if (!watchedChannels.has(channelNest)) {
                   watchedChannels.add(channelNest);

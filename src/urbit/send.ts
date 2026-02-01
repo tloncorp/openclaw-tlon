@@ -154,8 +154,12 @@ export async function sendGroupMessageWithStory({
 export function buildMediaText(text: string | undefined, mediaUrl: string | undefined): string {
   const cleanText = text?.trim() ?? "";
   const cleanUrl = mediaUrl?.trim() ?? "";
-  if (cleanText && cleanUrl) return `${cleanText}\n${cleanUrl}`;
-  if (cleanUrl) return cleanUrl;
+  if (cleanText && cleanUrl) {
+    return `${cleanText}\n${cleanUrl}`;
+  }
+  if (cleanUrl) {
+    return cleanUrl;
+  }
   return cleanText;
 }
 

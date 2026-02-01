@@ -25,7 +25,9 @@ export interface DownloadedMedia {
  * Returns array of image URLs found in the message.
  */
 export function extractImageBlocks(content: unknown): ExtractedImage[] {
-  if (!content || !Array.isArray(content)) return [];
+  if (!content || !Array.isArray(content)) {
+    return [];
+  }
 
   const images: ExtractedImage[] = [];
 
@@ -124,7 +126,9 @@ export async function downloadMessageImages(
   mediaDir?: string,
 ): Promise<Array<{ path: string; contentType: string }>> {
   const images = extractImageBlocks(content);
-  if (images.length === 0) return [];
+  if (images.length === 0) {
+    return [];
+  }
 
   const attachments: Array<{ path: string; contentType: string }> = [];
 

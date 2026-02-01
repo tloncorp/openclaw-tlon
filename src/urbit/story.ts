@@ -128,7 +128,7 @@ function parseInlineMarkdown(text: string): StoryInline[] {
     // }
 
     // Plain text: consume until next special character
-    const plainMatch = remaining.match(/^[^*_`~\[#~\n]+/);
+    const plainMatch = remaining.match(/^[^*_`~[#~\n]+/);
     if (plainMatch) {
       result.push(plainMatch[0]);
       remaining = remaining.slice(plainMatch[0].length);
@@ -241,7 +241,7 @@ export function markdownToStory(markdown: string): Story {
     const headerMatch = line.match(/^(#{1,6})\s+(.+)$/);
     if (headerMatch) {
       const level = headerMatch[1].length as 1 | 2 | 3 | 4 | 5 | 6;
-      const tag = `h${level}` as "h1" | "h2" | "h3" | "h4" | "h5" | "h6";
+      const tag = `h${level}`;
       story.push({
         block: {
           header: {
@@ -305,8 +305,12 @@ export function markdownToStory(markdown: string): Story {
         if (typeof inline === "string" && inline.includes("\n")) {
           const parts = inline.split("\n");
           for (let j = 0; j < parts.length; j++) {
-            if (parts[j]) withBreaks.push(parts[j]);
-            if (j < parts.length - 1) withBreaks.push({ break: null });
+            if (parts[j]) {
+              withBreaks.push(parts[j]);
+            }
+            if (j < parts.length - 1) {
+              withBreaks.push({ break: null });
+            }
           }
         } else {
           withBreaks.push(inline);

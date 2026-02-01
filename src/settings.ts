@@ -45,20 +45,26 @@ const SETTINGS_BUCKET = "tlon";
 function parseChannelRules(
   value: unknown,
 ): Record<string, { mode?: "restricted" | "open"; allowedShips?: string[] }> | undefined {
-  if (!value) return undefined;
+  if (!value) {
+    return undefined;
+  }
 
   // If it's a string, try to parse as JSON
   if (typeof value === "string") {
     try {
       const parsed = JSON.parse(value);
-      if (isChannelRulesObject(parsed)) return parsed;
+      if (isChannelRulesObject(parsed)) {
+        return parsed;
+      }
     } catch {
       return undefined;
     }
   }
 
   // If it's already an object, use directly
-  if (isChannelRulesObject(value)) return value;
+  if (isChannelRulesObject(value)) {
+    return value;
+  }
 
   return undefined;
 }
@@ -68,11 +74,15 @@ function parseChannelRules(
  * The response shape is: { [bucket]: { [key]: value } }
  */
 function parseSettingsResponse(raw: unknown): TlonSettingsStore {
-  if (!raw || typeof raw !== "object") return {};
+  if (!raw || typeof raw !== "object") {
+    return {};
+  }
 
   const desk = raw as Record<string, unknown>;
   const bucket = desk[SETTINGS_BUCKET];
-  if (!bucket || typeof bucket !== "object") return {};
+  if (!bucket || typeof bucket !== "object") {
+    return {};
+  }
 
   const settings = bucket as Record<string, unknown>;
 
@@ -104,9 +114,13 @@ function parseSettingsResponse(raw: unknown): TlonSettingsStore {
 function isChannelRulesObject(
   val: unknown,
 ): val is Record<string, { mode?: "restricted" | "open"; allowedShips?: string[] }> {
-  if (!val || typeof val !== "object" || Array.isArray(val)) return false;
+  if (!val || typeof val !== "object" || Array.isArray(val)) {
+    return false;
+  }
   for (const [, rule] of Object.entries(val)) {
-    if (!rule || typeof rule !== "object") return false;
+    if (!rule || typeof rule !== "object") {
+      return false;
+    }
   }
   return true;
 }
@@ -115,7 +129,9 @@ function isChannelRulesObject(
  * Parse a single settings entry update event.
  */
 function parseSettingsEvent(event: unknown): { key: string; value: unknown } | null {
-  if (!event || typeof event !== "object") return null;
+  if (!event || typeof event !== "object") {
+    return null;
+  }
 
   const evt = event as Record<string, unknown>;
 
@@ -274,7 +290,9 @@ export function createSettingsManager(api: UrbitSSEClient, logger?: SettingsLogg
         path: "/desk/" + SETTINGS_DESK,
         event: (event) => {
           const update = parseSettingsEvent(event);
-          if (!update) return;
+          if (!update) {
+            return;
+          }
 
           logger?.log?.(`[settings] Update: ${update.key} = ${JSON.stringify(update.value)}`);
           state.current = applySettingsUpdate(state.current, update.key, update.value);
