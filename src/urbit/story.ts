@@ -1,6 +1,6 @@
 /**
  * Tlon Story Format - Rich text converter
- * 
+ *
  * Converts markdown-like text to Tlon's story format.
  */
 
@@ -27,13 +27,17 @@ export type StoryBlock =
   | { listing: StoryListing };
 
 export type StoryListing =
-  | { list: { type: "ordered" | "unordered" | "tasklist"; items: StoryListing[]; contents: StoryInline[] } }
+  | {
+      list: {
+        type: "ordered" | "unordered" | "tasklist";
+        items: StoryListing[];
+        contents: StoryInline[];
+      };
+    }
   | { item: StoryInline[] };
 
 // A verse is either a block or inline content
-export type StoryVerse =
-  | { block: StoryBlock }
-  | { inline: StoryInline[] };
+export type StoryVerse = { block: StoryBlock } | { inline: StoryInline[] };
 
 // A story is a list of verses
 export type Story = StoryVerse[];
@@ -100,7 +104,9 @@ function parseInlineMarkdown(text: string): StoryInline[] {
     const imageMatch = remaining.match(/^!\[([^\]]*)\]\(([^)]+)\)/);
     if (imageMatch) {
       // Return a special marker that will be hoisted to a block
-      result.push({ __image: { src: imageMatch[2], alt: imageMatch[1] } } as unknown as StoryInline);
+      result.push({
+        __image: { src: imageMatch[2], alt: imageMatch[1] },
+      } as unknown as StoryInline);
       remaining = remaining.slice(imageMatch[0].length);
       continue;
     }
@@ -122,7 +128,7 @@ function parseInlineMarkdown(text: string): StoryInline[] {
     // }
 
     // Plain text: consume until next special character
-    const plainMatch = remaining.match(/^[^*_`~\[#~\n]+/);
+    const plainMatch = remaining.match(/^[^*_`~[#~\n]+/);
     if (plainMatch) {
       result.push(plainMatch[0]);
       remaining = remaining.slice(plainMatch[0].length);
@@ -156,7 +162,12 @@ function mergeAdjacentStrings(inlines: StoryInline[]): StoryInline[] {
 /**
  * Create an image block
  */
-export function createImageBlock(src: string, alt: string = "", height: number = 0, width: number = 0): StoryVerse {
+export function createImageBlock(
+  src: string,
+  alt: string = "",
+  height: number = 0,
+  width: number = 0,
+): StoryVerse {
   return {
     block: {
       image: { src, height, width, alt },
@@ -175,10 +186,13 @@ export function isImageUrl(url: string): boolean {
 /**
  * Process inlines and extract any image markers into blocks
  */
-function processInlinesForImages(inlines: StoryInline[]): { inlines: StoryInline[]; imageBlocks: StoryVerse[] } {
+function processInlinesForImages(inlines: StoryInline[]): {
+  inlines: StoryInline[];
+  imageBlocks: StoryVerse[];
+} {
   const cleanInlines: StoryInline[] = [];
   const imageBlocks: StoryVerse[] = [];
-  
+
   for (const inline of inlines) {
     if (typeof inline === "object" && "__image" in inline) {
       const img = (inline as unknown as { __image: { src: string; alt: string } }).__image;
@@ -187,7 +201,7 @@ function processInlinesForImages(inlines: StoryInline[]): { inlines: StoryInline
       cleanInlines.push(inline);
     }
   }
-  
+
   return { inlines: cleanInlines, imageBlocks };
 }
 
@@ -227,7 +241,7 @@ export function markdownToStory(markdown: string): Story {
     const headerMatch = line.match(/^(#{1,6})\s+(.+)$/);
     if (headerMatch) {
       const level = headerMatch[1].length as 1 | 2 | 3 | 4 | 5 | 6;
-      const tag = `h${level}` as "h1" | "h2" | "h3" | "h4" | "h5" | "h6";
+      const tag = `h${level}`;
       story.push({
         block: {
           header: {
@@ -269,7 +283,14 @@ export function markdownToStory(markdown: string): Story {
 
     // Regular paragraph - collect consecutive non-empty lines
     const paragraphLines: string[] = [];
-    while (i < lines.length && lines[i].trim() !== "" && !lines[i].startsWith("#") && !lines[i].startsWith("```") && !lines[i].startsWith("> ") && !/^(-{3,}|\*{3,})$/.test(lines[i].trim())) {
+    while (
+      i < lines.length &&
+      lines[i].trim() !== "" &&
+      !lines[i].startsWith("#") &&
+      !lines[i].startsWith("```") &&
+      !lines[i].startsWith("> ") &&
+      !/^(-{3,}|\*{3,})$/.test(lines[i].trim())
+    ) {
       paragraphLines.push(lines[i]);
       i++;
     }
@@ -284,17 +305,21 @@ export function markdownToStory(markdown: string): Story {
         if (typeof inline === "string" && inline.includes("\n")) {
           const parts = inline.split("\n");
           for (let j = 0; j < parts.length; j++) {
-            if (parts[j]) withBreaks.push(parts[j]);
-            if (j < parts.length - 1) withBreaks.push({ break: null });
+            if (parts[j]) {
+              withBreaks.push(parts[j]);
+            }
+            if (j < parts.length - 1) {
+              withBreaks.push({ break: null });
+            }
           }
         } else {
           withBreaks.push(inline);
         }
       }
-      
+
       // Extract any images from inlines and add as separate blocks
       const { inlines: cleanInlines, imageBlocks } = processInlinesForImages(withBreaks);
-      
+
       if (cleanInlines.length > 0) {
         story.push({ inline: cleanInlines });
       }

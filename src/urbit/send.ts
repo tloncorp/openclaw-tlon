@@ -26,7 +26,7 @@ export async function sendDm({ api, fromShip, toShip, text }: SendTextParams) {
 
 export async function sendDmWithStory({ api, fromShip, toShip, story }: SendStoryParams) {
   const sentAt = Date.now();
-  const idUd = scot('ud', da.fromUnix(sentAt));
+  const idUd = scot("ud", da.fromUnix(sentAt));
   const id = `${fromShip}/${idUd}`;
 
   const delta = {
@@ -100,7 +100,7 @@ export async function sendGroupMessageWithStory({
   if (replyToId && /^\d+$/.test(replyToId)) {
     try {
       // scot('ud', n) formats a number as @ud with dots
-      formattedReplyId = scot('ud', BigInt(replyToId));
+      formattedReplyId = scot("ud", BigInt(replyToId));
     } catch {
       // Fall back to raw ID if formatting fails
     }
@@ -154,8 +154,12 @@ export async function sendGroupMessageWithStory({
 export function buildMediaText(text: string | undefined, mediaUrl: string | undefined): string {
   const cleanText = text?.trim() ?? "";
   const cleanUrl = mediaUrl?.trim() ?? "";
-  if (cleanText && cleanUrl) return `${cleanText}\n${cleanUrl}`;
-  if (cleanUrl) return cleanUrl;
+  if (cleanText && cleanUrl) {
+    return `${cleanText}\n${cleanUrl}`;
+  }
+  if (cleanUrl) {
+    return cleanUrl;
+  }
   return cleanText;
 }
 
@@ -166,12 +170,12 @@ export function buildMediaStory(text: string | undefined, mediaUrl: string | und
   const story: Story = [];
   const cleanText = text?.trim() ?? "";
   const cleanUrl = mediaUrl?.trim() ?? "";
-  
+
   // Add text content if present
   if (cleanText) {
     story.push(...markdownToStory(cleanText));
   }
-  
+
   // Add image block if URL looks like an image
   if (cleanUrl && isImageUrl(cleanUrl)) {
     story.push(createImageBlock(cleanUrl, ""));
@@ -179,6 +183,6 @@ export function buildMediaStory(text: string | undefined, mediaUrl: string | und
     // For non-image URLs, add as a link
     story.push({ inline: [{ link: { href: cleanUrl, content: cleanUrl } }] });
   }
-  
+
   return story.length > 0 ? story : [{ inline: [""] }];
 }

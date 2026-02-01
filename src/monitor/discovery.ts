@@ -1,7 +1,6 @@
 import type { RuntimeEnv } from "openclaw/plugin-sdk";
-
-import { formatChangesDate } from "./utils.js";
 import type { Foreigns } from "../urbit/foreigns.js";
+import { formatChangesDate } from "./utils.js";
 
 export async function fetchGroupChanges(
   api: { scry: (path: string) => Promise<unknown> },
@@ -18,7 +17,9 @@ export async function fetchGroupChanges(
     }
     return null;
   } catch (error: any) {
-    runtime.log?.(`[tlon] Failed to fetch changes (falling back to full init): ${error?.message ?? String(error)}`);
+    runtime.log?.(
+      `[tlon] Failed to fetch changes (falling back to full init): ${error?.message ?? String(error)}`,
+    );
     return null;
   }
 }
@@ -38,7 +39,7 @@ export async function fetchInitData(
 ): Promise<InitData> {
   try {
     runtime.log?.("[tlon] Fetching groups-ui init data...");
-    const initData = await api.scry("/groups-ui/v6/init.json") as any;
+    const initData = (await api.scry("/groups-ui/v6/init.json")) as any;
 
     const channels: string[] = [];
     if (initData?.groups) {
@@ -61,7 +62,9 @@ export async function fetchInitData(
 
     const foreigns = (initData?.foreigns as Foreigns) || null;
     if (foreigns) {
-      const pendingCount = Object.values(foreigns).filter(f => f.invites?.some(i => i.valid)).length;
+      const pendingCount = Object.values(foreigns).filter((f) =>
+        f.invites?.some((i) => i.valid),
+      ).length;
       if (pendingCount > 0) {
         runtime.log?.(`[tlon] Found ${pendingCount} pending group invite(s)`);
       }

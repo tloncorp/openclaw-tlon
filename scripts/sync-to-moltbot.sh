@@ -31,13 +31,31 @@ fi
 
 echo "Syncing plugin to: $TARGET_DIR"
 
-# Sync files (excluding git, node_modules, scripts)
+# Sync files (excluding repo-specific stuff)
 rsync -av --delete \
     --exclude='.git' \
+    --exclude='.github' \
     --exclude='node_modules' \
     --exclude='scripts' \
     --exclude='.gitignore' \
+    --exclude='package-lock.json' \
+    --exclude='pnpm-lock.yaml' \
+    --exclude='SECURITY.md' \
+    --exclude='SECURITY-AUDIT.md' \
+    --exclude='.oxlintrc.json' \
+    --exclude='.oxfmtrc.jsonc' \
     "$PLUGIN_DIR/" "$TARGET_DIR/"
+
+# Transform package.json: use workspace:* for openclaw in monorepo
+echo "Transforming package.json for monorepo..."
+if command -v jq &> /dev/null; then
+    jq '.devDependencies.openclaw = "workspace:*"' "$TARGET_DIR/package.json" > "$TARGET_DIR/package.json.tmp" \
+        && mv "$TARGET_DIR/package.json.tmp" "$TARGET_DIR/package.json"
+else
+    # Fallback to sed if jq not available
+    sed -i.bak 's/"openclaw": "[^"]*"/"openclaw": "workspace:*"/' "$TARGET_DIR/package.json" \
+        && rm -f "$TARGET_DIR/package.json.bak"
+fi
 
 echo ""
 echo "✅ Sync complete!"

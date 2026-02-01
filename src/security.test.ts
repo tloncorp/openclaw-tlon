@@ -1,6 +1,6 @@
 /**
  * Security Tests for Tlon Plugin
- * 
+ *
  * These tests ensure that security-critical behavior cannot regress:
  * - DM allowlist enforcement
  * - Channel authorization rules
@@ -9,7 +9,12 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { isDmAllowed, isGroupInviteAllowed, isBotMentioned, extractMessageText } from "./monitor/utils.js";
+import {
+  isDmAllowed,
+  isGroupInviteAllowed,
+  isBotMentioned,
+  extractMessageText,
+} from "./monitor/utils.js";
 import { normalizeShip } from "./targets.js";
 
 describe("Security: DM Allowlist", () => {
@@ -40,7 +45,7 @@ describe("Security: DM Allowlist", () => {
       const allowlist = ["~zod"];
       expect(isDmAllowed("zod", allowlist)).toBe(true);
       expect(isDmAllowed("~zod", allowlist)).toBe(true);
-      
+
       const allowlistWithoutTilde = ["zod"];
       expect(isDmAllowed("~zod", allowlistWithoutTilde)).toBe(true);
       expect(isDmAllowed("zod", allowlistWithoutTilde)).toBe(true);
@@ -48,17 +53,17 @@ describe("Security: DM Allowlist", () => {
 
     it("handles galaxy, star, planet, and moon names", () => {
       const allowlist = [
-        "~zod",                    // galaxy
-        "~marzod",                 // star  
-        "~sampel-palnet",          // planet
+        "~zod", // galaxy
+        "~marzod", // star
+        "~sampel-palnet", // planet
         "~dozzod-dozzod-dozzod-dozzod", // moon
       ];
-      
+
       expect(isDmAllowed("~zod", allowlist)).toBe(true);
       expect(isDmAllowed("~marzod", allowlist)).toBe(true);
       expect(isDmAllowed("~sampel-palnet", allowlist)).toBe(true);
       expect(isDmAllowed("~dozzod-dozzod-dozzod-dozzod", allowlist)).toBe(true);
-      
+
       // Similar but different ships should be rejected
       expect(isDmAllowed("~nec", allowlist)).toBe(false);
       expect(isDmAllowed("~wanzod", allowlist)).toBe(false);
@@ -122,7 +127,7 @@ describe("Security: Group Invite Allowlist", () => {
       const allowlist = ["~nocsyx-lassul"];
       expect(isGroupInviteAllowed("nocsyx-lassul", allowlist)).toBe(true);
       expect(isGroupInviteAllowed("~nocsyx-lassul", allowlist)).toBe(true);
-      
+
       const allowlistWithoutTilde = ["nocsyx-lassul"];
       expect(isGroupInviteAllowed("~nocsyx-lassul", allowlistWithoutTilde)).toBe(true);
     });
@@ -260,12 +265,12 @@ describe("Security: Channel Authorization Logic", () => {
    * The actual resolveChannelAuthorization function is internal to monitor/index.ts
    * but these tests verify the building blocks and expected invariants.
    */
-  
+
   it("default mode should be restricted (not open)", () => {
     // This is a critical security invariant: if no mode is specified,
     // channels should default to RESTRICTED, not open.
     // If this test fails, someone may have changed the default unsafely.
-    
+
     // The logic in resolveChannelAuthorization is:
     // const mode = rule?.mode ?? "restricted";
     // We verify this by checking undefined rule gives restricted
@@ -277,13 +282,11 @@ describe("Security: Channel Authorization Logic", () => {
   it("empty allowedShips with restricted mode should block all", () => {
     // If a channel is restricted but has no allowed ships,
     // no one should be able to send messages
-    const mode = "restricted";
+    const _mode = "restricted";
     const allowedShips: string[] = [];
     const sender = "~random-ship";
-    
-    const isAllowed = allowedShips.some(
-      (ship) => normalizeShip(ship) === normalizeShip(sender)
-    );
+
+    const isAllowed = allowedShips.some((ship) => normalizeShip(ship) === normalizeShip(sender));
     expect(isAllowed).toBe(false);
   });
 
@@ -302,7 +305,7 @@ describe("Security: Channel Authorization Logic", () => {
     const fileRules = { "chat/~zod/test": { mode: "restricted" as const } };
     const settingsRules = { "chat/~zod/test": { mode: "open" as const } };
     const nest = "chat/~zod/test";
-    
+
     const effectiveRule = settingsRules[nest] ?? fileRules[nest];
     expect(effectiveRule?.mode).toBe("open"); // settings wins
   });
@@ -323,7 +326,7 @@ describe("Security: Authorization Edge Cases", () => {
     // These should not cause regex injection
     const maliciousShip = "~zod.*";
     expect(isDmAllowed("~zodabc", [maliciousShip])).toBe(false);
-    
+
     const allowlist = ["~zod"];
     expect(isDmAllowed("~zod.*", allowlist)).toBe(false);
   });

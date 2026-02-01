@@ -1,6 +1,5 @@
 import type { MoltbotPluginApi } from "openclaw/plugin-sdk";
 import { emptyPluginConfigSchema } from "openclaw/plugin-sdk";
-
 import { tlonPlugin } from "./src/channel.js";
 import { setTlonRuntime } from "./src/runtime.js";
 
