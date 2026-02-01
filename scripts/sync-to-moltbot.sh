@@ -31,12 +31,19 @@ fi
 
 echo "Syncing plugin to: $TARGET_DIR"
 
-# Sync files (excluding git, node_modules, scripts)
+# Sync files (excluding repo-specific stuff)
 rsync -av --delete \
     --exclude='.git' \
+    --exclude='.github' \
     --exclude='node_modules' \
     --exclude='scripts' \
     --exclude='.gitignore' \
+    --exclude='package-lock.json' \
+    --exclude='pnpm-lock.yaml' \
+    --exclude='SECURITY.md' \
+    --exclude='SECURITY-AUDIT.md' \
+    --exclude='.oxlintrc.json' \
+    --exclude='.oxfmtrc.jsonc' \
     "$PLUGIN_DIR/" "$TARGET_DIR/"
 
 # Transform package.json: use workspace:* for openclaw in monorepo
