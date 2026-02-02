@@ -96,34 +96,33 @@ export function registerContactsTools(api: PluginApi, opts: ToolOptions) {
                 };
               }
 
-              // Build the edit poke
-              const edits: Array<{ "edit-field": { field: string; value: string } }> = [];
+              // Build the edit fields array - format: [{ nickname: "value" }, { bio: "value" }]
+              const editFields: Array<Record<string, string>> = [];
               if (params.profile.nickname !== undefined) {
-                edits.push({ "edit-field": { field: "nickname", value: params.profile.nickname } });
+                editFields.push({ nickname: params.profile.nickname });
               }
               if (params.profile.bio !== undefined) {
-                edits.push({ "edit-field": { field: "bio", value: params.profile.bio } });
+                editFields.push({ bio: params.profile.bio });
               }
               if (params.profile.status !== undefined) {
-                edits.push({ "edit-field": { field: "status", value: params.profile.status } });
+                editFields.push({ status: params.profile.status });
               }
               if (params.profile.avatar !== undefined) {
-                edits.push({ "edit-field": { field: "avatar", value: params.profile.avatar } });
+                editFields.push({ avatar: params.profile.avatar });
               }
               if (params.profile.cover !== undefined) {
-                edits.push({ "edit-field": { field: "cover", value: params.profile.cover } });
+                editFields.push({ cover: params.profile.cover });
               }
 
-              for (const edit of edits) {
-                await client.poke({
-                  app: "contacts",
-                  mark: "contact-action",
-                  json: edit,
-                });
-              }
+              // Single poke with all edits
+              await client.poke({
+                app: "contacts",
+                mark: "contact-action",
+                json: { edit: editFields },
+              });
 
               return {
-                content: [{ type: "text", text: `Updated ${edits.length} profile field(s)` }],
+                content: [{ type: "text", text: `Updated ${editFields.length} profile field(s)` }],
               };
             }
 

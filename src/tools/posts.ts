@@ -14,7 +14,7 @@ type ToolOptions = { optional: boolean };
 
 const ReactParams = Type.Object({
   action: Type.Union([Type.Literal("add"), Type.Literal("remove")]),
-  channel: Type.String({ description: "Channel nest (chat/~host/name)" }),
+  channel: Type.String({ description: "Channel nest (chat/~host/name) or dm/~ship for DMs" }),
   postId: Type.String({ description: "Post ID (@ud format with dots)" }),
   emoji: Type.Optional(Type.String({ description: "Emoji for 'add' action" })),
 });
@@ -52,48 +52,95 @@ export function registerPostTools(api: PluginApi, opts: ToolOptions) {
         const formattedId = formatUd(extractNumericId(params.postId));
         const ship = client.ship;
 
+        // Check if this is a DM (dm/~ship format)
+        const isDm = params.channel.startsWith("dm/");
+
         try {
           if (params.action === "add") {
             if (!params.emoji) {
               return { content: [{ type: "text", text: "Error: emoji required for 'add'" }] };
             }
-            await client.poke({
-              app: "channels",
-              mark: "channel-action-1",
-              json: {
-                channel: {
-                  nest: params.channel,
-                  action: {
-                    post: {
+
+            if (isDm) {
+              // DM reaction - use chat app with chat-dm-action-1 mark
+              const targetShip = params.channel.replace("dm/", "");
+              await client.poke({
+                app: "chat",
+                mark: "chat-dm-action-1",
+                json: {
+                  ship: targetShip,
+                  diff: {
+                    id: formattedId,
+                    delta: {
                       "add-react": {
-                        id: formattedId,
                         react: params.emoji,
-                        ship,
+                        author: ship,
                       },
                     },
                   },
                 },
-              },
-            });
+              });
+            } else {
+              // Channel reaction - use channels app
+              await client.poke({
+                app: "channels",
+                mark: "channel-action-1",
+                json: {
+                  channel: {
+                    nest: params.channel,
+                    action: {
+                      post: {
+                        "add-react": {
+                          id: formattedId,
+                          react: params.emoji,
+                          ship,
+                        },
+                      },
+                    },
+                  },
+                },
+              });
+            }
             return { content: [{ type: "text", text: `Added ${params.emoji} reaction` }] };
           } else {
-            await client.poke({
-              app: "channels",
-              mark: "channel-action-1",
-              json: {
-                channel: {
-                  nest: params.channel,
-                  action: {
-                    post: {
+            if (isDm) {
+              // DM unreact
+              const targetShip = params.channel.replace("dm/", "");
+              await client.poke({
+                app: "chat",
+                mark: "chat-dm-action-1",
+                json: {
+                  ship: targetShip,
+                  diff: {
+                    id: formattedId,
+                    delta: {
                       "del-react": {
-                        id: formattedId,
-                        ship,
+                        author: ship,
                       },
                     },
                   },
                 },
-              },
-            });
+              });
+            } else {
+              // Channel unreact
+              await client.poke({
+                app: "channels",
+                mark: "channel-action-1",
+                json: {
+                  channel: {
+                    nest: params.channel,
+                    action: {
+                      post: {
+                        "del-react": {
+                          id: formattedId,
+                          ship,
+                        },
+                      },
+                    },
+                  },
+                },
+              });
+            }
             return { content: [{ type: "text", text: "Removed reaction" }] };
           }
         } catch (err: unknown) {
