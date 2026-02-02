@@ -49,23 +49,21 @@ export function registerActivityTools(api: PluginApi, opts: ToolOptions) {
             }
 
             case "mentions": {
-              // Get recent mentions
-              const result = await client.scry<ActivityStream>({
+              // Get activity feed with mentions
+              const result = await client.scry<ActivityFeedResponse>({
                 app: "activity",
-                path: `/v4/activity/mentions/newest/${limit}`,
+                path: `/v5/feed/init/${limit}`,
               });
-              const mentions = formatActivityStream(result);
-              return { content: [{ type: "text", text: JSON.stringify(mentions, null, 2) }] };
+              return { content: [{ type: "text", text: JSON.stringify(result?.mentions || [], null, 2) }] };
             }
 
             case "all": {
-              // Get all recent activity
-              const result = await client.scry<ActivityStream>({
+              // Get all activity feed
+              const result = await client.scry<ActivityFeedResponse>({
                 app: "activity",
-                path: `/v4/activity/all/newest/${limit}`,
+                path: `/v5/feed/init/${limit}`,
               });
-              const activity = formatActivityStream(result);
-              return { content: [{ type: "text", text: JSON.stringify(activity, null, 2) }] };
+              return { content: [{ type: "text", text: JSON.stringify(result?.all || [], null, 2) }] };
             }
 
             default:
@@ -81,25 +79,9 @@ export function registerActivityTools(api: PluginApi, opts: ToolOptions) {
   );
 }
 
-function formatActivityStream(stream: ActivityStream) {
-  const items = stream?.stream || [];
-  return items.map((item) => ({
-    type: item.type,
-    source: item.source,
-    time: item.time ? new Date(item.time).toISOString() : null,
-    content: item.content,
-  }));
-}
-
-interface ActivitySummary {
-  [source: string]: { count: number; latest?: number };
-}
-
-interface ActivityStream {
-  stream: Array<{
-    type: string;
-    source: string;
-    time: number;
-    content: unknown;
-  }>;
+interface ActivityFeedResponse {
+  all: unknown[];
+  mentions: unknown[];
+  replies: unknown[];
+  summaries: unknown;
 }
