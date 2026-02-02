@@ -61,11 +61,12 @@ export function registerChannelsTools(api: PluginApi, opts: ToolOptions) {
             }
 
             case "dms": {
-              const result = await client.scry<DmsResponse>({
+              const result = await client.scry<string[]>({
                 app: "chat",
                 path: "/dm",
               });
-              const dms = Object.keys(result || {}).map((ship) => ({ ship }));
+              // Result is an array of ship names
+              const dms = (result || []).map((ship: string) => ({ ship }));
               return { content: [{ type: "text", text: JSON.stringify(dms, null, 2) }] };
             }
 
@@ -98,9 +99,6 @@ interface ChannelsResponse {
 }
 interface GroupsResponse {
   [flag: string]: unknown;
-}
-interface DmsResponse {
-  [ship: string]: unknown;
 }
 interface ChannelInfo {
   nest: string;

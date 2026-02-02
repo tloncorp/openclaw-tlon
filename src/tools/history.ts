@@ -56,7 +56,7 @@ export function registerHistoryTools(api: PluginApi, opts: ToolOptions) {
             const ship = target.startsWith("~") ? target : `~${target}`;
             const result = await client.scry<DmHistoryResponse>({
               app: "chat",
-              path: `/dm/${ship}/writs/newest/${limit}/outline`,
+              path: `/v3/dm/${ship}/writs/newest/${limit}/light`,
             });
 
             const messages = formatDmMessages(result, ship);
@@ -86,8 +86,9 @@ export function registerHistoryTools(api: PluginApi, opts: ToolOptions) {
 }
 
 function formatChannelMessages(response: ChannelHistoryResponse, nest: string) {
-  const posts = response?.posts || [];
-  return posts.map((post) => {
+  const posts = response?.posts || {};
+  // posts is an object keyed by post ID, not an array
+  return Object.values(posts).map((post) => {
     const seal = post.seal;
     const essay = post.essay;
     return {
@@ -102,30 +103,31 @@ function formatChannelMessages(response: ChannelHistoryResponse, nest: string) {
 }
 
 function formatDmMessages(response: DmHistoryResponse, ship: string) {
-  const writs = response?.writs || [];
-  return writs.map((writ) => {
+  const writs = response?.writs || {};
+  // writs is an object keyed by time, not an array
+  return Object.values(writs).map((writ) => {
     const seal = writ.seal;
-    const memo = writ.memo;
+    const essay = writ.essay;
     return {
       id: seal?.id,
-      author: memo?.author,
-      time: memo?.sent ? new Date(memo.sent).toISOString() : null,
-      content: extractMessageText(memo?.content || []),
+      author: essay?.author,
+      time: essay?.sent ? new Date(essay.sent).toISOString() : null,
+      content: extractMessageText(essay?.content || []),
       dm: ship,
     };
   });
 }
 
 interface ChannelHistoryResponse {
-  posts: Array<{
+  posts: Record<string, {
     seal: { id: string; meta?: { replyCount?: number } };
     essay: { author: string; sent: number; content: unknown[] };
   }>;
 }
 
 interface DmHistoryResponse {
-  writs: Array<{
+  writs: Record<string, {
     seal: { id: string };
-    memo: { author: string; sent: number; content: unknown[] };
+    essay: { author: string; sent: number; content: unknown[] };
   }>;
 }
