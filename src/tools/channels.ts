@@ -40,11 +40,12 @@ export function registerChannelsTools(api: PluginApi, opts: ToolOptions) {
         try {
           switch (params.action) {
             case "list": {
-              const result = await client.scry<ChannelsResponse>({
+              // v2/channels returns channels directly as keys, not under a channels property
+              const result = await client.scry<Record<string, unknown>>({
                 app: "channels",
                 path: "/v2/channels",
               });
-              const channels = Object.keys(result?.channels || {}).map((nest) => ({
+              const channels = Object.keys(result || {}).map((nest) => ({
                 nest,
                 kind: nest.split("/")[0],
               }));
@@ -94,9 +95,6 @@ export function registerChannelsTools(api: PluginApi, opts: ToolOptions) {
   );
 }
 
-interface ChannelsResponse {
-  channels: Record<string, unknown>;
-}
 interface GroupsResponse {
   [flag: string]: unknown;
 }
