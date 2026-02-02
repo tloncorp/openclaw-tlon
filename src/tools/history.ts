@@ -67,7 +67,7 @@ export function registerHistoryTools(api: PluginApi, opts: ToolOptions) {
             // Channel history
             const result = await client.scry<ChannelHistoryResponse>({
               app: "channels",
-              path: `/v4/channels/${target}/posts/newest/${limit}/outline`,
+              path: `/v4/${target}/posts/newest/${limit}/outline`,
             });
 
             const messages = formatChannelMessages(result, target);
