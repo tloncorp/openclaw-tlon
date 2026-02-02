@@ -4,7 +4,8 @@
 
 import { Type, type Static } from "@sinclair/typebox";
 import type { PluginApi } from "openclaw";
-import { createToolClient, type TlonConfig } from "./urbit-client.js";
+import { createToolClient } from "./urbit-client.js";
+import { getTlonConfig } from "./index.js";
 
 type ToolOptions = { optional: boolean };
 
@@ -37,9 +38,9 @@ export function registerContactsTools(api: PluginApi, opts: ToolOptions) {
         "Get or update Tlon contacts and profiles. Use 'self' for own profile, 'get' for another ship, 'list' for all contacts, 'update' to change own profile.",
       parameters: ContactsParams,
 
-      async execute(_id, params: ContactsParamsType, ctx) {
-        const config = ctx.config.channels?.tlon as TlonConfig | undefined;
-        if (!config?.url || !config?.ship || !config?.code) {
+      async execute(_id, params: ContactsParamsType) {
+        const config = getTlonConfig();
+        if (!config) {
           return {
             content: [{ type: "text", text: "Error: Tlon not configured (need url, ship, code)" }],
           };

@@ -5,7 +5,8 @@
 import { Type, type Static } from "@sinclair/typebox";
 import type { PluginApi } from "openclaw";
 import { markdownToStory } from "../urbit/story.js";
-import { createToolClient, type TlonConfig } from "./urbit-client.js";
+import { createToolClient } from "./urbit-client.js";
+import { getTlonConfig } from "./index.js";
 
 type ToolOptions = { optional: boolean };
 
@@ -40,9 +41,9 @@ export function registerPostTools(api: PluginApi, opts: ToolOptions) {
       description: "Add or remove emoji reactions on Tlon posts",
       parameters: ReactParams,
 
-      async execute(_id, params: ReactParamsType, ctx) {
-        const config = ctx.config.channels?.tlon as TlonConfig | undefined;
-        if (!config?.url || !config?.ship || !config?.code) {
+      async execute(_id, params: ReactParamsType) {
+        const config = getTlonConfig();
+        if (!config) {
           return { content: [{ type: "text", text: "Error: Tlon not configured" }] };
         }
 
@@ -111,9 +112,9 @@ export function registerPostTools(api: PluginApi, opts: ToolOptions) {
       description: "Edit or delete Tlon posts",
       parameters: PostParams,
 
-      async execute(_id, params: PostParamsType, ctx) {
-        const config = ctx.config.channels?.tlon as TlonConfig | undefined;
-        if (!config?.url || !config?.ship || !config?.code) {
+      async execute(_id, params: PostParamsType) {
+        const config = getTlonConfig();
+        if (!config) {
           return { content: [{ type: "text", text: "Error: Tlon not configured" }] };
         }
 

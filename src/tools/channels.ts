@@ -4,7 +4,8 @@
 
 import { Type, type Static } from "@sinclair/typebox";
 import type { PluginApi } from "openclaw";
-import { createToolClient, type TlonConfig } from "./urbit-client.js";
+import { createToolClient } from "./urbit-client.js";
+import { getTlonConfig } from "./index.js";
 
 type ToolOptions = { optional: boolean };
 
@@ -28,9 +29,9 @@ export function registerChannelsTools(api: PluginApi, opts: ToolOptions) {
         "List Tlon channels, groups, or DMs. Use 'list' for all channels, 'groups' for groups only, 'dms' for DM conversations, 'info' for channel details.",
       parameters: ChannelsParams,
 
-      async execute(_id, params: ChannelsParamsType, ctx) {
-        const config = ctx.config.channels?.tlon as TlonConfig | undefined;
-        if (!config?.url || !config?.ship || !config?.code) {
+      async execute(_id, params: ChannelsParamsType) {
+        const config = getTlonConfig();
+        if (!config) {
           return { content: [{ type: "text", text: "Error: Tlon not configured" }] };
         }
 

@@ -5,7 +5,8 @@
 import { Type, type Static } from "@sinclair/typebox";
 import type { PluginApi } from "openclaw";
 import { extractMessageText } from "../monitor/utils.js";
-import { createToolClient, type TlonConfig } from "./urbit-client.js";
+import { createToolClient } from "./urbit-client.js";
+import { getTlonConfig } from "./index.js";
 
 type ToolOptions = { optional: boolean };
 
@@ -33,9 +34,9 @@ export function registerHistoryTools(api: PluginApi, opts: ToolOptions) {
         "Fetch message history from a Tlon channel or DM. Provide channel nest (chat/~host/name) or ship (~ship) for DM.",
       parameters: HistoryParams,
 
-      async execute(_id, params: HistoryParamsType, ctx) {
-        const config = ctx.config.channels?.tlon as TlonConfig | undefined;
-        if (!config?.url || !config?.ship || !config?.code) {
+      async execute(_id, params: HistoryParamsType) {
+        const config = getTlonConfig();
+        if (!config) {
           return {
             content: [{ type: "text", text: "Error: Tlon not configured (need url, ship, code)" }],
           };

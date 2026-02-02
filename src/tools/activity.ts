@@ -4,7 +4,8 @@
 
 import { Type, type Static } from "@sinclair/typebox";
 import type { PluginApi } from "openclaw";
-import { createToolClient, type TlonConfig } from "./urbit-client.js";
+import { createToolClient } from "./urbit-client.js";
+import { getTlonConfig } from "./index.js";
 
 type ToolOptions = { optional: boolean };
 
@@ -27,9 +28,9 @@ export function registerActivityTools(api: PluginApi, opts: ToolOptions) {
         "Check Tlon activity: 'unread' for unread counts, 'mentions' for recent mentions, 'all' for all activity.",
       parameters: ActivityParams,
 
-      async execute(_id, params: ActivityParamsType, ctx) {
-        const config = ctx.config.channels?.tlon as TlonConfig | undefined;
-        if (!config?.url || !config?.ship || !config?.code) {
+      async execute(_id, params: ActivityParamsType) {
+        const config = getTlonConfig();
+        if (!config) {
           return { content: [{ type: "text", text: "Error: Tlon not configured" }] };
         }
 

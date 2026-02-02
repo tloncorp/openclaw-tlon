@@ -6,7 +6,8 @@ import { Type, type Static } from "@sinclair/typebox";
 import type { PluginApi } from "openclaw";
 import { markdownToStory } from "../urbit/story.js";
 import { scot, da } from "@urbit/aura";
-import { createToolClient, type TlonConfig } from "./urbit-client.js";
+import { createToolClient } from "./urbit-client.js";
+import { getTlonConfig } from "./index.js";
 
 type ToolOptions = { optional: boolean };
 
@@ -27,9 +28,9 @@ export function registerNotebookTools(api: PluginApi, opts: ToolOptions) {
         "Create a post in a Tlon notebook/diary channel. Requires channel (diary/~host/name), title, and content.",
       parameters: NotebookParams,
 
-      async execute(_id, params: NotebookParamsType, ctx) {
-        const config = ctx.config.channels?.tlon as TlonConfig | undefined;
-        if (!config?.url || !config?.ship || !config?.code) {
+      async execute(_id, params: NotebookParamsType) {
+        const config = getTlonConfig();
+        if (!config) {
           return { content: [{ type: "text", text: "Error: Tlon not configured" }] };
         }
 
