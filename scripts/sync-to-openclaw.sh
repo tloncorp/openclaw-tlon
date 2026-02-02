@@ -1,30 +1,30 @@
 #!/bin/bash
-# Sync this plugin to a moltbot fork for creating PRs
+# Sync this plugin to an OpenClaw fork for creating PRs
 #
-# Usage: ./scripts/sync-to-moltbot.sh [moltbot-path] [branch-name]
+# Usage: ./scripts/sync-to-openclaw.sh [openclaw-path] [branch-name]
 #
 # Example:
-#   ./scripts/sync-to-moltbot.sh ~/Projects/moltbot-fork tlon-feature-xyz
+#   ./scripts/sync-to-openclaw.sh ~/Projects/openclaw-fork tlon-feature-xyz
 
 set -e
 
-MOLTBOT_PATH="${1:-$HOME/Projects/clawdbot}"
+OPENCLAW_PATH="${1:-$HOME/Projects/openclaw}"
 BRANCH_NAME="${2:-}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PLUGIN_DIR="$(dirname "$SCRIPT_DIR")"
 
-if [ ! -d "$MOLTBOT_PATH" ]; then
-    echo "Error: Moltbot path not found: $MOLTBOT_PATH"
-    echo "Usage: $0 [moltbot-path] [branch-name]"
+if [ ! -d "$OPENCLAW_PATH" ]; then
+    echo "Error: OpenClaw path not found: $OPENCLAW_PATH"
+    echo "Usage: $0 [openclaw-path] [branch-name]"
     exit 1
 fi
 
-TARGET_DIR="$MOLTBOT_PATH/extensions/tlon"
+TARGET_DIR="$OPENCLAW_PATH/extensions/tlon"
 
 # Create branch if specified
 if [ -n "$BRANCH_NAME" ]; then
     echo "Creating branch: $BRANCH_NAME"
-    cd "$MOLTBOT_PATH"
+    cd "$OPENCLAW_PATH"
     git checkout -b "$BRANCH_NAME" 2>/dev/null || git checkout "$BRANCH_NAME"
     cd -
 fi
@@ -61,7 +61,7 @@ echo ""
 echo "✅ Sync complete!"
 echo ""
 echo "Next steps:"
-echo "  cd $MOLTBOT_PATH"
+echo "  cd $OPENCLAW_PATH"
 echo "  git add extensions/tlon"
 echo "  git commit -m 'tlon: your changes here'"
 echo "  git push origin $BRANCH_NAME"
