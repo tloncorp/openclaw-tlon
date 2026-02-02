@@ -1,5 +1,4 @@
 import type { RuntimeEnv } from "openclaw/plugin-sdk";
-
 import { extractMessageText } from "./utils.js";
 
 /**
@@ -7,13 +6,18 @@ import { extractMessageText } from "./utils.js";
  * e.g., 170141184507799509469114119040828178432 -> 170.141.184.507.799.509.469.114.119.040.828.178.432
  */
 function formatUd(id: string | number): string {
-  const str = String(id).replace(/\./g, ''); // Remove any existing dots
-  const reversed = str.split('').reverse();
+  const str = String(id).replace(/\./g, ""); // Remove any existing dots
+  const reversed = str.split("").toReversed();
   const chunks: string[] = [];
   for (let i = 0; i < reversed.length; i += 3) {
-    chunks.push(reversed.slice(i, i + 3).reverse().join(''));
+    chunks.push(
+      reversed
+        .slice(i, i + 3)
+        .toReversed()
+        .join(""),
+    );
   }
-  return chunks.reverse().join('.');
+  return chunks.toReversed().join(".");
 }
 
 export type TlonHistoryEntry = {
@@ -31,7 +35,9 @@ export function cacheMessage(channelNest: string, message: TlonHistoryEntry) {
     messageCache.set(channelNest, []);
   }
   const cache = messageCache.get(channelNest);
-  if (!cache) return;
+  if (!cache) {
+    return;
+  }
   cache.unshift(message);
   if (cache.length > MAX_CACHED_MESSAGES) {
     cache.pop();
@@ -49,7 +55,9 @@ export async function fetchChannelHistory(
     runtime?.log?.(`[tlon] Fetching history: ${scryPath}`);
 
     const data: any = await api.scry(scryPath);
-    if (!data) return [];
+    if (!data) {
+      return [];
+    }
 
     let posts: any[] = [];
     if (Array.isArray(data)) {
@@ -94,9 +102,7 @@ export async function getChannelHistory(
     return cache.slice(0, count);
   }
 
-  runtime?.log?.(
-    `[tlon] Cache has ${cache.length} messages, need ${count}, fetching from scry...`,
-  );
+  runtime?.log?.(`[tlon] Cache has ${cache.length} messages, need ${count}, fetching from scry...`);
   return await fetchChannelHistory(api, channelNest, count, runtime);
 }
 
@@ -116,7 +122,9 @@ export async function fetchThreadHistory(
     // Format: /channels/v4/{nest}/posts/post/{parentId}/replies/newest/{count}.json
     // parentId needs @ud formatting (dots every 3 digits)
     const formattedParentId = formatUd(parentId);
-    runtime?.log?.(`[tlon] Thread history - parentId: ${parentId} -> formatted: ${formattedParentId}`);
+    runtime?.log?.(
+      `[tlon] Thread history - parentId: ${parentId} -> formatted: ${formattedParentId}`,
+    );
 
     const scryPath = `/channels/v4/${channelNest}/posts/post/id/${formattedParentId}/replies/newest/${count}.json`;
     runtime?.log?.(`[tlon] Fetching thread history: ${scryPath}`);
@@ -163,12 +171,14 @@ export async function fetchThreadHistory(
 
       if (data?.seal?.meta?.replyCount > 0 && data?.replies) {
         const replies = Array.isArray(data.replies) ? data.replies : Object.values(data.replies);
-        const messages = replies.map((reply: any) => ({
-          author: reply.memo?.author || "unknown",
-          content: extractMessageText(reply.memo?.content || []),
-          timestamp: reply.memo?.sent || Date.now(),
-          id: reply.seal?.id,
-        })).filter((msg: TlonHistoryEntry) => msg.content);
+        const messages = replies
+          .map((reply: any) => ({
+            author: reply.memo?.author || "unknown",
+            content: extractMessageText(reply.memo?.content || []),
+            timestamp: reply.memo?.sent || Date.now(),
+            id: reply.seal?.id,
+          }))
+          .filter((msg: TlonHistoryEntry) => msg.content);
 
         runtime?.log?.(`[tlon] Extracted ${messages.length} replies from post data`);
         return messages;

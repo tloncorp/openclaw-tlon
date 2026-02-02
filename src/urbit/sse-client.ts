@@ -42,7 +42,7 @@ export class UrbitSSEClient {
   maxReconnectDelay: number;
   isConnected = false;
   logger: UrbitSseLogger;
-  
+
   // Event ack tracking - must ack every ~50 events to keep channel healthy
   private lastHeardEventId = -1;
   private lastAcknowledgedEventId = -1;
@@ -185,20 +185,26 @@ export class UrbitSSEClient {
       if (!this.aborted) {
         this.logger.error?.(`Stream error: ${String(error)}`);
         for (const { err } of this.eventHandlers.values()) {
-          if (err) err(error);
+          if (err) {
+            err(error);
+          }
         }
       }
     });
   }
 
   async processStream(body: ReadableStream<Uint8Array> | Readable | null) {
-    if (!body) return;
+    if (!body) {
+      return;
+    }
     const stream = body instanceof ReadableStream ? Readable.fromWeb(body) : body;
     let buffer = "";
 
     try {
       for await (const chunk of stream) {
-        if (this.aborted) break;
+        if (this.aborted) {
+          break;
+        }
         buffer += chunk.toString();
         let eventEnd;
         while ((eventEnd = buffer.indexOf("\n\n")) !== -1) {
@@ -230,7 +236,9 @@ export class UrbitSSEClient {
       }
     }
 
-    if (!data) return;
+    if (!data) {
+      return;
+    }
 
     // Track event ID and send ack if needed
     if (eventId !== null && !isNaN(eventId)) {
@@ -250,7 +258,9 @@ export class UrbitSSEClient {
       if (parsed.response === "quit") {
         if (parsed.id) {
           const handlers = this.eventHandlers.get(parsed.id);
-          if (handlers?.quit) handlers.quit();
+          if (handlers?.quit) {
+            handlers.quit();
+          }
         }
         return;
       }
@@ -262,22 +272,24 @@ export class UrbitSSEClient {
         }
       } else if (parsed.json) {
         for (const { event } of this.eventHandlers.values()) {
-          if (event) event(parsed.json);
+          if (event) {
+            event(parsed.json);
+          }
         }
       }
     } catch (error) {
       this.logger.error?.(`Error parsing SSE event: ${String(error)}`);
     }
   }
-  
+
   private async ack(eventId: number): Promise<void> {
     this.lastAcknowledgedEventId = eventId;
-    
+
     const ackData = {
       action: "ack",
       "event-id": eventId,
     };
-    
+
     const response = await fetch(this.channelUrl, {
       method: "PUT",
       headers: {
@@ -286,11 +298,11 @@ export class UrbitSSEClient {
       },
       body: JSON.stringify([ackData]),
     });
-    
+
     if (!response.ok && response.status !== 204) {
       throw new Error(`Ack failed: ${response.status}`);
     }
-    
+
     this.logger.log?.(`[SSE] Acked event ${eventId}`);
   }
 

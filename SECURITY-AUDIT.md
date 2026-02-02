@@ -11,11 +11,11 @@
 Overall security posture: **MODERATE** - No critical vulnerabilities found, but several areas could be hardened.
 
 | Severity | Count | Status |
-|----------|-------|--------|
-| Critical | 0 | ✅ |
-| High | 1 | ⚠️ |
-| Medium | 3 | ⚠️ |
-| Low | 4 | 📝 |
+| -------- | ----- | ------ |
+| Critical | 0     | ✅     |
+| High     | 1     | ⚠️     |
+| Medium   | 3     | ⚠️     |
+| Low      | 4     | 📝     |
 
 ---
 
@@ -28,17 +28,19 @@ Overall security posture: **MODERATE** - No critical vulnerabilities found, but 
 
 ```typescript
 // Current code accepts all valid invites
-const validInvite = foreign.invites.find(inv => inv.valid);
+const validInvite = foreign.invites.find((inv) => inv.valid);
 if (!validInvite) continue;
 // Auto-joins without checking who sent it
 ```
 
 **Risk:** Malicious actors could invite the bot to groups containing:
+
 - Prompt injection content in channel names/descriptions
 - Spam/phishing content
 - Content that could manipulate agent behavior
 
 **Recommendation:** Add an `autoAcceptGroupInvitesFrom` allowlist similar to `dmAllowlist`:
+
 ```typescript
 // Only auto-accept from trusted ships
 if (!isInviteAllowed(validInvite.from, allowlist)) continue;
@@ -54,6 +56,7 @@ if (!isInviteAllowed(validInvite.from, allowlist)) continue;
 **Risk:** If the agent is manipulated (prompt injection), it could flood channels with messages.
 
 **Recommendation:** Add rate limiting per channel/DM:
+
 ```typescript
 const rateLimiter = new Map<string, number>(); // channel -> lastSentTime
 const MIN_MESSAGE_INTERVAL = 1000; // 1 second minimum
@@ -65,6 +68,7 @@ const MIN_MESSAGE_INTERVAL = 1000; // 1 second minimum
 
 **File:** `src/urbit/auth.ts` (line 6)  
 **Issue:** Ship code is sent without URL encoding:
+
 ```typescript
 body: `password=${code}`,
 ```
@@ -72,6 +76,7 @@ body: `password=${code}`,
 **Risk:** If a code contains special characters (`&`, `=`, `+`), authentication could fail or behave unexpectedly.
 
 **Recommendation:**
+
 ```typescript
 body: `password=${encodeURIComponent(code)}`,
 ```
@@ -82,6 +87,7 @@ body: `password=${encodeURIComponent(code)}`,
 
 **File:** `src/urbit/sse-client.ts` (line 49)  
 **Issue:** Cookie is split and only first part used:
+
 ```typescript
 this.cookie = cookie.split(";")[0];
 ```
@@ -100,9 +106,10 @@ this.cookie = cookie.split(";")[0];
 **Risk:** Malformed channel names could cause unexpected behavior.
 
 **Recommendation:** Validate channel nest format strictly:
+
 ```typescript
 const VALID_NEST = /^(chat|diary|heap)\/~[a-z]+-[a-z]+\/[a-z0-9-]+$/;
-if (!VALID_NEST.test(nest)) throw new Error('Invalid channel nest');
+if (!VALID_NEST.test(nest)) throw new Error("Invalid channel nest");
 ```
 
 ---
@@ -112,7 +119,8 @@ if (!VALID_NEST.test(nest)) throw new Error('Invalid channel nest');
 **File:** `src/monitor/index.ts` (line ~270)  
 **Issue:** Summarization fetches 50 messages and includes full history in prompt.
 
-**Risk:** 
+**Risk:**
+
 - Could exceed token limits
 - Could expose sensitive historical content
 
@@ -149,7 +157,7 @@ if (!VALID_NEST.test(nest)) throw new Error('Invalid channel nest');
 ✅ **Type safety** - Full TypeScript with Zod validation on config  
 ✅ **No hardcoded secrets** - All credentials from config/env  
 ✅ **Proper async handling** - No obvious race conditions  
-✅ **SSE ack tracking** - Prevents channel backup/DOS  
+✅ **SSE ack tracking** - Prevents channel backup/DOS
 
 ---
 

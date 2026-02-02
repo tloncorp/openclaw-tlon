@@ -10,25 +10,25 @@ export interface GroupPreviewV7 {
     image: string;
     cover: string;
   };
-  'channel-count': number;
-  'member-count': number;
+  "channel-count": number;
+  "member-count": number;
   admissions: {
-    privacy: 'public' | 'private' | 'secret';
+    privacy: "public" | "private" | "secret";
   };
 }
 
 export interface ForeignInvite {
-  flag: string;      // group flag e.g. "~host/group-name"
-  time: number;      // timestamp
-  from: string;      // ship that sent invite
+  flag: string; // group flag e.g. "~host/group-name"
+  time: number; // timestamp
+  from: string; // ship that sent invite
   token: string | null;
   note: string | null;
   preview: GroupPreviewV7;
-  valid: boolean;    // tracks if invite has been revoked
+  valid: boolean; // tracks if invite has been revoked
 }
 
-export type Lookup = 'preview' | 'done' | 'error';
-export type Progress = 'ask' | 'join' | 'watch' | 'done' | 'error';
+export type Lookup = "preview" | "done" | "error";
+export type Progress = "ask" | "join" | "watch" | "done" | "error";
 
 export interface Foreign {
   invites: ForeignInvite[];

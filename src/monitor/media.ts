@@ -1,10 +1,10 @@
+import { randomUUID } from "node:crypto";
 import { createWriteStream } from "node:fs";
 import { mkdir } from "node:fs/promises";
-import { pipeline } from "node:stream/promises";
-import { Readable } from "node:stream";
-import { randomUUID } from "node:crypto";
-import * as path from "node:path";
 import { homedir } from "node:os";
+import * as path from "node:path";
+import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
 
 // Default to OpenClaw workspace media directory
 const DEFAULT_MEDIA_DIR = path.join(homedir(), ".openclaw", "workspace", "media", "inbound");
@@ -25,7 +25,9 @@ export interface DownloadedMedia {
  * Returns array of image URLs found in the message.
  */
 export function extractImageBlocks(content: unknown): ExtractedImage[] {
-  if (!content || !Array.isArray(content)) return [];
+  if (!content || !Array.isArray(content)) {
+    return [];
+  }
 
   const images: ExtractedImage[] = [];
 
@@ -47,7 +49,7 @@ export function extractImageBlocks(content: unknown): ExtractedImage[] {
  */
 export async function downloadMedia(
   url: string,
-  mediaDir: string = DEFAULT_MEDIA_DIR
+  mediaDir: string = DEFAULT_MEDIA_DIR,
 ): Promise<DownloadedMedia | null> {
   try {
     // Ensure media directory exists
@@ -121,10 +123,12 @@ function getExtensionFromUrl(url: string): string | null {
  */
 export async function downloadMessageImages(
   content: unknown,
-  mediaDir?: string
+  mediaDir?: string,
 ): Promise<Array<{ path: string; contentType: string }>> {
   const images = extractImageBlocks(content);
-  if (images.length === 0) return [];
+  if (images.length === 0) {
+    return [];
+  }
 
   const attachments: Array<{ path: string; contentType: string }> = [];
 
