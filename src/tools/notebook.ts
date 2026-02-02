@@ -49,6 +49,7 @@ export function registerNotebookTools(api: PluginApi, opts: ToolOptions) {
           const idUd = scot("ud", da.fromUnix(sent));
           const id = `${client.ship}/${idUd}`;
 
+          // Essay goes directly in add, not wrapped
           await client.poke({
             app: "channels",
             mark: "channel-action-1",
@@ -58,19 +59,16 @@ export function registerNotebookTools(api: PluginApi, opts: ToolOptions) {
                 action: {
                   post: {
                     add: {
-                      id,
-                      essay: {
-                        content: story,
-                        author: client.ship,
-                        sent,
-                        kind: "/diary",
-                        blob: null,
-                        meta: {
-                          title: params.title,
-                          description: "",
-                          image: params.image || "",
-                          cover: params.image || "",
-                        },
+                      content: story,
+                      author: client.ship,
+                      sent,
+                      kind: "/diary",
+                      blob: null,
+                      meta: {
+                        title: params.title,
+                        description: "",
+                        image: params.image || "",
+                        cover: "",
                       },
                     },
                   },
