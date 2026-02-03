@@ -10,13 +10,17 @@
     "lint:fix": "pnpm format:fix && oxlint --type-aware --fix",
     "test": "vitest run",
     "test:security": "vitest run src/security.test.ts",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "build:cli": "esbuild src/cli/index.ts --bundle --platform=node --format=esm --outfile=skills/tlon/scripts/tlon.mjs --external:@tloncorp/api",
+    "build:cli:standalone": "esbuild src/cli/index.ts --bundle --platform=node --format=esm --outfile=skills/tlon/scripts/tlon.mjs"
   },
   "dependencies": {
+    "@tloncorp/api": "^0.0.1",
     "@urbit/aura": "^3.0.0",
     "@urbit/http-api": "^3.0.0"
   },
   "devDependencies": {
+    "esbuild": "^0.27.2",
     "openclaw": "^2026.1.30",
     "oxfmt": "0.27.0",
     "oxlint": "^1.42.0",

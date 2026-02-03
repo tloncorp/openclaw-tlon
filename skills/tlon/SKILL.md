@@ -1,12 +1,12 @@
 ---
 name: tlon
-description: Interact with Tlon/Urbit using CLI scripts. Use for contacts, channels, message history, reactions, posts, notebooks, activity, group management (invite/kick/ban/roles), and bot settings.
+description: Interact with Tlon/Urbit using the @tloncorp/api. Use for contacts, channels, message history, posts, groups (create/invite/kick/ban/roles), DMs, activity, and settings.
 metadata:
   {
     "openclaw":
       {
         "emoji": "⛵",
-        "requires": { "bins": ["python3"], "env": ["TLON_URL", "TLON_SHIP", "TLON_CODE"] },
+        "requires": { "bins": ["node"], "env": ["TLON_URL", "TLON_SHIP", "TLON_CODE"] },
         "primaryEnv": "TLON_CODE",
       },
   }
@@ -14,9 +14,9 @@ metadata:
 
 # Tlon Skill
 
-CLI scripts for interacting with Tlon/Urbit beyond basic messaging.
+CLI for interacting with Tlon/Urbit beyond basic messaging. Built on [@tloncorp/api](https://github.com/tloncorp/api-beta).
 
-**Note:** Basic send/receive is handled by the Tlon channel plugin automatically. Use this skill for additional operations like viewing history, managing contacts, adding reactions, and posting to notebooks.
+**Note:** Basic send/receive is handled by the Tlon channel plugin automatically. Use this skill for additional operations like viewing history, managing groups, adding reactions, and posting to notebooks.
 
 ## Configuration
 
@@ -68,7 +68,7 @@ Or configure in `~/.openclaw/openclaw.json`:
 # List all channels
 {baseDir}/scripts/tlon channels list
 
-# List groups only
+# List groups
 {baseDir}/scripts/tlon channels groups
 
 # List DM conversations
@@ -76,6 +76,9 @@ Or configure in `~/.openclaw/openclaw.json`:
 
 # Get channel details
 {baseDir}/scripts/tlon channels info --channel chat/~host/channel-name
+
+# Search messages in a channel
+{baseDir}/scripts/tlon channels search --channel chat/~host/channel --query "search term"
 ```
 
 ### Message History
@@ -88,73 +91,6 @@ Or configure in `~/.openclaw/openclaw.json`:
 {baseDir}/scripts/tlon history --target ~sampel-palnet --limit 10
 ```
 
-### Reactions
-
-```bash
-# Add reaction
-{baseDir}/scripts/tlon react add --channel chat/~host/name --post-id "170.141..." --emoji "👍"
-
-# Remove reaction
-{baseDir}/scripts/tlon react remove --channel chat/~host/name --post-id "170.141..."
-
-# React to DM message
-{baseDir}/scripts/tlon react add --channel dm/~sampel --post-id "170.141..." --emoji "❤️"
-```
-
-### Post Management
-
-```bash
-# Edit a post
-{baseDir}/scripts/tlon post edit --channel chat/~host/name --post-id "170.141..." --content "Updated text"
-
-# Delete a post
-{baseDir}/scripts/tlon post delete --channel chat/~host/name --post-id "170.141..."
-
-# Edit diary post with title
-{baseDir}/scripts/tlon post edit --channel diary/~host/name --post-id "170.141..." --title "New Title" --content "Updated content"
-```
-
-### DM Management
-
-```bash
-# Accept DM invite
-{baseDir}/scripts/tlon dm accept --ship ~sampel-palnet
-
-# Decline DM invite
-{baseDir}/scripts/tlon dm decline --ship ~sampel-palnet
-
-# Send to club (group DM)
-{baseDir}/scripts/tlon dm send --club-id "0v..." --message "Hello everyone"
-
-# Reply in club
-{baseDir}/scripts/tlon dm reply --club-id "0v..." --post-id "~zod/170.141..." --message "My reply"
-```
-
-**Note:** For 1:1 DMs, use the regular messaging channel, not this skill.
-
-### Notebook Posts
-
-```bash
-# Create a notebook/diary post
-{baseDir}/scripts/tlon notebook add --channel diary/~host/journal --title "My Post Title" --content "Markdown content here..."
-
-# With cover image
-{baseDir}/scripts/tlon notebook add --channel diary/~host/journal --title "My Post" --content "Content..." --image "https://example.com/cover.jpg"
-```
-
-### Activity
-
-```bash
-# Get unread counts
-{baseDir}/scripts/tlon activity unread
-
-# Get recent mentions
-{baseDir}/scripts/tlon activity mentions --limit 20
-
-# Get all activity
-{baseDir}/scripts/tlon activity all --limit 50
-```
-
 ### Groups
 
 Full group management capabilities.
@@ -165,6 +101,9 @@ Full group management capabilities.
 
 # Get group details
 {baseDir}/scripts/tlon groups info --group ~host/slug
+
+# Create a new group
+{baseDir}/scripts/tlon groups create --title "My Group" --description "A cool group"
 
 # Join/leave groups
 {baseDir}/scripts/tlon groups join --group ~host/slug
@@ -195,11 +134,55 @@ Full group management capabilities.
 {baseDir}/scripts/tlon groups remove-role --group ~host/slug --role admin --ships ~ship1
 ```
 
-Group ID format: `~host-ship/group-slug` (e.g., `~nocsyx-lassul/bongtable`)
+### Posts
+
+```bash
+# Send a message to a channel
+{baseDir}/scripts/tlon posts send --channel chat/~host/channel --content "Hello world!"
+
+# Reply to a post
+{baseDir}/scripts/tlon posts reply --channel chat/~host/channel --post-id "170.141..." --content "My reply"
+
+# Edit a post
+{baseDir}/scripts/tlon posts edit --channel chat/~host/channel --post-id "170.141..." --content "Updated text"
+
+# Delete a post
+{baseDir}/scripts/tlon posts delete --channel chat/~host/channel --post-id "170.141..."
+
+# Add reaction
+{baseDir}/scripts/tlon posts react --channel chat/~host/channel --post-id "170.141..." --emoji "👍"
+
+# Remove reaction
+{baseDir}/scripts/tlon posts react --channel chat/~host/channel --post-id "170.141..." --remove
+```
+
+### DM Management
+
+```bash
+# Accept DM invite
+{baseDir}/scripts/tlon dm accept --ship ~sampel-palnet
+
+# Decline DM invite
+{baseDir}/scripts/tlon dm decline --ship ~sampel-palnet
+
+# Create group DM
+{baseDir}/scripts/tlon dm create --ships ~ship1 ~ship2 ~ship3
+```
+
+### Activity
+
+```bash
+# Get unread counts
+{baseDir}/scripts/tlon activity unread
+
+# Get recent mentions
+{baseDir}/scripts/tlon activity mentions --limit 20
+
+# Get all activity
+{baseDir}/scripts/tlon activity all --limit 50
+```
 
 ### Settings
-
-Manage bot settings stored in Urbit settings-store.
 
 ```bash
 # Get all settings
@@ -207,21 +190,6 @@ Manage bot settings stored in Urbit settings-store.
 
 # Set a value
 {baseDir}/scripts/tlon settings set --key showModelSig --value true
-
-# Delete a setting
-{baseDir}/scripts/tlon settings delete --key someKey
-
-# DM allowlist management
-{baseDir}/scripts/tlon settings allow-dm --ship ~sampel-palnet
-{baseDir}/scripts/tlon settings remove-dm --ship ~sampel-palnet
-
-# Channel watch list
-{baseDir}/scripts/tlon settings allow-channel --channel chat/~host/channel
-{baseDir}/scripts/tlon settings remove-channel --channel chat/~host/channel
-
-# Channel access rules
-{baseDir}/scripts/tlon settings open-channel --channel chat/~host/channel
-{baseDir}/scripts/tlon settings restrict-channel --channel chat/~host/channel --ships ~ship1 ~ship2
 ```
 
 ## Output Format
@@ -238,34 +206,12 @@ On error:
 {"success": false, "error": "Error message"}
 ```
 
-## Common Patterns
-
-### React to the last message in a channel
-
-1. Fetch recent history
-2. Extract the post ID from the first result
-3. Use react command with that ID
-
-```bash
-# Get recent messages
-{baseDir}/scripts/tlon history --target chat/~host/channel --limit 1
-
-# Then react to the returned post ID
-{baseDir}/scripts/tlon react add --channel chat/~host/channel --post-id "<id-from-above>" --emoji "👍"
-```
-
-### Check for mentions
-
-```bash
-{baseDir}/scripts/tlon activity mentions --limit 10
-```
-
 ## ID Formats
 
 - **Ship:** `~sampel-palnet` (with tilde)
-- **Channel nest:** `chat/~host/channel-name`, `diary/~host/name`, `heap/~host/name`
-- **Post ID:** `~author/170.141.184.507...` or just `170.141.184.507...` (@ud format with dots)
-- **Club ID:** `0v...` (for group DMs)
+- **Group ID:** `~host-ship/group-slug` (e.g., `~nocsyx-lassul/bongtable`)
+- **Channel ID:** `chat/~host/channel-name`, `diary/~host/name`, `heap/~host/name`
+- **Post ID:** `170.141.184.507...` (@ud format with dots)
 
 ## Troubleshooting
 
@@ -273,4 +219,4 @@ On error:
 
 **"Login failed"** - Check your access code. Get a new one from your ship's web interface.
 
-**"Scry failed: 404"** - The requested resource doesn't exist (e.g., wrong channel path).
+**"Could not resolve"** - The requested resource doesn't exist (e.g., wrong channel path).
