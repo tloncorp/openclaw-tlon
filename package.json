@@ -15,7 +15,6 @@
     "build:cli:standalone": "esbuild src/cli/index.ts --bundle --platform=node --format=esm --outfile=skills/tlon/scripts/tlon.mjs"
   },
   "dependencies": {
-    "@tloncorp/api": "^0.0.1",
     "@urbit/aura": "^3.0.0",
     "@urbit/http-api": "^3.0.0"
   },
@@ -25,6 +24,7 @@
     "oxfmt": "0.27.0",
     "oxlint": "^1.42.0",
     "oxlint-tsgolint": "^0.11.4",
+    "typescript": "^5.9.3",
     "vitest": "^4.0.0",
     "zod": "^4.3.6"
   },
