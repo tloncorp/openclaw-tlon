@@ -1,0 +1,827 @@
+#!/usr/bin/env python3
+"""
+Tlon CLI - Interact with Tlon/Urbit via HTTP API.
+
+Usage:
+    tlon contacts self|get|list|update [options]
+    tlon channels list|groups|dms|info [options]
+    tlon history --target <nest|ship> [--limit N]
+    tlon react add|remove --channel <nest> --post-id <id> [--emoji <emoji>]
+    tlon post edit|delete --channel <nest> --post-id <id> [--content <text>]
+    tlon dm accept|decline|send|reply [options]
+    tlon notebook add --channel <nest> --title <title> --content <markdown>
+    tlon activity unread|mentions|all [--limit N]
+
+Configuration via environment variables:
+    TLON_URL   - Ship URL (e.g., https://your-ship.tlon.network)
+    TLON_SHIP  - Ship name (e.g., ~zod)
+    TLON_CODE  - Access code
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import sys
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+from http.cookiejar import CookieJar
+from typing import Any, Dict, List, Optional, Tuple, Union
+
+# =============================================================================
+# Urbit Time Conversion (@da format)
+# =============================================================================
+
+DA_UNIX_EPOCH = 170141184475152167957503069145530368000  # ~1970.1.1
+DA_SECOND = 18446744073709551616  # 2^64 = ~s1
+
+
+def from_unix_ms(unix_ms: int) -> int:
+    """Convert Unix milliseconds to Urbit @da."""
+    return DA_UNIX_EPOCH + (unix_ms * DA_SECOND // 1000)
+
+
+def format_ud(n: int) -> str:
+    """Format integer as @ud with dots every 3 digits."""
+    s = str(n)
+    parts: List[str] = []
+    while s:
+        parts.insert(0, s[-3:] if len(s) >= 3 else s)
+        s = s[:-3] if len(s) >= 3 else ""
+    return ".".join(parts)
+
+
+def make_post_id(ship: str, unix_ms: int) -> str:
+    """Generate a post ID from ship and timestamp."""
+    da_value = from_unix_ms(unix_ms)
+    return f"{ship}/{format_ud(da_value)}"
+
+
+def normalize_post_id(post_id: str) -> str:
+    """Extract just the @ud part from a post ID (after the /)."""
+    if "/" in post_id:
+        return post_id.split("/", 1)[1]
+    return post_id
+
+
+# =============================================================================
+# Markdown to Story Conversion
+# =============================================================================
+
+StoryInline = Union[str, Dict[str, Any]]
+StoryVerse = Dict[str, Any]
+Story = List[StoryVerse]
+
+
+def parse_inline_markdown(text: str) -> List[StoryInline]:
+    """Parse inline markdown formatting."""
+    result: List[StoryInline] = []
+    remaining = text
+
+    while remaining:
+        # Ship mentions: ~sampel-palnet
+        match = re.match(r"^(~[a-z][-a-z0-9]*)", remaining)
+        if match:
+            result.append({"ship": match.group(1)})
+            remaining = remaining[len(match.group(0)) :]
+            continue
+
+        # Bold: **text** or __text__
+        match = re.match(r"^\*\*(.+?)\*\*|^__(.+?)__", remaining)
+        if match:
+            content = match.group(1) or match.group(2)
+            result.append({"bold": parse_inline_markdown(content)})
+            remaining = remaining[len(match.group(0)) :]
+            continue
+
+        # Italics: *text* or _text_
+        match = re.match(r"^\*([^*]+?)\*|^_([^_]+?)_(?![a-zA-Z0-9])", remaining)
+        if match:
+            content = match.group(1) or match.group(2)
+            result.append({"italics": parse_inline_markdown(content)})
+            remaining = remaining[len(match.group(0)) :]
+            continue
+
+        # Strikethrough: ~~text~~
+        match = re.match(r"^~~(.+?)~~", remaining)
+        if match:
+            result.append({"strike": parse_inline_markdown(match.group(1))})
+            remaining = remaining[len(match.group(0)) :]
+            continue
+
+        # Inline code: `code`
+        match = re.match(r"^`([^`]+)`", remaining)
+        if match:
+            result.append({"inline-code": match.group(1)})
+            remaining = remaining[len(match.group(0)) :]
+            continue
+
+        # Links: [text](url)
+        match = re.match(r"^\[([^\]]+)\]\(([^)]+)\)", remaining)
+        if match:
+            result.append({"link": {"href": match.group(2), "content": match.group(1)}})
+            remaining = remaining[len(match.group(0)) :]
+            continue
+
+        # Plain URL detection
+        match = re.match(r"^(https?://[^\s<>\"'\]]+)", remaining)
+        if match:
+            result.append({"link": {"href": match.group(1), "content": match.group(1)}})
+            remaining = remaining[len(match.group(0)) :]
+            continue
+
+        # Plain text: consume until next special character
+        match = re.match(r"^[^*_`~\[\n]+", remaining)
+        if match:
+            result.append(match.group(0))
+            remaining = remaining[len(match.group(0)) :]
+            continue
+
+        # Single special char that didn't match a pattern
+        result.append(remaining[0])
+        remaining = remaining[1:]
+
+    # Merge adjacent strings
+    merged: List[StoryInline] = []
+    for item in result:
+        if isinstance(item, str) and merged and isinstance(merged[-1], str):
+            merged[-1] = merged[-1] + item
+        else:
+            merged.append(item)
+
+    return merged
+
+
+def markdown_to_story(markdown: str) -> Story:
+    """Convert markdown text to Tlon story format."""
+    story: Story = []
+    lines = markdown.split("\n")
+    i = 0
+
+    while i < len(lines):
+        line = lines[i]
+
+        # Code block: ```lang\ncode\n```
+        if line.startswith("```"):
+            lang = line[3:].strip() or "plaintext"
+            code_lines: List[str] = []
+            i += 1
+            while i < len(lines) and not lines[i].startswith("```"):
+                code_lines.append(lines[i])
+                i += 1
+            story.append({"block": {"code": {"code": "\n".join(code_lines), "lang": lang}}})
+            i += 1  # skip closing ```
+            continue
+
+        # Headers: # H1, ## H2, etc.
+        match = re.match(r"^(#{1,6})\s+(.+)$", line)
+        if match:
+            level = len(match.group(1))
+            tag = f"h{level}"
+            story.append({"block": {"header": {"tag": tag, "content": parse_inline_markdown(match.group(2))}}})
+            i += 1
+            continue
+
+        # Horizontal rule: --- or ***
+        if re.match(r"^(-{3,}|\*{3,})$", line.strip()):
+            story.append({"block": {"rule": None}})
+            i += 1
+            continue
+
+        # Blockquote: > text
+        if line.startswith("> "):
+            quote_lines: List[str] = []
+            while i < len(lines) and lines[i].startswith("> "):
+                quote_lines.append(lines[i][2:])
+                i += 1
+            quote_text = "\n".join(quote_lines)
+            story.append({"inline": [{"blockquote": parse_inline_markdown(quote_text)}]})
+            continue
+
+        # Empty line - skip
+        if not line.strip():
+            i += 1
+            continue
+
+        # Regular paragraph
+        para_lines: List[str] = []
+        while (
+            i < len(lines)
+            and lines[i].strip()
+            and not lines[i].startswith("#")
+            and not lines[i].startswith("```")
+            and not lines[i].startswith("> ")
+            and not re.match(r"^(-{3,}|\*{3,})$", lines[i].strip())
+        ):
+            para_lines.append(lines[i])
+            i += 1
+
+        if para_lines:
+            para_text = "\n".join(para_lines)
+            inlines = parse_inline_markdown(para_text)
+            # Replace \n with break elements
+            with_breaks: List[StoryInline] = []
+            for inline in inlines:
+                if isinstance(inline, str) and "\n" in inline:
+                    parts = inline.split("\n")
+                    for j, part in enumerate(parts):
+                        if part:
+                            with_breaks.append(part)
+                        if j < len(parts) - 1:
+                            with_breaks.append({"break": None})
+                else:
+                    with_breaks.append(inline)
+            if with_breaks:
+                story.append({"inline": with_breaks})
+
+    return story
+
+
+# =============================================================================
+# Urbit HTTP Client
+# =============================================================================
+
+
+class UrbitClient:
+    """Lightweight Urbit HTTP client for scry and poke operations."""
+
+    def __init__(self, url: str, ship: str, code: str):
+        self.url = url.rstrip("/")
+        self.ship = ship if ship.startswith("~") else f"~{ship}"
+        self.code = code
+        self.cookie_jar = CookieJar()
+        self.opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(self.cookie_jar))
+        self._logged_in = False
+
+    def _login(self) -> None:
+        """Authenticate with the ship."""
+        if self._logged_in:
+            return
+
+        login_url = f"{self.url}/~/login"
+        data = urllib.parse.urlencode({"password": self.code}).encode("utf-8")
+        req = urllib.request.Request(login_url, data=data, method="POST")
+        req.add_header("Content-Type", "application/x-www-form-urlencoded")
+
+        try:
+            with self.opener.open(req) as resp:
+                if resp.status != 200 and resp.status != 204:
+                    raise RuntimeError(f"Login failed with status {resp.status}")
+        except urllib.error.HTTPError as e:
+            raise RuntimeError(f"Login failed: {e.code} {e.reason}")
+
+        self._logged_in = True
+
+    def scry(self, app: str, path: str) -> Any:
+        """Perform a scry (read) operation."""
+        self._login()
+
+        # Ensure path starts with /
+        if not path.startswith("/"):
+            path = "/" + path
+
+        scry_url = f"{self.url}/~/scry/{app}{path}.json"
+        req = urllib.request.Request(scry_url, method="GET")
+
+        try:
+            with self.opener.open(req) as resp:
+                return json.loads(resp.read().decode("utf-8"))
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
+                return None
+            raise RuntimeError(f"Scry failed: {e.code} {e.reason}")
+
+    def poke(self, app: str, mark: str, data: Any) -> None:
+        """Perform a poke (write) operation."""
+        self._login()
+
+        # Create ephemeral channel
+        channel_id = f"tlon-cli-{int(time.time() * 1000)}"
+        channel_url = f"{self.url}/~/channel/{channel_id}"
+
+        # Build poke request
+        poke_id = 1
+        payload = [
+            {
+                "id": poke_id,
+                "action": "poke",
+                "ship": self.ship.lstrip("~"),
+                "app": app,
+                "mark": mark,
+                "json": data,
+            }
+        ]
+
+        req = urllib.request.Request(
+            channel_url,
+            data=json.dumps(payload).encode("utf-8"),
+            method="PUT",
+        )
+        req.add_header("Content-Type", "application/json")
+
+        try:
+            with self.opener.open(req) as resp:
+                if resp.status not in (200, 204):
+                    raise RuntimeError(f"Poke failed with status {resp.status}")
+        except urllib.error.HTTPError as e:
+            raise RuntimeError(f"Poke failed: {e.code} {e.reason}")
+
+        # Clean up channel
+        delete_payload = [{"id": poke_id + 1, "action": "delete"}]
+        req = urllib.request.Request(
+            channel_url,
+            data=json.dumps(delete_payload).encode("utf-8"),
+            method="PUT",
+        )
+        req.add_header("Content-Type", "application/json")
+        try:
+            with self.opener.open(req):
+                pass
+        except Exception:
+            pass  # Ignore cleanup errors
+
+
+# =============================================================================
+# Command Handlers
+# =============================================================================
+
+
+def cmd_contacts(client: UrbitClient, args: argparse.Namespace) -> Dict[str, Any]:
+    """Handle contacts subcommand."""
+    action = args.action
+
+    if action == "self":
+        result = client.scry("contacts", "/v1/self")
+        return result or {}
+
+    elif action == "get":
+        if not args.ship:
+            raise ValueError("--ship required for 'get' action")
+        ship = args.ship if args.ship.startswith("~") else f"~{args.ship}"
+        result = client.scry("contacts", f"/v1/contact/{ship}")
+        return result or {}
+
+    elif action == "list":
+        result = client.scry("contacts", "/v1/all")
+        if not result:
+            return []
+        return [{"ship": ship, **profile} for ship, profile in result.items()]
+
+    elif action == "update":
+        edit_fields: List[Dict[str, str]] = []
+        if args.nickname:
+            edit_fields.append({"nickname": args.nickname})
+        if args.bio:
+            edit_fields.append({"bio": args.bio})
+        if args.status:
+            edit_fields.append({"status": args.status})
+        if args.avatar:
+            edit_fields.append({"avatar": args.avatar})
+        if args.cover:
+            edit_fields.append({"cover": args.cover})
+
+        if not edit_fields:
+            raise ValueError("At least one profile field required for 'update'")
+
+        client.poke("contacts", "contact-action", {"edit": edit_fields})
+        return {"updated": len(edit_fields)}
+
+    else:
+        raise ValueError(f"Unknown contacts action: {action}")
+
+
+def cmd_channels(client: UrbitClient, args: argparse.Namespace) -> Dict[str, Any]:
+    """Handle channels subcommand."""
+    action = args.action
+
+    if action == "list":
+        result = client.scry("channels", "/v2/channels")
+        if not result:
+            return []
+        # Return channel nests as list
+        return list(result.keys())
+
+    elif action == "groups":
+        result = client.scry("groups", "/groups")
+        if not result:
+            return []
+        return list(result.keys())
+
+    elif action == "dms":
+        result = client.scry("chat", "/dm")
+        return result if result else []
+
+    elif action == "info":
+        if not args.channel:
+            raise ValueError("--channel required for 'info' action")
+        # URL-encode the channel path
+        encoded = urllib.parse.quote(args.channel, safe="")
+        result = client.scry("channels", f"/v2/channels/{encoded}")
+        return result or {}
+
+    else:
+        raise ValueError(f"Unknown channels action: {action}")
+
+
+def cmd_history(client: UrbitClient, args: argparse.Namespace) -> Dict[str, Any]:
+    """Handle history subcommand."""
+    target = args.target
+    limit = args.limit or 20
+
+    # Determine if target is a DM (starts with ~) or channel
+    if target.startswith("~"):
+        # DM history
+        ship = target
+        result = client.scry("chat", f"/v3/dm/{ship}/writs/newest/{limit}/light")
+        if not result or "writs" not in result:
+            return []
+        # Transform writs to list
+        writs = result["writs"]
+        messages = []
+        for writ_id, writ in writs.items():
+            messages.append({
+                "id": writ_id,
+                "author": writ.get("essay", {}).get("author"),
+                "sent": writ.get("essay", {}).get("sent"),
+                "content": writ.get("essay", {}).get("content"),
+            })
+        return messages
+    else:
+        # Channel history
+        encoded = urllib.parse.quote(target, safe="")
+        result = client.scry("channels", f"/v4/{encoded}/posts/newest/{limit}/outline")
+        if not result or "posts" not in result:
+            return []
+        posts = result["posts"]
+        messages = []
+        for post_id, post in posts.items():
+            messages.append({
+                "id": post_id,
+                "author": post.get("essay", {}).get("author"),
+                "sent": post.get("essay", {}).get("sent"),
+                "content": post.get("essay", {}).get("content"),
+                "replyCount": post.get("seal", {}).get("meta", {}).get("replyCount", 0),
+            })
+        return messages
+
+
+def cmd_react(client: UrbitClient, args: argparse.Namespace) -> Dict[str, Any]:
+    """Handle react subcommand."""
+    action = args.action
+    channel = args.channel
+    post_id = args.post_id
+
+    if not channel or not post_id:
+        raise ValueError("--channel and --post-id required")
+
+    formatted_id = normalize_post_id(post_id)
+
+    # Check if DM reaction
+    if channel.startswith("dm/"):
+        ship = channel[3:]  # Remove "dm/" prefix
+        if action == "add":
+            if not args.emoji:
+                raise ValueError("--emoji required for 'add' action")
+            delta = {"add-react": {"react": args.emoji, "author": client.ship}}
+        else:
+            delta = {"del-react": {"author": client.ship}}
+
+        client.poke("chat", "chat-dm-action-1", {
+            "ship": ship,
+            "diff": {"id": formatted_id, "delta": delta},
+        })
+    else:
+        # Channel reaction
+        if action == "add":
+            if not args.emoji:
+                raise ValueError("--emoji required for 'add' action")
+            post_action = {"add-react": {"id": formatted_id, "react": args.emoji, "ship": client.ship}}
+        else:
+            post_action = {"del-react": {"id": formatted_id, "ship": client.ship}}
+
+        client.poke("channels", "channel-action-1", {
+            "channel": {"nest": channel, "action": {"post": post_action}},
+        })
+
+    return {"success": True, "action": action}
+
+
+def cmd_post(client: UrbitClient, args: argparse.Namespace) -> Dict[str, Any]:
+    """Handle post subcommand."""
+    action = args.action
+    channel = args.channel
+    post_id = args.post_id
+
+    if not channel or not post_id:
+        raise ValueError("--channel and --post-id required")
+
+    formatted_id = normalize_post_id(post_id)
+
+    if action == "delete":
+        client.poke("channels", "channel-action-1", {
+            "channel": {"nest": channel, "action": {"post": {"del": formatted_id}}},
+        })
+        return {"deleted": post_id}
+
+    elif action == "edit":
+        if not args.content:
+            raise ValueError("--content required for 'edit' action")
+
+        # Determine kind based on channel type
+        if channel.startswith("diary/"):
+            kind = "/diary"
+        elif channel.startswith("heap/"):
+            kind = "/heap"
+        else:
+            kind = "/chat"
+
+        content = markdown_to_story(args.content)
+        sent = int(time.time() * 1000)
+
+        essay: Dict[str, Any] = {
+            "content": content,
+            "author": client.ship,
+            "sent": sent,
+            "kind": kind,
+            "blob": None,
+        }
+
+        if kind == "/diary":
+            essay["meta"] = {
+                "title": args.title or "",
+                "description": "",
+                "image": "",
+                "cover": "",
+            }
+        else:
+            essay["meta"] = None
+
+        client.poke("channels", "channel-action-1", {
+            "channel": {"nest": channel, "action": {"post": {"edit": {"id": formatted_id, "essay": essay}}}},
+        })
+        return {"edited": post_id}
+
+    else:
+        raise ValueError(f"Unknown post action: {action}")
+
+
+def cmd_dm(client: UrbitClient, args: argparse.Namespace) -> Dict[str, Any]:
+    """Handle dm subcommand."""
+    action = args.action
+
+    if action == "accept":
+        if not args.ship:
+            raise ValueError("--ship required for 'accept' action")
+        ship = args.ship if args.ship.startswith("~") else f"~{args.ship}"
+        client.poke("chat", "chat-dm-rsvp", {"ship": ship, "ok": True})
+        return {"accepted": ship}
+
+    elif action == "decline":
+        if not args.ship:
+            raise ValueError("--ship required for 'decline' action")
+        ship = args.ship if args.ship.startswith("~") else f"~{args.ship}"
+        client.poke("chat", "chat-dm-rsvp", {"ship": ship, "ok": False})
+        return {"declined": ship}
+
+    elif action == "send":
+        if not args.club_id or not args.message:
+            raise ValueError("--club-id and --message required for 'send' action")
+
+        sent = int(time.time() * 1000)
+        content = markdown_to_story(args.message)
+        post_id = make_post_id(client.ship, sent)
+
+        client.poke("chat", "chat-club-action-0", {
+            "id": args.club_id,
+            "diff": {
+                "uid": post_id,
+                "delta": {
+                    "add": {
+                        "memo": {
+                            "content": content,
+                            "author": client.ship,
+                            "sent": sent,
+                        }
+                    }
+                },
+            },
+        })
+        return {"sent": post_id}
+
+    elif action == "reply":
+        if not args.club_id or not args.post_id or not args.message:
+            raise ValueError("--club-id, --post-id, and --message required for 'reply' action")
+
+        sent = int(time.time() * 1000)
+        content = markdown_to_story(args.message)
+        reply_id = make_post_id(client.ship, sent)
+
+        client.poke("chat", "chat-club-action-0", {
+            "id": args.club_id,
+            "diff": {
+                "uid": args.post_id,
+                "delta": {
+                    "reply": {
+                        "id": reply_id,
+                        "meta": None,
+                        "delta": {
+                            "add": {
+                                "memo": {
+                                    "content": content,
+                                    "author": client.ship,
+                                    "sent": sent,
+                                }
+                            }
+                        },
+                    }
+                },
+            },
+        })
+        return {"replied": reply_id}
+
+    else:
+        raise ValueError(f"Unknown dm action: {action}")
+
+
+def cmd_notebook(client: UrbitClient, args: argparse.Namespace) -> Dict[str, Any]:
+    """Handle notebook subcommand."""
+    if not args.channel or not args.title or not args.content:
+        raise ValueError("--channel, --title, and --content required")
+
+    sent = int(time.time() * 1000)
+    content = markdown_to_story(args.content)
+
+    essay = {
+        "content": content,
+        "author": client.ship,
+        "sent": sent,
+        "kind": "/diary",
+        "blob": None,
+        "meta": {
+            "title": args.title,
+            "description": "",
+            "image": args.image or "",
+            "cover": args.image or "",
+        },
+    }
+
+    client.poke("channels", "channel-action-1", {
+        "channel": {"nest": args.channel, "action": {"post": {"add": essay}}},
+    })
+
+    return {"created": make_post_id(client.ship, sent)}
+
+
+def cmd_activity(client: UrbitClient, args: argparse.Namespace) -> Dict[str, Any]:
+    """Handle activity subcommand."""
+    action = args.action
+    limit = args.limit or 20
+
+    if action == "unread":
+        result = client.scry("activity", "/v4/activity/unreads")
+        return result or {}
+
+    elif action in ("mentions", "all"):
+        result = client.scry("activity", f"/v5/feed/init/{limit}")
+        if not result:
+            return {}
+        if action == "mentions":
+            return result.get("mentions", [])
+        return result
+
+    else:
+        raise ValueError(f"Unknown activity action: {action}")
+
+
+# =============================================================================
+# Main CLI
+# =============================================================================
+
+
+def get_config() -> Tuple[str, str, str]:
+    """Get configuration from environment variables."""
+    url = os.environ.get("TLON_URL")
+    ship = os.environ.get("TLON_SHIP")
+    code = os.environ.get("TLON_CODE")
+
+    missing = []
+    if not url:
+        missing.append("TLON_URL")
+    if not ship:
+        missing.append("TLON_SHIP")
+    if not code:
+        missing.append("TLON_CODE")
+
+    if missing:
+        raise RuntimeError(f"Missing environment variables: {', '.join(missing)}")
+
+    return url, ship, code
+
+
+def output_result(success: bool, data: Any = None, error: str = None) -> None:
+    """Output result as JSON."""
+    if success:
+        print(json.dumps({"success": True, "data": data}))
+    else:
+        print(json.dumps({"success": False, "error": error}))
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Tlon CLI - Interact with Tlon/Urbit")
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    # contacts
+    p_contacts = subparsers.add_parser("contacts", help="Manage contacts and profiles")
+    p_contacts.add_argument("action", choices=["self", "get", "list", "update"])
+    p_contacts.add_argument("--ship", help="Ship for 'get' action")
+    p_contacts.add_argument("--nickname", help="Nickname for 'update' action")
+    p_contacts.add_argument("--bio", help="Bio for 'update' action")
+    p_contacts.add_argument("--status", help="Status for 'update' action")
+    p_contacts.add_argument("--avatar", help="Avatar URL for 'update' action")
+    p_contacts.add_argument("--cover", help="Cover URL for 'update' action")
+
+    # channels
+    p_channels = subparsers.add_parser("channels", help="List channels and groups")
+    p_channels.add_argument("action", choices=["list", "groups", "dms", "info"])
+    p_channels.add_argument("--channel", help="Channel nest for 'info' action")
+
+    # history
+    p_history = subparsers.add_parser("history", help="Fetch message history")
+    p_history.add_argument("--target", required=True, help="Channel nest or ~ship for DM")
+    p_history.add_argument("--limit", type=int, default=20, help="Number of messages")
+
+    # react
+    p_react = subparsers.add_parser("react", help="Add/remove reactions")
+    p_react.add_argument("action", choices=["add", "remove"])
+    p_react.add_argument("--channel", required=True, help="Channel nest or dm/~ship")
+    p_react.add_argument("--post-id", required=True, help="Post ID")
+    p_react.add_argument("--emoji", help="Emoji for 'add' action")
+
+    # post
+    p_post = subparsers.add_parser("post", help="Edit/delete posts")
+    p_post.add_argument("action", choices=["edit", "delete"])
+    p_post.add_argument("--channel", required=True, help="Channel nest")
+    p_post.add_argument("--post-id", required=True, help="Post ID")
+    p_post.add_argument("--content", help="New content for 'edit' action")
+    p_post.add_argument("--title", help="Title for diary posts")
+
+    # dm
+    p_dm = subparsers.add_parser("dm", help="Manage DMs")
+    p_dm.add_argument("action", choices=["accept", "decline", "send", "reply"])
+    p_dm.add_argument("--ship", help="Ship for accept/decline")
+    p_dm.add_argument("--club-id", help="Club ID for send/reply")
+    p_dm.add_argument("--post-id", help="Post ID for reply")
+    p_dm.add_argument("--message", help="Message content")
+
+    # notebook
+    p_notebook = subparsers.add_parser("notebook", help="Create notebook posts")
+    p_notebook.add_argument("action", choices=["add"], default="add", nargs="?")
+    p_notebook.add_argument("--channel", required=True, help="Diary channel nest")
+    p_notebook.add_argument("--title", required=True, help="Post title")
+    p_notebook.add_argument("--content", required=True, help="Markdown content")
+    p_notebook.add_argument("--image", help="Cover image URL")
+
+    # activity
+    p_activity = subparsers.add_parser("activity", help="Check activity")
+    p_activity.add_argument("action", choices=["unread", "mentions", "all"])
+    p_activity.add_argument("--limit", type=int, default=20, help="Limit for mentions/all")
+
+    args = parser.parse_args()
+
+    try:
+        url, ship, code = get_config()
+        client = UrbitClient(url, ship, code)
+
+        if args.command == "contacts":
+            result = cmd_contacts(client, args)
+        elif args.command == "channels":
+            result = cmd_channels(client, args)
+        elif args.command == "history":
+            result = cmd_history(client, args)
+        elif args.command == "react":
+            result = cmd_react(client, args)
+        elif args.command == "post":
+            result = cmd_post(client, args)
+        elif args.command == "dm":
+            result = cmd_dm(client, args)
+        elif args.command == "notebook":
+            result = cmd_notebook(client, args)
+        elif args.command == "activity":
+            result = cmd_activity(client, args)
+        else:
+            raise ValueError(f"Unknown command: {args.command}")
+
+        output_result(True, data=result)
+        return 0
+
+    except Exception as e:
+        output_result(False, error=str(e))
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

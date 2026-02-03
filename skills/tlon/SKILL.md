@@ -1,120 +1,207 @@
 ---
 name: tlon
-description: Interact with Tlon/Urbit beyond basic messaging. Use for contacts, channels, message history, reactions, notebook posts, and activity.
+description: Interact with Tlon/Urbit using CLI scripts. Use when the user asks to list Tlon channels, check activity, get contact profiles, add reactions, post to notebooks, fetch message history, or manage DMs.
 metadata:
-  openclaw:
-    emoji: "⛵"
-    requires:
-      plugins: ["tlon"]
+  {
+    "openclaw":
+      {
+        "emoji": "⛵",
+        "requires": { "bins": ["python3"], "env": ["TLON_URL", "TLON_SHIP", "TLON_CODE"] },
+        "primaryEnv": "TLON_CODE",
+      },
+  }
 ---
 
-# Tlon Tools
+# Tlon Skill
 
-This skill provides tools for interacting with Tlon/Urbit beyond basic chat messaging.
+CLI scripts for interacting with Tlon/Urbit beyond basic messaging.
 
-**Note:** Basic send/receive is handled by the Tlon channel plugin automatically. Use these tools for additional operations.
+**Note:** Basic send/receive is handled by the Tlon channel plugin automatically. Use this skill for additional operations like viewing history, managing contacts, adding reactions, and posting to notebooks.
 
-## Tools Available
+## Configuration
 
-Enable tools via config: `tools.allow: ["tlon"]`
+Set environment variables:
 
-### tlon_contacts
-Manage contacts and profiles.
-
-```
-tlon_contacts({ action: "self" })                    # Get own profile
-tlon_contacts({ action: "get", ship: "~sampel" })    # Get another ship's profile
-tlon_contacts({ action: "list" })                    # List all contacts
-tlon_contacts({ action: "update", profile: { nickname: "newname" } })  # Update own profile
+```bash
+export TLON_URL="https://your-ship.tlon.network"
+export TLON_SHIP="~your-ship"
+export TLON_CODE="your-access-code"
 ```
 
-### tlon_channels
-Discover channels and groups.
+Or configure in `~/.openclaw/openclaw.json`:
 
-```
-tlon_channels({ action: "list" })                    # List all channels
-tlon_channels({ action: "groups" })                  # List groups only
-tlon_channels({ action: "dms" })                     # List DM conversations
-tlon_channels({ action: "info", channel: "chat/~host/name" })  # Get channel details
-```
-
-### tlon_history
-Fetch message history from channels or DMs.
-
-```
-tlon_history({ target: "chat/~host/channel", limit: 20 })  # Channel history
-tlon_history({ target: "~ship", limit: 10 })               # DM history
+```json5
+{
+  skills: {
+    tlon: {
+      env: {
+        TLON_URL: "https://your-ship.tlon.network",
+        TLON_SHIP: "~your-ship",
+        TLON_CODE: "your-access-code",
+      },
+    },
+  },
+}
 ```
 
-### tlon_react
-Add or remove emoji reactions.
+## Commands
 
-```
-tlon_react({ action: "add", channel: "chat/~host/name", postId: "170.141...", emoji: "👍" })
-tlon_react({ action: "remove", channel: "chat/~host/name", postId: "170.141..." })
-```
+### Contacts
 
-### tlon_post
-Edit or delete posts.
+```bash
+# Get your own profile
+{baseDir}/scripts/tlon contacts self
 
-```
-tlon_post({ action: "edit", channel: "chat/~host/name", postId: "170.141...", content: "new text" })
-tlon_post({ action: "delete", channel: "chat/~host/name", postId: "170.141..." })
-```
+# Get another ship's profile
+{baseDir}/scripts/tlon contacts get --ship ~sampel-palnet
 
-### tlon_dm
-Manage DMs - accept/decline invites, send to clubs (group DMs).
+# List all contacts
+{baseDir}/scripts/tlon contacts list
 
-```
-tlon_dm({ action: "accept", ship: "~sampel" })       # Accept DM invite
-tlon_dm({ action: "decline", ship: "~sampel" })      # Decline DM invite
-tlon_dm({ action: "send", clubId: "0v...", message: "hello" })  # Send to club
-tlon_dm({ action: "reply", clubId: "0v...", postId: "...", message: "reply" })
+# Update your profile
+{baseDir}/scripts/tlon contacts update --nickname "New Name" --bio "My bio" --status "Available"
 ```
 
-**Note:** 1:1 DM send uses the regular message tool, not tlon_dm.
+### Channels
 
-### tlon_notebook
-Create posts in notebook/diary channels.
+```bash
+# List all channels
+{baseDir}/scripts/tlon channels list
 
+# List groups only
+{baseDir}/scripts/tlon channels groups
+
+# List DM conversations
+{baseDir}/scripts/tlon channels dms
+
+# Get channel details
+{baseDir}/scripts/tlon channels info --channel chat/~host/channel-name
 ```
-tlon_notebook({
-  channel: "diary/~host/name",
-  title: "My Post Title",
-  content: "Markdown content here...",
-  image: "https://example.com/cover.jpg"  # optional
-})
+
+### Message History
+
+```bash
+# Channel history (most recent first)
+{baseDir}/scripts/tlon history --target chat/~host/channel --limit 20
+
+# DM history
+{baseDir}/scripts/tlon history --target ~sampel-palnet --limit 10
 ```
 
-### tlon_activity
-Check activity and notifications.
+### Reactions
 
+```bash
+# Add reaction
+{baseDir}/scripts/tlon react add --channel chat/~host/name --post-id "170.141..." --emoji "👍"
+
+# Remove reaction
+{baseDir}/scripts/tlon react remove --channel chat/~host/name --post-id "170.141..."
+
+# React to DM message
+{baseDir}/scripts/tlon react add --channel dm/~sampel --post-id "170.141..." --emoji "❤️"
 ```
-tlon_activity({ action: "unread" })           # Get unread counts
-tlon_activity({ action: "mentions", limit: 20 })  # Recent mentions
-tlon_activity({ action: "all", limit: 50 })   # All activity
+
+### Post Management
+
+```bash
+# Edit a post
+{baseDir}/scripts/tlon post edit --channel chat/~host/name --post-id "170.141..." --content "Updated text"
+
+# Delete a post
+{baseDir}/scripts/tlon post delete --channel chat/~host/name --post-id "170.141..."
+
+# Edit diary post with title
+{baseDir}/scripts/tlon post edit --channel diary/~host/name --post-id "170.141..." --title "New Title" --content "Updated content"
+```
+
+### DM Management
+
+```bash
+# Accept DM invite
+{baseDir}/scripts/tlon dm accept --ship ~sampel-palnet
+
+# Decline DM invite
+{baseDir}/scripts/tlon dm decline --ship ~sampel-palnet
+
+# Send to club (group DM)
+{baseDir}/scripts/tlon dm send --club-id "0v..." --message "Hello everyone"
+
+# Reply in club
+{baseDir}/scripts/tlon dm reply --club-id "0v..." --post-id "~zod/170.141..." --message "My reply"
+```
+
+**Note:** For 1:1 DMs, use the regular messaging channel, not this skill.
+
+### Notebook Posts
+
+```bash
+# Create a notebook/diary post
+{baseDir}/scripts/tlon notebook add --channel diary/~host/journal --title "My Post Title" --content "Markdown content here..."
+
+# With cover image
+{baseDir}/scripts/tlon notebook add --channel diary/~host/journal --title "My Post" --content "Content..." --image "https://example.com/cover.jpg"
+```
+
+### Activity
+
+```bash
+# Get unread counts
+{baseDir}/scripts/tlon activity unread
+
+# Get recent mentions
+{baseDir}/scripts/tlon activity mentions --limit 20
+
+# Get all activity
+{baseDir}/scripts/tlon activity all --limit 50
+```
+
+## Output Format
+
+All commands output JSON:
+
+```json
+{"success": true, "data": {...}}
+```
+
+On error:
+
+```json
+{"success": false, "error": "Error message"}
 ```
 
 ## Common Patterns
 
 ### React to the last message in a channel
-1. Use `tlon_history` to get recent messages
-2. Extract the post ID from the first result
-3. Use `tlon_react` with that ID
 
-### Post to a notebook
-Use `tlon_notebook` with the diary channel path. Content supports full markdown.
+1. Fetch recent history
+2. Extract the post ID from the first result
+3. Use react command with that ID
+
+```bash
+# Get recent messages
+{baseDir}/scripts/tlon history --target chat/~host/channel --limit 1
+
+# Then react to the returned post ID
+{baseDir}/scripts/tlon react add --channel chat/~host/channel --post-id "<id-from-above>" --emoji "👍"
+```
 
 ### Check for mentions
-Use `tlon_activity({ action: "mentions" })` to see recent mentions across all channels.
+
+```bash
+{baseDir}/scripts/tlon activity mentions --limit 10
+```
 
 ## ID Formats
 
 - **Ship:** `~sampel-palnet` (with tilde)
 - **Channel nest:** `chat/~host/channel-name`, `diary/~host/name`, `heap/~host/name`
-- **Post ID:** `170.141.184.507...` (@ud format with dots)
+- **Post ID:** `~author/170.141.184.507...` or just `170.141.184.507...` (@ud format with dots)
 - **Club ID:** `0v...` (for group DMs)
 
 ## Troubleshooting
 
-If tools return "Tlon not configured", ensure `channels.tlon` has `url`, `ship`, and `code` set in your OpenClaw config.
+**"Missing environment variables"** - Ensure `TLON_URL`, `TLON_SHIP`, and `TLON_CODE` are set.
+
+**"Login failed"** - Check your access code. Get a new one from your ship's web interface.
+
+**"Scry failed: 404"** - The requested resource doesn't exist (e.g., wrong channel path).

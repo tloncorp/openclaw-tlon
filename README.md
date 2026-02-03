@@ -30,9 +30,19 @@ channels:
 
 Full documentation: https://docs.openclaw.ai/channels/tlon
 
-## Companion Skill
+## Bundled Skill
 
-For group administration, message history, and other API operations, see the [Tlon Skill](https://github.com/tloncorp/tlon-skill).
+This plugin includes a bundled skill (`skills/tlon/`) for additional operations beyond basic messaging:
+
+- **Contacts**: View and update profiles
+- **Channels**: List channels, groups, and DMs
+- **History**: Fetch message history
+- **Reactions**: Add/remove emoji reactions
+- **Posts**: Edit and delete posts
+- **Notebooks**: Create diary/notebook posts
+- **Activity**: Check unreads and mentions
+
+The skill uses a Python CLI script that agents execute via bash. See `skills/tlon/SKILL.md` for full documentation.
 
 ## Development
 
