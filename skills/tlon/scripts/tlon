@@ -697,6 +697,357 @@ def cmd_activity(client: UrbitClient, args: argparse.Namespace) -> Dict[str, Any
         raise ValueError(f"Unknown activity action: {action}")
 
 
+def generate_group_slug() -> str:
+    """Generate a random short ID for group/channel slugs."""
+    import random
+    import string
+    return ''.join(random.choices(string.ascii_lowercase + string.digits, k=8))
+
+
+def cmd_groups(client: UrbitClient, args: argparse.Namespace) -> Dict[str, Any]:
+    """Handle groups subcommand."""
+    action = args.action
+
+    if action == "list":
+        result = client.scry("groups", "/v2/groups")
+        if not result:
+            return []
+        groups = []
+        for group_id, group in result.items():
+            groups.append({
+                "id": group_id,
+                "title": group.get("meta", {}).get("title", ""),
+                "privacy": group.get("admissions", {}).get("privacy", "unknown"),
+                "members": len(group.get("seats", {})),
+                "channels": len(group.get("channels", {})),
+            })
+        return groups
+
+    elif action == "info":
+        if not args.group:
+            raise ValueError("--group required for 'info' action")
+        result = client.scry("groups", f"/v2/ui/groups/{args.group}")
+        if not result:
+            return {}
+        return {
+            "id": args.group,
+            "title": result.get("meta", {}).get("title", ""),
+            "description": result.get("meta", {}).get("description", ""),
+            "privacy": result.get("admissions", {}).get("privacy", "unknown"),
+            "members": list(result.get("seats", {}).keys()),
+            "channels": list(result.get("channels", {}).keys()),
+            "roles": list(result.get("roles", {}).keys()),
+            "banned": result.get("admissions", {}).get("banned", {}).get("ships", []),
+            "requests": list(result.get("admissions", {}).get("requests", {}).keys()),
+            "invited": list(result.get("admissions", {}).get("invited", {}).keys()),
+        }
+
+    elif action == "join":
+        if not args.group:
+            raise ValueError("--group required for 'join' action")
+        client.poke("groups", "group-join", {"flag": args.group, "join-all": True})
+        return {"joined": args.group}
+
+    elif action == "leave":
+        if not args.group:
+            raise ValueError("--group required for 'leave' action")
+        client.poke("groups", "group-leave", args.group)
+        return {"left": args.group}
+
+    elif action == "delete":
+        if not args.group:
+            raise ValueError("--group required for 'delete' action")
+        client.poke("groups", "group-action-4", {
+            "group": {"flag": args.group, "a-group": {"delete": None}}
+        })
+        return {"deleted": args.group}
+
+    elif action == "invite":
+        if not args.group or not args.ships:
+            raise ValueError("--group and --ships required for 'invite' action")
+        ships = [s if s.startswith("~") else f"~{s}" for s in args.ships]
+        client.poke("groups", "group-action-4", {
+            "invite": {"flag": args.group, "ships": ships, "a-invite": {"token": None, "note": None}}
+        })
+        return {"invited": ships, "group": args.group}
+
+    elif action == "kick":
+        if not args.group or not args.ships:
+            raise ValueError("--group and --ships required for 'kick' action")
+        ships = [s if s.startswith("~") else f"~{s}" for s in args.ships]
+        client.poke("groups", "group-action-4", {
+            "group": {"flag": args.group, "a-group": {"seat": {"ships": ships, "a-seat": {"del": None}}}}
+        })
+        return {"kicked": ships, "group": args.group}
+
+    elif action == "ban":
+        if not args.group or not args.ships:
+            raise ValueError("--group and --ships required for 'ban' action")
+        ships = [s if s.startswith("~") else f"~{s}" for s in args.ships]
+        client.poke("groups", "group-action-4", {
+            "group": {"flag": args.group, "a-group": {"entry": {"ban": {"add-ships": ships}}}}
+        })
+        return {"banned": ships, "group": args.group}
+
+    elif action == "unban":
+        if not args.group or not args.ships:
+            raise ValueError("--group and --ships required for 'unban' action")
+        ships = [s if s.startswith("~") else f"~{s}" for s in args.ships]
+        client.poke("groups", "group-action-4", {
+            "group": {"flag": args.group, "a-group": {"entry": {"ban": {"del-ships": ships}}}}
+        })
+        return {"unbanned": ships, "group": args.group}
+
+    elif action == "set-privacy":
+        if not args.group or not args.privacy:
+            raise ValueError("--group and --privacy required for 'set-privacy' action")
+        if args.privacy not in ("public", "private", "secret"):
+            raise ValueError("--privacy must be public, private, or secret")
+        client.poke("groups", "group-action-4", {
+            "group": {"flag": args.group, "a-group": {"entry": {"privacy": args.privacy}}}
+        })
+        return {"group": args.group, "privacy": args.privacy}
+
+    elif action == "accept-join":
+        if not args.group or not args.ships:
+            raise ValueError("--group and --ships required for 'accept-join' action")
+        ships = [s if s.startswith("~") else f"~{s}" for s in args.ships]
+        client.poke("groups", "group-action-4", {
+            "group": {"flag": args.group, "a-group": {"entry": {"ask": {"ships": ships, "a-ask": "approve"}}}}
+        })
+        return {"accepted": ships, "group": args.group}
+
+    elif action == "reject-join":
+        if not args.group or not args.ships:
+            raise ValueError("--group and --ships required for 'reject-join' action")
+        ships = [s if s.startswith("~") else f"~{s}" for s in args.ships]
+        client.poke("groups", "group-action-4", {
+            "group": {"flag": args.group, "a-group": {"entry": {"ask": {"ships": ships, "a-ask": "deny"}}}}
+        })
+        return {"rejected": ships, "group": args.group}
+
+    elif action == "add-role":
+        if not args.group or not args.role:
+            raise ValueError("--group and --role required for 'add-role' action")
+        title = args.title or args.role
+        description = args.description or ""
+        client.poke("groups", "group-action-4", {
+            "group": {"flag": args.group, "a-group": {"role": {"roles": [args.role], "a-role": {
+                "add": {"title": title, "description": description, "image": "", "cover": ""}
+            }}}}
+        })
+        return {"role": args.role, "group": args.group}
+
+    elif action == "delete-role":
+        if not args.group or not args.role:
+            raise ValueError("--group and --role required for 'delete-role' action")
+        client.poke("groups", "group-action-4", {
+            "group": {"flag": args.group, "a-group": {"role": {"roles": [args.role], "a-role": {"del": None}}}}
+        })
+        return {"deleted_role": args.role, "group": args.group}
+
+    elif action == "assign-role":
+        if not args.group or not args.role or not args.ships:
+            raise ValueError("--group, --role and --ships required for 'assign-role' action")
+        ships = [s if s.startswith("~") else f"~{s}" for s in args.ships]
+        client.poke("groups", "group-action-4", {
+            "group": {"flag": args.group, "a-group": {"seat": {"ships": ships, "a-seat": {"add-roles": [args.role]}}}}
+        })
+        return {"role": args.role, "assigned_to": ships, "group": args.group}
+
+    elif action == "remove-role":
+        if not args.group or not args.role or not args.ships:
+            raise ValueError("--group, --role and --ships required for 'remove-role' action")
+        ships = [s if s.startswith("~") else f"~{s}" for s in args.ships]
+        client.poke("groups", "group-action-4", {
+            "group": {"flag": args.group, "a-group": {"seat": {"ships": ships, "a-seat": {"del-roles": [args.role]}}}}
+        })
+        return {"role": args.role, "removed_from": ships, "group": args.group}
+
+    else:
+        raise ValueError(f"Unknown groups action: {action}")
+
+
+SETTINGS_DESK = "moltbot"
+SETTINGS_BUCKET = "tlon"
+
+
+def cmd_settings(client: UrbitClient, args: argparse.Namespace) -> Dict[str, Any]:
+    """Handle settings subcommand."""
+    action = args.action
+
+    if action == "get":
+        try:
+            result = client.scry("settings", "/all")
+            settings = result.get("all", {}).get(SETTINGS_DESK, {}).get(SETTINGS_BUCKET, {})
+            return settings
+        except Exception:
+            return {}
+
+    elif action == "set":
+        if not args.key or args.value is None:
+            raise ValueError("--key and --value required for 'set' action")
+        try:
+            value = json.loads(args.value)
+        except json.JSONDecodeError:
+            value = args.value
+        client.poke("settings", "settings-event", {
+            "put-entry": {
+                "desk": SETTINGS_DESK,
+                "bucket-key": SETTINGS_BUCKET,
+                "entry-key": args.key,
+                "value": value,
+            }
+        })
+        return {"set": args.key, "value": value}
+
+    elif action == "delete":
+        if not args.key:
+            raise ValueError("--key required for 'delete' action")
+        client.poke("settings", "settings-event", {
+            "del-entry": {
+                "desk": SETTINGS_DESK,
+                "bucket-key": SETTINGS_BUCKET,
+                "entry-key": args.key,
+            }
+        })
+        return {"deleted": args.key}
+
+    elif action == "allow-dm":
+        if not args.ship:
+            raise ValueError("--ship required for 'allow-dm' action")
+        ship = args.ship if args.ship.startswith("~") else f"~{args.ship}"
+        try:
+            result = client.scry("settings", "/all")
+            settings = result.get("all", {}).get(SETTINGS_DESK, {}).get(SETTINGS_BUCKET, {})
+            current = settings.get("dmAllowlist", [])
+        except Exception:
+            current = []
+        if ship not in current:
+            current.append(ship)
+            client.poke("settings", "settings-event", {
+                "put-entry": {
+                    "desk": SETTINGS_DESK,
+                    "bucket-key": SETTINGS_BUCKET,
+                    "entry-key": "dmAllowlist",
+                    "value": current,
+                }
+            })
+        return {"dmAllowlist": current}
+
+    elif action == "remove-dm":
+        if not args.ship:
+            raise ValueError("--ship required for 'remove-dm' action")
+        ship = args.ship if args.ship.startswith("~") else f"~{args.ship}"
+        try:
+            result = client.scry("settings", "/all")
+            settings = result.get("all", {}).get(SETTINGS_DESK, {}).get(SETTINGS_BUCKET, {})
+            current = settings.get("dmAllowlist", [])
+        except Exception:
+            current = []
+        if ship in current:
+            current.remove(ship)
+            client.poke("settings", "settings-event", {
+                "put-entry": {
+                    "desk": SETTINGS_DESK,
+                    "bucket-key": SETTINGS_BUCKET,
+                    "entry-key": "dmAllowlist",
+                    "value": current,
+                }
+            })
+        return {"dmAllowlist": current}
+
+    elif action == "allow-channel":
+        if not args.channel:
+            raise ValueError("--channel required for 'allow-channel' action")
+        try:
+            result = client.scry("settings", "/all")
+            settings = result.get("all", {}).get(SETTINGS_DESK, {}).get(SETTINGS_BUCKET, {})
+            current = settings.get("groupChannels", [])
+        except Exception:
+            current = []
+        if args.channel not in current:
+            current.append(args.channel)
+            client.poke("settings", "settings-event", {
+                "put-entry": {
+                    "desk": SETTINGS_DESK,
+                    "bucket-key": SETTINGS_BUCKET,
+                    "entry-key": "groupChannels",
+                    "value": current,
+                }
+            })
+        return {"groupChannels": current}
+
+    elif action == "remove-channel":
+        if not args.channel:
+            raise ValueError("--channel required for 'remove-channel' action")
+        try:
+            result = client.scry("settings", "/all")
+            settings = result.get("all", {}).get(SETTINGS_DESK, {}).get(SETTINGS_BUCKET, {})
+            current = settings.get("groupChannels", [])
+        except Exception:
+            current = []
+        if args.channel in current:
+            current.remove(args.channel)
+            client.poke("settings", "settings-event", {
+                "put-entry": {
+                    "desk": SETTINGS_DESK,
+                    "bucket-key": SETTINGS_BUCKET,
+                    "entry-key": "groupChannels",
+                    "value": current,
+                }
+            })
+        return {"groupChannels": current}
+
+    elif action == "open-channel":
+        if not args.channel:
+            raise ValueError("--channel required for 'open-channel' action")
+        try:
+            result = client.scry("settings", "/all")
+            settings = result.get("all", {}).get(SETTINGS_DESK, {}).get(SETTINGS_BUCKET, {})
+            rules_str = settings.get("channelRules", "{}")
+            rules = json.loads(rules_str) if isinstance(rules_str, str) else rules_str
+        except Exception:
+            rules = {}
+        rules[args.channel] = {"mode": "open"}
+        client.poke("settings", "settings-event", {
+            "put-entry": {
+                "desk": SETTINGS_DESK,
+                "bucket-key": SETTINGS_BUCKET,
+                "entry-key": "channelRules",
+                "value": json.dumps(rules),
+            }
+        })
+        return {"channel": args.channel, "mode": "open"}
+
+    elif action == "restrict-channel":
+        if not args.channel:
+            raise ValueError("--channel required for 'restrict-channel' action")
+        try:
+            result = client.scry("settings", "/all")
+            settings = result.get("all", {}).get(SETTINGS_DESK, {}).get(SETTINGS_BUCKET, {})
+            rules_str = settings.get("channelRules", "{}")
+            rules = json.loads(rules_str) if isinstance(rules_str, str) else rules_str
+        except Exception:
+            rules = {}
+        rule: Dict[str, Any] = {"mode": "restricted"}
+        if args.ships:
+            rule["allowedShips"] = [s if s.startswith("~") else f"~{s}" for s in args.ships]
+        rules[args.channel] = rule
+        client.poke("settings", "settings-event", {
+            "put-entry": {
+                "desk": SETTINGS_DESK,
+                "bucket-key": SETTINGS_BUCKET,
+                "entry-key": "channelRules",
+                "value": json.dumps(rules),
+            }
+        })
+        return {"channel": args.channel, "mode": "restricted", "allowedShips": rule.get("allowedShips", [])}
+
+    else:
+        raise ValueError(f"Unknown settings action: {action}")
+
+
 # =============================================================================
 # Main CLI
 # =============================================================================
@@ -790,6 +1141,35 @@ def main() -> int:
     p_activity.add_argument("action", choices=["unread", "mentions", "all"])
     p_activity.add_argument("--limit", type=int, default=20, help="Limit for mentions/all")
 
+    # groups
+    p_groups = subparsers.add_parser("groups", help="Manage groups")
+    p_groups.add_argument("action", choices=[
+        "list", "info", "join", "leave", "delete",
+        "invite", "kick", "ban", "unban",
+        "set-privacy", "accept-join", "reject-join",
+        "add-role", "delete-role", "assign-role", "remove-role"
+    ])
+    p_groups.add_argument("--group", help="Group ID (e.g., ~host/slug)")
+    p_groups.add_argument("--ships", nargs="+", help="Ship names")
+    p_groups.add_argument("--role", help="Role ID")
+    p_groups.add_argument("--title", help="Title for roles")
+    p_groups.add_argument("--description", help="Description")
+    p_groups.add_argument("--privacy", choices=["public", "private", "secret"])
+
+    # settings
+    p_settings = subparsers.add_parser("settings", help="Manage bot settings")
+    p_settings.add_argument("action", choices=[
+        "get", "set", "delete",
+        "allow-dm", "remove-dm",
+        "allow-channel", "remove-channel",
+        "open-channel", "restrict-channel"
+    ])
+    p_settings.add_argument("--key", help="Setting key")
+    p_settings.add_argument("--value", help="Setting value (JSON)")
+    p_settings.add_argument("--ship", help="Ship name")
+    p_settings.add_argument("--channel", help="Channel nest")
+    p_settings.add_argument("--ships", nargs="+", help="Ship names for restrict-channel")
+
     args = parser.parse_args()
 
     try:
@@ -812,6 +1192,10 @@ def main() -> int:
             result = cmd_notebook(client, args)
         elif args.command == "activity":
             result = cmd_activity(client, args)
+        elif args.command == "groups":
+            result = cmd_groups(client, args)
+        elif args.command == "settings":
+            result = cmd_settings(client, args)
         else:
             raise ValueError(f"Unknown command: {args.command}")
 

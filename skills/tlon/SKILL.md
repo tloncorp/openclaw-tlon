@@ -1,6 +1,6 @@
 ---
 name: tlon
-description: Interact with Tlon/Urbit using CLI scripts. Use when the user asks to list Tlon channels, check activity, get contact profiles, add reactions, post to notebooks, fetch message history, or manage DMs.
+description: Interact with Tlon/Urbit using CLI scripts. Use for contacts, channels, message history, reactions, posts, notebooks, activity, group management (invite/kick/ban/roles), and bot settings.
 metadata:
   {
     "openclaw":
@@ -153,6 +153,75 @@ Or configure in `~/.openclaw/openclaw.json`:
 
 # Get all activity
 {baseDir}/scripts/tlon activity all --limit 50
+```
+
+### Groups
+
+Full group management capabilities.
+
+```bash
+# List your groups
+{baseDir}/scripts/tlon groups list
+
+# Get group details
+{baseDir}/scripts/tlon groups info --group ~host/slug
+
+# Join/leave groups
+{baseDir}/scripts/tlon groups join --group ~host/slug
+{baseDir}/scripts/tlon groups leave --group ~host/slug
+
+# Delete a group (host only)
+{baseDir}/scripts/tlon groups delete --group ~host/slug
+
+# Invite members
+{baseDir}/scripts/tlon groups invite --group ~host/slug --ships ~ship1 ~ship2
+
+# Member management
+{baseDir}/scripts/tlon groups kick --group ~host/slug --ships ~ship1
+{baseDir}/scripts/tlon groups ban --group ~host/slug --ships ~ship1
+{baseDir}/scripts/tlon groups unban --group ~host/slug --ships ~ship1
+
+# Privacy settings
+{baseDir}/scripts/tlon groups set-privacy --group ~host/slug --privacy public|private|secret
+
+# Join request handling
+{baseDir}/scripts/tlon groups accept-join --group ~host/slug --ships ~ship1
+{baseDir}/scripts/tlon groups reject-join --group ~host/slug --ships ~ship1
+
+# Role management
+{baseDir}/scripts/tlon groups add-role --group ~host/slug --role admin --title "Admin"
+{baseDir}/scripts/tlon groups delete-role --group ~host/slug --role admin
+{baseDir}/scripts/tlon groups assign-role --group ~host/slug --role admin --ships ~ship1
+{baseDir}/scripts/tlon groups remove-role --group ~host/slug --role admin --ships ~ship1
+```
+
+Group ID format: `~host-ship/group-slug` (e.g., `~nocsyx-lassul/bongtable`)
+
+### Settings
+
+Manage bot settings stored in Urbit settings-store.
+
+```bash
+# Get all settings
+{baseDir}/scripts/tlon settings get
+
+# Set a value
+{baseDir}/scripts/tlon settings set --key showModelSig --value true
+
+# Delete a setting
+{baseDir}/scripts/tlon settings delete --key someKey
+
+# DM allowlist management
+{baseDir}/scripts/tlon settings allow-dm --ship ~sampel-palnet
+{baseDir}/scripts/tlon settings remove-dm --ship ~sampel-palnet
+
+# Channel watch list
+{baseDir}/scripts/tlon settings allow-channel --channel chat/~host/channel
+{baseDir}/scripts/tlon settings remove-channel --channel chat/~host/channel
+
+# Channel access rules
+{baseDir}/scripts/tlon settings open-channel --channel chat/~host/channel
+{baseDir}/scripts/tlon settings restrict-channel --channel chat/~host/channel --ships ~ship1 ~ship2
 ```
 
 ## Output Format
