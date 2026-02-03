@@ -4,6 +4,7 @@ import type {
   ChannelSetupInput,
   OpenClawConfig,
 } from "openclaw/plugin-sdk";
+import { tlonMessageActions } from "./actions.js";
 import {
   applyAccountNameToChannelSection,
   DEFAULT_ACCOUNT_ID,
@@ -265,13 +266,13 @@ export const tlonPlugin: ChannelPlugin = {
     reply: true,
     threads: true,
   },
+  actions: tlonMessageActions,
   onboarding: tlonOnboardingAdapter,
   reload: { configPrefixes: ["channels.tlon"] },
   configSchema: tlonChannelConfigSchema,
   config: {
     listAccountIds: (cfg) => listTlonAccountIds(cfg),
-    resolveAccount: (cfg, accountId) =>
-      resolveTlonAccount(cfg, accountId ?? undefined),
+    resolveAccount: (cfg, accountId) => resolveTlonAccount(cfg, accountId ?? undefined),
     defaultAccountId: () => "default",
     setAccountEnabled: ({ cfg, accountId, enabled }) => {
       const useDefault = !accountId || accountId === "default";
@@ -307,7 +308,13 @@ export const tlonPlugin: ChannelPlugin = {
     deleteAccount: ({ cfg, accountId }) => {
       const useDefault = !accountId || accountId === "default";
       if (useDefault) {
-        const { ship: _ship, code: _code, url: _url, name: _name, ...rest } = cfg.channels?.tlon ?? {};
+        const {
+          ship: _ship,
+          code: _code,
+          url: _url,
+          name: _name,
+          ...rest
+        } = cfg.channels?.tlon ?? {};
         return {
           ...cfg,
           channels: {
@@ -353,9 +360,15 @@ export const tlonPlugin: ChannelPlugin = {
       const ship = setupInput.ship?.trim() || resolved.ship;
       const url = setupInput.url?.trim() || resolved.url;
       const code = setupInput.code?.trim() || resolved.code;
-      if (!ship) {return "Tlon requires --ship.";}
-      if (!url) {return "Tlon requires --url.";}
-      if (!code) {return "Tlon requires --code.";}
+      if (!ship) {
+        return "Tlon requires --ship.";
+      }
+      if (!url) {
+        return "Tlon requires --url.";
+      }
+      if (!code) {
+        return "Tlon requires --code.";
+      }
       return null;
     },
     applyAccountConfig: ({ cfg, accountId, input }) =>
@@ -368,8 +381,12 @@ export const tlonPlugin: ChannelPlugin = {
   messaging: {
     normalizeTarget: (target) => {
       const parsed = parseTlonTarget(target);
-      if (!parsed) {return target.trim();}
-      if (parsed.kind === "dm") {return parsed.ship;}
+      if (!parsed) {
+        return target.trim();
+      }
+      if (parsed.kind === "dm") {
+        return parsed.ship;
+      }
       return parsed.nest;
     },
     targetResolver: {
