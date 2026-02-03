@@ -65,7 +65,9 @@ function resolveChannelAuthorization(
 export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<void> {
   const core = getTlonRuntime();
   const cfg = core.config.loadConfig() as OpenClawConfig;
-  if (cfg.channels?.tlon?.enabled === false) {return;}
+  if (cfg.channels?.tlon?.enabled === false) {
+    return;
+  }
 
   const logger = core.logging.getChildLogger({ module: "tlon-auto-reply" });
   const formatRuntimeMessage = (...args: Parameters<RuntimeEnv["log"]>) => format(...args);
@@ -82,7 +84,9 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
   };
 
   const account = resolveTlonAccount(cfg, opts.accountId ?? undefined);
-  if (!account.enabled) {return;}
+  if (!account.enabled) {
+    return;
+  }
   if (!account.configured || !account.ship || !account.url || !account.code) {
     throw new Error("Tlon account not configured (ship/url/code required)");
   }
@@ -285,7 +289,9 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
 
   // Helper to resolve cited message content
   async function resolveCiteContent(cite: ParsedCite): Promise<string | null> {
-    if (cite.type !== "chan" || !cite.nest || !cite.postId) {return null;}
+    if (cite.type !== "chan" || !cite.nest || !cite.postId) {
+      return null;
+    }
 
     try {
       // Scry for the specific post: /v4/{nest}/posts/post/{postId}
@@ -310,7 +316,9 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
   // Resolve all cites in message content and return quoted text
   async function resolveAllCites(content: unknown): Promise<string> {
     const cites = extractCites(content);
-    if (cites.length === 0) {return "";}
+    if (cites.length === 0) {
+      return "";
+    }
 
     const resolved: string[] = [];
     for (const cite of cites) {
@@ -515,7 +523,9 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         humanDelay,
         deliver: async (payload: ReplyPayload) => {
           let replyText = payload.text;
-          if (!replyText) {return;}
+          if (!replyText) {
+            return;
+          }
 
           // Use settings store value if set, otherwise fall back to file config
           const showSignature = effectiveShowModelSig;
@@ -530,7 +540,9 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
 
           if (isGroup && groupChannel) {
             const parsed = parseChannelNest(groupChannel);
-            if (!parsed) {return;}
+            if (!parsed) {
+              return;
+            }
             await sendGroupMessage({
               api: api,
               fromShip: botShipName,
@@ -566,33 +578,47 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
   const handleChannelsFirehose = async (event: any) => {
     try {
       const nest = event?.nest;
-      if (!nest) {return;}
+      if (!nest) {
+        return;
+      }
 
       // Only process channels we're watching
-      if (!watchedChannels.has(nest)) {return;}
+      if (!watchedChannels.has(nest)) {
+        return;
+      }
 
       const response = event?.response;
-      if (!response) {return;}
+      if (!response) {
+        return;
+      }
 
       // Handle post responses (new posts and replies)
       const essay = response?.post?.["r-post"]?.set?.essay;
       const memo = response?.post?.["r-post"]?.reply?.["r-reply"]?.set?.memo;
-      if (!essay && !memo) {return;}
+      if (!essay && !memo) {
+        return;
+      }
 
       const content = memo || essay;
       const isThreadReply = Boolean(memo);
       const messageId = isThreadReply ? response?.post?.["r-post"]?.reply?.id : response?.post?.id;
 
-      if (!processedTracker.mark(messageId)) {return;}
+      if (!processedTracker.mark(messageId)) {
+        return;
+      }
 
       const senderShip = normalizeShip(content.author ?? "");
-      if (!senderShip || senderShip === botShipName) {return;}
+      if (!senderShip || senderShip === botShipName) {
+        return;
+      }
 
       // Resolve any cited/quoted messages first
       const citedContent = await resolveAllCites(content.content);
       const rawText = extractMessageText(content.content);
       const messageText = citedContent + rawText;
-      if (!messageText.trim()) {return;}
+      if (!messageText.trim()) {
+        return;
+      }
 
       cacheMessage(nest, {
         author: senderShip,
@@ -670,7 +696,9 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         if (effectiveAutoAcceptDmInvites) {
           for (const invite of event as DmInvite[]) {
             const ship = normalizeShip(invite.ship || "");
-            if (!ship || processedDmInvites.has(ship)) {continue;}
+            if (!ship || processedDmInvites.has(ship)) {
+              continue;
+            }
 
             // Only auto-accept from ships in the allowlist
             if (isDmAllowed(ship, effectiveDmAllowlist)) {
@@ -690,7 +718,9 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         }
         return;
       }
-      if (!("whom" in event) || !("response" in event)) {return;}
+      if (!("whom" in event) || !("response" in event)) {
+        return;
+      }
 
       const _whom = event.whom; // DM partner ship or club ID
       const messageId = event.id;
@@ -698,18 +728,26 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
 
       // Handle add events (new messages)
       const essay = response?.add?.essay;
-      if (!essay) {return;}
+      if (!essay) {
+        return;
+      }
 
-      if (!processedTracker.mark(messageId)) {return;}
+      if (!processedTracker.mark(messageId)) {
+        return;
+      }
 
       const senderShip = normalizeShip(essay.author ?? "");
-      if (!senderShip || senderShip === botShipName) {return;}
+      if (!senderShip || senderShip === botShipName) {
+        return;
+      }
 
       // Resolve any cited/quoted messages first
       const citedContent = await resolveAllCites(essay.content);
       const rawText = extractMessageText(essay.content);
       const messageText = citedContent + rawText;
-      if (!messageText.trim()) {return;}
+      if (!messageText.trim()) {
+        return;
+      }
 
       // For DMs, check allowlist (uses settings store if available)
       if (!isDmAllowed(senderShip, effectiveDmAllowlist)) {
@@ -873,7 +911,9 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
                 const channels = event.channels as Record<string, any>;
                 for (const [channelNest, _channelData] of Object.entries(channels)) {
                   // Only monitor chat channels
-                  if (!channelNest.startsWith("chat/")) {continue;}
+                  if (!channelNest.startsWith("chat/")) {
+                    continue;
+                  }
 
                   // If this is a new channel we're not watching yet, add it
                   if (!watchedChannels.has(channelNest)) {
@@ -918,7 +958,9 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
                 const join = event.join as { group?: string; channels?: string[] };
                 if (join.channels) {
                   for (const channelNest of join.channels) {
-                    if (!channelNest.startsWith("chat/")) {continue;}
+                    if (!channelNest.startsWith("chat/")) {
+                      continue;
+                    }
                     if (!watchedChannels.has(channelNest)) {
                       watchedChannels.add(channelNest);
                       runtime.log?.(`[tlon] Auto-detected joined channel: ${channelNest}`);
@@ -980,15 +1022,25 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
 
       // Helper to process pending invites
       const processPendingInvites = async (foreigns: Foreigns) => {
-        if (!effectiveAutoAcceptGroupInvites) {return;}
-        if (!foreigns || typeof foreigns !== "object") {return;}
+        if (!effectiveAutoAcceptGroupInvites) {
+          return;
+        }
+        if (!foreigns || typeof foreigns !== "object") {
+          return;
+        }
 
         for (const [groupFlag, foreign] of Object.entries(foreigns)) {
-          if (processedGroupInvites.has(groupFlag)) {continue;}
-          if (!foreign.invites || foreign.invites.length === 0) {continue;}
+          if (processedGroupInvites.has(groupFlag)) {
+            continue;
+          }
+          if (!foreign.invites || foreign.invites.length === 0) {
+            continue;
+          }
 
           const validInvite = foreign.invites.find((inv) => inv.valid);
-          if (!validInvite) {continue;}
+          if (!validInvite) {
+            continue;
+          }
 
           // SECURITY: Check if inviter is on allowlist
           // If allowlist is empty, accept all (backward-compatible, but logged as warning)

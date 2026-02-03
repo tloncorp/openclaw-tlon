@@ -27,7 +27,9 @@ export interface ParsedCite {
 
 // Extract all cites from message content
 export function extractCites(content: unknown): ParsedCite[] {
-  if (!content || !Array.isArray(content)) {return [];}
+  if (!content || !Array.isArray(content)) {
+    return [];
+  }
 
   const cites: ParsedCite[] = [];
 
@@ -64,7 +66,9 @@ export function extractCites(content: unknown): ParsedCite[] {
 }
 
 export function formatModelName(modelString?: string | null): string {
-  if (!modelString) {return "AI";}
+  if (!modelString) {
+    return "AI";
+  }
   const modelName = modelString.includes("/") ? modelString.split("/")[1] : modelString;
   const modelMappings: Record<string, string> = {
     "claude-opus-4-5": "Claude Opus 4.5",
@@ -77,7 +81,9 @@ export function formatModelName(modelString?: string | null): string {
     "gemini-pro": "Gemini Pro",
   };
 
-  if (modelMappings[modelName]) {return modelMappings[modelName];}
+  if (modelMappings[modelName]) {
+    return modelMappings[modelName];
+  }
   return modelName
     .replace(/-/g, " ")
     .split(" ")
@@ -90,29 +96,39 @@ export function isBotMentioned(
   botShipName: string,
   nickname?: string,
 ): boolean {
-  if (!messageText || !botShipName) {return false;}
+  if (!messageText || !botShipName) {
+    return false;
+  }
 
   // Check for @all mention
-  if (/@all\b/i.test(messageText)) {return true;}
+  if (/@all\b/i.test(messageText)) {
+    return true;
+  }
 
   // Check for ship mention
   const normalizedBotShip = normalizeShip(botShipName);
   const escapedShip = normalizedBotShip.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const mentionPattern = new RegExp(`(^|\\s)${escapedShip}(?=\\s|$)`, "i");
-  if (mentionPattern.test(messageText)) {return true;}
+  if (mentionPattern.test(messageText)) {
+    return true;
+  }
 
   // Check for nickname mention (case-insensitive, word boundary)
   if (nickname) {
     const escapedNickname = nickname.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const nicknamePattern = new RegExp(`(^|\\s)${escapedNickname}(?=\\s|$|[,!?.])`, "i");
-    if (nicknamePattern.test(messageText)) {return true;}
+    if (nicknamePattern.test(messageText)) {
+      return true;
+    }
   }
 
   return false;
 }
 
 export function isDmAllowed(senderShip: string, allowlist: string[] | undefined): boolean {
-  if (!allowlist || allowlist.length === 0) {return false;}
+  if (!allowlist || allowlist.length === 0) {
+    return false;
+  }
   const normalizedSender = normalizeShip(senderShip);
   return allowlist.map((ship) => normalizeShip(ship)).some((ship) => ship === normalizedSender);
 }
@@ -129,7 +145,9 @@ export function isGroupInviteAllowed(
   allowlist: string[] | undefined,
 ): boolean {
   // SECURITY: Fail-safe to deny when no allowlist configured
-  if (!allowlist || allowlist.length === 0) {return false;}
+  if (!allowlist || allowlist.length === 0) {
+    return false;
+  }
   const normalizedInviter = normalizeShip(inviterShip);
   return allowlist.map((ship) => normalizeShip(ship)).some((ship) => ship === normalizedInviter);
 }
@@ -138,18 +156,34 @@ export function isGroupInviteAllowed(
 function extractInlineText(items: any[]): string {
   return items
     .map((item: any) => {
-      if (typeof item === "string") {return item;}
+      if (typeof item === "string") {
+        return item;
+      }
       if (item && typeof item === "object") {
-        if (item.ship) {return item.ship;}
-        if ("sect" in item) {return `@${item.sect || "all"}`;}
-        if (item["inline-code"]) {return `\`${item["inline-code"]}\``;}
-        if (item.code) {return `\`${item.code}\``;}
-        if (item.link && item.link.href) {return item.link.content || item.link.href;}
-        if (item.bold && Array.isArray(item.bold)) {return `**${extractInlineText(item.bold)}**`;}
-        if (item.italics && Array.isArray(item.italics))
-          {return `*${extractInlineText(item.italics)}*`;}
-        if (item.strike && Array.isArray(item.strike))
-          {return `~~${extractInlineText(item.strike)}~~`;}
+        if (item.ship) {
+          return item.ship;
+        }
+        if ("sect" in item) {
+          return `@${item.sect || "all"}`;
+        }
+        if (item["inline-code"]) {
+          return `\`${item["inline-code"]}\``;
+        }
+        if (item.code) {
+          return `\`${item.code}\``;
+        }
+        if (item.link && item.link.href) {
+          return item.link.content || item.link.href;
+        }
+        if (item.bold && Array.isArray(item.bold)) {
+          return `**${extractInlineText(item.bold)}**`;
+        }
+        if (item.italics && Array.isArray(item.italics)) {
+          return `*${extractInlineText(item.italics)}*`;
+        }
+        if (item.strike && Array.isArray(item.strike)) {
+          return `~~${extractInlineText(item.strike)}~~`;
+        }
       }
       return "";
     })
@@ -157,7 +191,9 @@ function extractInlineText(items: any[]): string {
 }
 
 export function extractMessageText(content: unknown): string {
-  if (!content || !Array.isArray(content)) {return "";}
+  if (!content || !Array.isArray(content)) {
+    return "";
+  }
 
   return content
     .map((verse: any) => {
@@ -165,16 +201,30 @@ export function extractMessageText(content: unknown): string {
       if (verse.inline && Array.isArray(verse.inline)) {
         return verse.inline
           .map((item: any) => {
-            if (typeof item === "string") {return item;}
+            if (typeof item === "string") {
+              return item;
+            }
             if (item && typeof item === "object") {
-              if (item.ship) {return item.ship;}
+              if (item.ship) {
+                return item.ship;
+              }
               // Handle sect (role mentions like @all)
-              if ("sect" in item) {return `@${item.sect || "all"}`;}
-              if (item.break !== undefined) {return "\n";}
-              if (item.link && item.link.href) {return item.link.href;}
+              if ("sect" in item) {
+                return `@${item.sect || "all"}`;
+              }
+              if (item.break !== undefined) {
+                return "\n";
+              }
+              if (item.link && item.link.href) {
+                return item.link.href;
+              }
               // Handle inline code (Tlon uses "inline-code" key)
-              if (item["inline-code"]) {return `\`${item["inline-code"]}\``;}
-              if (item.code) {return `\`${item.code}\``;}
+              if (item["inline-code"]) {
+                return `\`${item["inline-code"]}\``;
+              }
+              if (item.code) {
+                return `\`${item.code}\``;
+              }
               // Handle bold/italic/strike - recursively extract text
               if (item.bold && Array.isArray(item.bold)) {
                 return `**${extractInlineText(item.bold)}**`;
