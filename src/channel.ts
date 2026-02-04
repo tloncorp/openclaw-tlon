@@ -14,7 +14,7 @@ import { monitorTlonProvider } from "./monitor/index.js";
 import { tlonOnboardingAdapter } from "./onboarding.js";
 import { formatTargetHint, parseTlonTarget } from "./targets.js";
 import { resolveTlonAccount, listTlonAccountIds } from "./types.js";
-import { sendMessage, sendStoryMessage, type TlonAccount } from "./api-client.js";
+import { sendMessage, sendStoryMessage, scryUrbit, type TlonAccount } from "./api-client.js";
 import { markdownToStory, createImageBlock, isImageUrl, type Story } from "./urbit/story.js";
 
 const TLON_CHANNEL_ID = "tlon" as const;
@@ -346,19 +346,17 @@ export const tlonPlugin: ChannelPlugin = {
         return { ok: false, error: "Not configured" };
       }
       try {
-        ensureUrbitConnectPatched();
-        const api = await Urbit.authenticate({
-          ship: account.ship.replace(/^~/, ""),
-          url: account.url,
-          code: account.code,
-          verbose: false,
+        // Use @tloncorp/api to verify connectivity by scrying our contact
+        await scryUrbit({
+          account: {
+            ship: account.ship,
+            url: account.url,
+            code: account.code,
+          },
+          app: "contacts",
+          path: "/v1/self",
         });
-        try {
-          await api.getOurName();
-          return { ok: true };
-        } finally {
-          await api.delete();
-        }
+        return { ok: true };
       } catch (error: any) {
         return { ok: false, error: error?.message ?? String(error) };
       }

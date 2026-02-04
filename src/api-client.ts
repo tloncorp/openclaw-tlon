@@ -1,12 +1,13 @@
 /**
  * Wrapper around @tloncorp/api for plugin operations.
  * 
- * The @tloncorp/api uses a singleton pattern, so we need to reconfigure
- * the client before each operation when dealing with multiple accounts.
+ * Uses client injection to swap between accounts without race conditions.
+ * Each account gets its own Urbit client instance, cached for reuse.
  */
 
 import {
   configureClient,
+  Urbit,
   sendPost,
   sendReply,
   getChannelPosts,
@@ -24,14 +25,34 @@ export interface TlonAccount {
   code: string;
 }
 
+// Cache of Urbit clients by ship
+const clients = new Map<string, Urbit>();
+
+/**
+ * Get or create an Urbit client for an account.
+ */
+function getClient(account: TlonAccount): Urbit {
+  const ship = account.ship.startsWith('~') ? account.ship : `~${account.ship}`;
+  
+  let client = clients.get(ship);
+  if (!client) {
+    client = new Urbit(account.url, '', '');
+    clients.set(ship, client);
+  }
+  
+  return client;
+}
+
 /**
  * Configure the @tloncorp/api client for a specific account.
- * Must be called before using any API functions.
+ * Uses client injection for proper account isolation.
  */
 export function configureForAccount(account: TlonAccount): string {
   const ship = account.ship.startsWith('~') ? account.ship : `~${account.ship}`;
+  const client = getClient(account);
   
   configureClient({
+    client,
     shipName: ship,
     shipUrl: account.url,
     getCode: async () => account.code,
@@ -200,6 +221,28 @@ export async function pokeUrbit(params: {
 }): Promise<void> {
   configureForAccount(params.account);
   await poke({ app: params.app, mark: params.mark, json: params.json });
+}
+
+/**
+ * Clear cached client for an account (e.g., on disconnect).
+ */
+export function clearClient(ship: string): void {
+  const normalizedShip = ship.startsWith('~') ? ship : `~${ship}`;
+  const client = clients.get(normalizedShip);
+  if (client) {
+    client.delete();
+    clients.delete(normalizedShip);
+  }
+}
+
+/**
+ * Clear all cached clients.
+ */
+export function clearAllClients(): void {
+  for (const [ship, client] of clients) {
+    client.delete();
+  }
+  clients.clear();
 }
 
 // Re-export types
