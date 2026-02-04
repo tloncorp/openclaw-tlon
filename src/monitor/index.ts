@@ -342,8 +342,8 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       senderShip,
       isGroup,
       channelNest,
-      _hostShip,
-      _channelName,
+      hostShip,
+      channelName,
       timestamp,
       parentId,
       isThreadReply,
@@ -401,8 +401,8 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
               await sendGroupMessage({
                 api: api,
                 fromShip: botShipName,
-                hostShip: parsed._hostShip,
-                channelName: parsed._channelName,
+                hostShip: parsed.hostShip,
+                channelName: parsed.channelName,
                 text: noHistoryMsg,
               });
             }
@@ -438,8 +438,8 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
             await sendGroupMessage({
               api: api,
               fromShip: botShipName,
-              hostShip: parsed._hostShip,
-              channelName: parsed._channelName,
+              hostShip: parsed.hostShip,
+              channelName: parsed.channelName,
               text: errorMsg,
             });
           }
@@ -534,8 +534,8 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
             await sendGroupMessage({
               api: api,
               fromShip: botShipName,
-              hostShip: parsed._hostShip,
-              channelName: parsed._channelName,
+              hostShip: parsed.hostShip,
+              channelName: parsed.channelName,
               text: replyText,
               replyToId: parentId ?? undefined,
             });
@@ -646,8 +646,8 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         messageContent: content.content, // Pass raw content for media extraction
         isGroup: true,
         channelNest: nest,
-        hostShip: parsed?._hostShip,
-        channelName: parsed?._channelName,
+        hostShip: parsed?.hostShip,
+        channelName: parsed?.channelName,
         timestamp: content.sent || Date.now(),
         parentId,
         isThreadReply,
