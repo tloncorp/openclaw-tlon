@@ -55,13 +55,15 @@ When someone not on the allowlist tries to interact, you'll receive a DM like:
 New DM request from ~sampel-palnet:
 "Hello, I'd like to chat with your bot..."
 
-Reply "approve" or "deny" (ID: dm-1234567890-abc)
+Reply "approve", "deny", or "block" (ID: dm-1234567890-abc)
 ```
 
-Simply reply with `approve` or `deny`. On approval:
-- For DMs: The ship is added to `dmAllowlist` and the original message is processed
-- For channel mentions: The ship is added to that channel's allowlist and the original message is processed
-- For group invites: The bot joins the group (each invite requires separate approval)
+Reply with `approve`, `deny`, or `block`:
+- **approve**: Allow the interaction. For DMs, adds to `dmAllowlist`. For channels, adds to that channel's allowlist. The original message is then processed.
+- **deny**: Reject this request. The ship can try again later.
+- **block**: Permanently block the ship using Tlon's native blocking. All future messages are silently ignored.
+
+For group invites, `approve` joins the group (each invite requires separate approval).
 
 You can also specify an ID to handle multiple pending requests: `approve dm-1234567890-abc`
 
@@ -70,6 +72,7 @@ You can also specify an ID to handle multiple pending requests: `approve dm-1234
 - The owner ship is always allowed to DM the bot (can't lock yourself out)
 - Pending approvals persist across restarts via settings-store
 - Denials are silent (the requester receives no notification)
+- Blocked ships can be unblocked via Tlon's UI or settings
 
 ## Documentation
 

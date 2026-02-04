@@ -72,46 +72,47 @@ export function formatApprovalRequest(approval: PendingApproval): string {
     case "dm":
       return (
         `New DM request from ${approval.requestingShip}:${preview}\n\n` +
-        `Reply "approve" or "deny" (ID: ${approval.id})`
+        `Reply "approve", "deny", or "block" (ID: ${approval.id})`
       );
 
     case "channel":
       return (
         `${approval.requestingShip} mentioned you in ${approval.channelNest}:${preview}\n\n` +
-        `Reply "approve" to allow ${approval.requestingShip} in this channel, or "deny"\n` +
+        `Reply "approve", "deny", or "block"\n` +
         `(ID: ${approval.id})`
       );
 
     case "group":
       return (
         `Group invite from ${approval.requestingShip} to join ${approval.groupFlag}\n\n` +
-        `Reply "approve" to join this group, or "deny"\n` +
+        `Reply "approve", "deny", or "block"\n` +
         `(ID: ${approval.id})`
       );
   }
 }
 
 export type ApprovalResponse = {
-  action: "approve" | "deny";
+  action: "approve" | "deny" | "block";
   id?: string;
 };
 
 /**
  * Parse an owner's response to an approval request.
  * Supports formats:
- *   - "approve" / "deny" (applies to most recent pending)
+ *   - "approve" / "deny" / "block" (applies to most recent pending)
  *   - "approve dm-1234567890-abc" / "deny dm-1234567890-abc" (specific ID)
+ *   - "block" permanently blocks the ship via Tlon's native blocking
  */
 export function parseApprovalResponse(text: string): ApprovalResponse | null {
   const trimmed = text.trim().toLowerCase();
 
-  // Match "approve" or "deny" optionally followed by an ID
-  const match = trimmed.match(/^(approve|deny)(?:\s+(.+))?$/);
+  // Match "approve", "deny", or "block" optionally followed by an ID
+  const match = trimmed.match(/^(approve|deny|block)(?:\s+(.+))?$/);
   if (!match) {
     return null;
   }
 
-  const action = match[1] as "approve" | "deny";
+  const action = match[1] as "approve" | "deny" | "block";
   const id = match[2]?.trim();
 
   return { action, id };
@@ -123,7 +124,7 @@ export function parseApprovalResponse(text: string): ApprovalResponse | null {
  */
 export function isApprovalResponse(text: string): boolean {
   const trimmed = text.trim().toLowerCase();
-  return trimmed.startsWith("approve") || trimmed.startsWith("deny");
+  return trimmed.startsWith("approve") || trimmed.startsWith("deny") || trimmed.startsWith("block");
 }
 
 /**
@@ -178,7 +179,14 @@ export function removePendingApproval(
 /**
  * Format a confirmation message after an approval action.
  */
-export function formatApprovalConfirmation(approval: PendingApproval, action: "approve" | "deny"): string {
+export function formatApprovalConfirmation(
+  approval: PendingApproval,
+  action: "approve" | "deny" | "block",
+): string {
+  if (action === "block") {
+    return `Blocked ${approval.requestingShip}. They will no longer be able to contact the bot.`;
+  }
+
   const actionText = action === "approve" ? "Approved" : "Denied";
 
   switch (approval.type) {

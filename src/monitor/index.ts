@@ -29,7 +29,6 @@ import {
   parseApprovalResponse,
   isApprovalResponse,
   findPendingApproval,
-  hasDuplicatePending,
   removePendingApproval,
 } from "./approval.js";
 
@@ -430,6 +429,33 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     }
   }
 
+  // Helper to block a ship using Tlon's native blocking
+  async function blockShip(ship: string): Promise<void> {
+    const normalizedShip = normalizeShip(ship);
+    try {
+      await api!.poke({
+        app: "chat",
+        mark: "chat-block-ship",
+        json: { ship: normalizedShip },
+      });
+      runtime.log?.(`[tlon] Blocked ship ${normalizedShip}`);
+    } catch (err) {
+      runtime.error?.(`[tlon] Failed to block ship ${normalizedShip}: ${String(err)}`);
+    }
+  }
+
+  // Check if a ship is blocked using Tlon's native block list
+  async function isShipBlocked(ship: string): Promise<boolean> {
+    const normalizedShip = normalizeShip(ship);
+    try {
+      const blocked = (await api!.scry("/chat/blocked.json")) as string[] | undefined;
+      return Array.isArray(blocked) && blocked.some((s) => normalizeShip(s) === normalizedShip);
+    } catch (err) {
+      runtime.log?.(`[tlon] Failed to check blocked list: ${String(err)}`);
+      return false;
+    }
+  }
+
   // Helper to send DM notification to owner
   async function sendOwnerNotification(message: string): Promise<void> {
     if (!effectiveOwnerShip) {
@@ -451,19 +477,34 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
 
   // Queue a new approval request and notify the owner
   async function queueApprovalRequest(approval: PendingApproval): Promise<void> {
-    // Check for duplicate
-    if (
-      hasDuplicatePending(
-        pendingApprovals,
-        approval.type,
-        approval.requestingShip,
-        approval.channelNest,
-        approval.groupFlag,
-      )
-    ) {
+    // Check if ship is blocked - silently ignore
+    if (await isShipBlocked(approval.requestingShip)) {
+      runtime.log?.(`[tlon] Ignoring request from blocked ship ${approval.requestingShip}`);
+      return;
+    }
+
+    // Check for duplicate - if found, update it with new content and re-notify
+    const existingIndex = pendingApprovals.findIndex(
+      (a) =>
+        a.type === approval.type &&
+        a.requestingShip === approval.requestingShip &&
+        (approval.type !== "channel" || a.channelNest === approval.channelNest) &&
+        (approval.type !== "group" || a.groupFlag === approval.groupFlag),
+    );
+
+    if (existingIndex !== -1) {
+      // Update existing approval with new content (preserves the original ID)
+      const existing = pendingApprovals[existingIndex];
+      if (approval.originalMessage) {
+        existing.originalMessage = approval.originalMessage;
+        existing.messagePreview = approval.messagePreview;
+      }
       runtime.log?.(
-        `[tlon] Skipping duplicate approval request for ${approval.requestingShip} (${approval.type})`,
+        `[tlon] Updated existing approval for ${approval.requestingShip} (${approval.type}) - re-sending notification`,
       );
+      await savePendingApprovals();
+      const message = formatApprovalRequest(existing);
+      await sendOwnerNotification(message);
       return;
     }
 
@@ -577,6 +618,10 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       }
 
       await sendOwnerNotification(formatApprovalConfirmation(approval, "approve"));
+    } else if (parsed.action === "block") {
+      // Block the ship using Tlon's native blocking
+      await blockShip(approval.requestingShip);
+      await sendOwnerNotification(formatApprovalConfirmation(approval, "block"));
     } else {
       // Denied - just remove from pending, no notification to requester
       await sendOwnerNotification(formatApprovalConfirmation(approval, "deny"));
@@ -917,9 +962,6 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
                 },
               });
               await queueApprovalRequest(approval);
-              runtime.log?.(
-                `[tlon] Queued channel approval for ${senderShip} in ${nest}`,
-              );
             } else {
               runtime.log?.(
                 `[tlon] Access denied: ${senderShip} in ${nest} (allowed: ${allowedShips.join(", ")})`,
@@ -1004,7 +1046,6 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
             });
             await queueApprovalRequest(approval);
             processedDmInvites.add(ship); // Mark as processed to avoid duplicate notifications
-            runtime.log?.(`[tlon] Queued DM invite approval for ${ship}`);
           }
         }
         return;
@@ -1069,7 +1110,6 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
             },
           });
           await queueApprovalRequest(approval);
-          runtime.log?.(`[tlon] Queued DM approval for ${senderShip}`);
         } else {
           runtime.log?.(`[tlon] Blocked DM from ${senderShip}: not in allowlist`);
         }
@@ -1399,7 +1439,6 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
               });
               await queueApprovalRequest(approval);
               processedGroupInvites.add(groupFlag);
-              runtime.log?.(`[tlon] Queued group invite approval: ${groupFlag} (from ${inviterShip})`);
             }
             continue;
           }
@@ -1421,7 +1460,6 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
               });
               await queueApprovalRequest(approval);
               processedGroupInvites.add(groupFlag);
-              runtime.log?.(`[tlon] Queued group invite approval: ${groupFlag} (from ${inviterShip})`);
             } else {
               runtime.log?.(
                 `[tlon] Rejected group invite from ${inviterShip} (not in groupInviteAllowlist): ${groupFlag}`,
