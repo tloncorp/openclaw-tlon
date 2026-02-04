@@ -9,6 +9,7 @@ Tlon/Urbit channel plugin for [OpenClaw](https://github.com/openclaw/openclaw). 
 - **Thread Replies**: Support for threaded conversations
 - **Rich Content**: Images, links, and formatted text
 - **Ship Authorization**: Allowlist ships for DM access
+- **Approval System**: Approve/deny new DMs, channel mentions, and group invites via DM
 - **Settings Store**: Hot-reload config via Urbit settings-store
 - **SSE Ack**: Proper event acknowledgment for reliable message delivery
 - **Cite Resolution**: Parse and fetch quoted message content
@@ -25,6 +26,50 @@ channels:
     url: "https://your-ship.tlon.network"
     code: "your-access-code"
 ```
+
+## Approval System
+
+The approval system lets you control who can interact with your bot. When enabled, you'll receive DM notifications for:
+
+- **DM requests** from ships not on your `dmAllowlist`
+- **Channel mentions** from ships not authorized for that channel
+- **Group invites** from ships not on your `groupInviteAllowlist`
+
+### Setup
+
+Add `ownerShip` to your config (the ship that will receive approval requests):
+
+```yaml
+channels:
+  tlon:
+    ownerShip: "~your-ship"
+```
+
+Or set the `TLON_OWNER_SHIP` environment variable.
+
+### Usage
+
+When someone not on the allowlist tries to interact, you'll receive a DM like:
+
+```
+New DM request from ~sampel-palnet:
+"Hello, I'd like to chat with your bot..."
+
+Reply "approve" or "deny" (ID: dm-1234567890-abc)
+```
+
+Simply reply with `approve` or `deny`. On approval:
+- For DMs: The ship is added to `dmAllowlist` and the original message is processed
+- For channel mentions: The ship is added to that channel's allowlist and the original message is processed
+- For group invites: The bot joins the group (each invite requires separate approval)
+
+You can also specify an ID to handle multiple pending requests: `approve dm-1234567890-abc`
+
+### Notes
+
+- The owner ship is always allowed to DM the bot (can't lock yourself out)
+- Pending approvals persist across restarts via settings-store
+- Denials are silent (the requester receives no notification)
 
 ## Documentation
 
@@ -59,6 +104,7 @@ cd openclaw-tlon
 #    - TLON_SHIP: Your ship name (e.g., ~zod)
 #    - TLON_CODE: Your ship's access code
 #    - TLON_DM_ALLOWLIST: Your ship (to allow DMs to the bot)
+#    - TLON_OWNER_SHIP: Your ship (to receive approval requests)
 
 # 4. Start the dev environment
 docker compose -f dev/docker-compose.yml up --build
