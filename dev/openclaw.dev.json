@@ -1,0 +1,58 @@
+{
+  "agents": {
+    "defaults": {
+      "workspace": "/root/.openclaw/workspace",
+      "model": {
+        "primary": "anthropic/claude-opus-4-5"
+      }
+    },
+    "list": [
+      {
+        "id": "dev",
+        "identity": {
+          "name": "Tlon Dev",
+          "emoji": "⛵"
+        }
+      }
+    ]
+  },
+  "gateway": {
+    "port": 18789,
+    "mode": "local",
+    "controlUi": {
+      "allowInsecureAuth": true
+    }
+  },
+  "plugins": {
+    "load": {
+      "paths": ["/workspace/openclaw-tlon"]
+    },
+    "entries": {
+      "tlon": {
+        "enabled": true
+      }
+    }
+  },
+  "skills": {
+    "entries": {
+      "tlon": {
+        "enabled": true,
+        "env": {
+          "TLON_URL": "${TLON_URL}",
+          "TLON_SHIP": "${TLON_SHIP}",
+          "TLON_CODE": "${TLON_CODE}"
+        }
+      }
+    }
+  },
+  "channels": {
+    "tlon": {
+      "enabled": true,
+      "url": "${TLON_URL}",
+      "ship": "${TLON_SHIP}",
+      "code": "${TLON_CODE}",
+      "dmAllowlist": ["${TLON_DM_ALLOWLIST}"],
+      "autoDiscoverChannels": true
+    }
+  }
+}

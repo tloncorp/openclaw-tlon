@@ -1,0 +1,23 @@
+services:
+  openclaw:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - ../.env
+    ports:
+      - "18789:18789"
+    volumes:
+      # Mount local repos (assumes sibling directories)
+      - ../../api-beta:/workspace/api-beta
+      - ../../tlon-skill:/workspace/tlon-skill
+      - ..:/workspace/openclaw-tlon
+      # Persist OpenClaw state
+      - openclaw-state:/root/.openclaw
+      # Dev config
+      - ./openclaw.dev.json:/root/.openclaw/openclaw.json:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+volumes:
+  openclaw-state:
