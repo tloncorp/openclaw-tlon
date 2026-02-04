@@ -497,6 +497,8 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       ...(attachments.length > 0 && { Attachments: attachments }),
       OriginatingChannel: "tlon",
       OriginatingTo: `tlon:${isGroup ? groupChannel : botShipName}`,
+      // Include thread context for automatic reply routing
+      ...(parentId && { ThreadId: String(parentId), ReplyToId: String(parentId) }),
     });
 
     const dispatchStartTime = Date.now();
