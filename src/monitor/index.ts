@@ -730,11 +730,8 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       senderShip,
       isGroup,
       channelNest,
-<<<<<<< po/add-ship-owner-and-approval-mechanism
-=======
       hostShip,
       channelName,
->>>>>>> master
       timestamp,
       parentId,
       isThreadReply,
