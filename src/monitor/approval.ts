@@ -209,3 +209,70 @@ export function formatApprovalConfirmation(
       return `${actionText} group invite from ${approval.requestingShip} to ${approval.groupFlag}.`;
   }
 }
+
+// ============================================================================
+// Admin Commands
+// ============================================================================
+
+export type AdminCommand =
+  | { type: "unblock"; ship: string }
+  | { type: "blocked" }
+  | { type: "pending" };
+
+/**
+ * Parse an admin command from owner message.
+ * Supports:
+ *   - "unblock ~ship" - unblock a specific ship
+ *   - "blocked" - list all blocked ships
+ *   - "pending" - list all pending approvals
+ */
+export function parseAdminCommand(text: string): AdminCommand | null {
+  const trimmed = text.trim().toLowerCase();
+
+  // "blocked" - list blocked ships
+  if (trimmed === "blocked") {
+    return { type: "blocked" };
+  }
+
+  // "pending" - list pending approvals
+  if (trimmed === "pending") {
+    return { type: "pending" };
+  }
+
+  // "unblock ~ship" - unblock a specific ship
+  const unblockMatch = trimmed.match(/^unblock\s+(~[\w-]+)$/);
+  if (unblockMatch) {
+    return { type: "unblock", ship: unblockMatch[1] };
+  }
+
+  return null;
+}
+
+/**
+ * Check if a message text looks like an admin command.
+ */
+export function isAdminCommand(text: string): boolean {
+  return parseAdminCommand(text) !== null;
+}
+
+/**
+ * Format the list of blocked ships for display to owner.
+ */
+export function formatBlockedList(ships: string[]): string {
+  if (ships.length === 0) {
+    return "No ships are currently blocked.";
+  }
+  return `Blocked ships (${ships.length}):\n${ships.map((s) => `• ${s}`).join("\n")}`;
+}
+
+/**
+ * Format the list of pending approvals for display to owner.
+ */
+export function formatPendingList(approvals: PendingApproval[]): string {
+  if (approvals.length === 0) {
+    return "No pending approval requests.";
+  }
+  return `Pending approvals (${approvals.length}):\n${approvals
+    .map((a) => `• ${a.id}: ${a.type} from ${a.requestingShip}`)
+    .join("\n")}`;
+}

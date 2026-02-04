@@ -72,7 +72,18 @@ You can also specify an ID to handle multiple pending requests: `approve dm-1234
 - The owner ship is always allowed to DM the bot (can't lock yourself out)
 - Pending approvals persist across restarts via settings-store
 - Denials are silent (the requester receives no notification)
-- Blocked ships can be unblocked via Tlon's UI or settings
+
+### Admin Commands
+
+The owner can also send these commands via DM to manage the bot:
+
+| Command | Description |
+|---------|-------------|
+| `blocked` | List all currently blocked ships |
+| `pending` | List all pending approval requests |
+| `unblock ~ship` | Unblock a previously blocked ship |
+
+These commands are handled directly and don't go to the LLM.
 
 ## Documentation
 

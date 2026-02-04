@@ -23,6 +23,7 @@ import {
 } from "./utils.js";
 import {
   type PendingApproval,
+  type AdminCommand,
   createPendingApproval,
   formatApprovalRequest,
   formatApprovalConfirmation,
@@ -30,6 +31,10 @@ import {
   isApprovalResponse,
   findPendingApproval,
   removePendingApproval,
+  parseAdminCommand,
+  isAdminCommand,
+  formatBlockedList,
+  formatPendingList,
 } from "./approval.js";
 
 export type MonitorTlonOpts = {
@@ -456,6 +461,34 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     }
   }
 
+  // Get all blocked ships
+  async function getBlockedShips(): Promise<string[]> {
+    try {
+      const blocked = (await api!.scry("/chat/blocked.json")) as string[] | undefined;
+      return Array.isArray(blocked) ? blocked : [];
+    } catch (err) {
+      runtime.log?.(`[tlon] Failed to get blocked list: ${String(err)}`);
+      return [];
+    }
+  }
+
+  // Helper to unblock a ship using Tlon's native blocking
+  async function unblockShip(ship: string): Promise<boolean> {
+    const normalizedShip = normalizeShip(ship);
+    try {
+      await api!.poke({
+        app: "chat",
+        mark: "chat-unblock-ship",
+        json: { ship: normalizedShip },
+      });
+      runtime.log?.(`[tlon] Unblocked ship ${normalizedShip}`);
+      return true;
+    } catch (err) {
+      runtime.error?.(`[tlon] Failed to unblock ship ${normalizedShip}: ${String(err)}`);
+      return false;
+    }
+  }
+
   // Helper to send DM notification to owner
   async function sendOwnerNotification(message: string): Promise<void> {
     if (!effectiveOwnerShip) {
@@ -632,6 +665,45 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     await savePendingApprovals();
 
     return true;
+  }
+
+  // Handle admin commands from owner (unblock, blocked, pending)
+  async function handleAdminCommand(text: string): Promise<boolean> {
+    const command = parseAdminCommand(text);
+    if (!command) {
+      return false;
+    }
+
+    switch (command.type) {
+      case "blocked": {
+        const blockedShips = await getBlockedShips();
+        await sendOwnerNotification(formatBlockedList(blockedShips));
+        runtime.log?.(`[tlon] Owner requested blocked ships list (${blockedShips.length} ships)`);
+        return true;
+      }
+
+      case "pending": {
+        await sendOwnerNotification(formatPendingList(pendingApprovals));
+        runtime.log?.(`[tlon] Owner requested pending approvals list (${pendingApprovals.length} pending)`);
+        return true;
+      }
+
+      case "unblock": {
+        const shipToUnblock = command.ship;
+        const isBlocked = await isShipBlocked(shipToUnblock);
+        if (!isBlocked) {
+          await sendOwnerNotification(`${shipToUnblock} is not blocked.`);
+          return true;
+        }
+        const success = await unblockShip(shipToUnblock);
+        if (success) {
+          await sendOwnerNotification(`Unblocked ${shipToUnblock}.`);
+        } else {
+          await sendOwnerNotification(`Failed to unblock ${shipToUnblock}.`);
+        }
+        return true;
+      }
+    }
   }
 
   // Check if a ship is the owner (always allowed to DM)
@@ -1076,6 +1148,15 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         const handled = await handleApprovalResponse(messageText);
         if (handled) {
           runtime.log?.(`[tlon] Processed approval response from owner: ${messageText}`);
+          return;
+        }
+      }
+
+      // Check if this is the owner sending an admin command
+      if (isOwner(senderShip) && isAdminCommand(messageText)) {
+        const handled = await handleAdminCommand(messageText);
+        if (handled) {
+          runtime.log?.(`[tlon] Processed admin command from owner: ${messageText}`);
           return;
         }
       }
