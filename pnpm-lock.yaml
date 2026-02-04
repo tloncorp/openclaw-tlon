@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       '@tloncorp/api':
-        specifier: github:tloncorp/api-beta
-        version: https://codeload.github.com/tloncorp/api-beta/tar.gz/ccb64c2516391153660014ef9a66393e51bd4674
+        specifier: github:tloncorp/api-beta#5b73da666c698a534a2db38871338db3462f1520
+        version: https://codeload.github.com/tloncorp/api-beta/tar.gz/5b73da666c698a534a2db38871338db3462f1520
       '@urbit/aura':
         specifier: ^3.0.0
         version: 3.0.0
@@ -1699,8 +1699,8 @@ packages:
     resolution: {integrity: sha512-5Kc5CM2Ysn3vTTArBs2vESUt0AQiWZA86yc1TI3B+lxXmtEq133C1nxXNOgnzhrivdPZIh3zLj5gDnZjoLL5GA==}
     engines: {node: '>=12.17.0'}
 
-  '@tloncorp/api@https://codeload.github.com/tloncorp/api-beta/tar.gz/ccb64c2516391153660014ef9a66393e51bd4674':
-    resolution: {tarball: https://codeload.github.com/tloncorp/api-beta/tar.gz/ccb64c2516391153660014ef9a66393e51bd4674}
+  '@tloncorp/api@https://codeload.github.com/tloncorp/api-beta/tar.gz/5b73da666c698a534a2db38871338db3462f1520':
+    resolution: {tarball: https://codeload.github.com/tloncorp/api-beta/tar.gz/5b73da666c698a534a2db38871338db3462f1520}
     version: 0.0.1
 
   '@tokenizer/inflate@0.4.1':
@@ -6015,7 +6015,7 @@ snapshots:
 
   '@tinyhttp/content-disposition@2.2.4': {}
 
-  '@tloncorp/api@https://codeload.github.com/tloncorp/api-beta/tar.gz/ccb64c2516391153660014ef9a66393e51bd4674':
+  '@tloncorp/api@https://codeload.github.com/tloncorp/api-beta/tar.gz/5b73da666c698a534a2db38871338db3462f1520':
     dependencies:
       '@aws-sdk/client-s3': 3.983.0
       '@aws-sdk/s3-request-presigner': 3.983.0
