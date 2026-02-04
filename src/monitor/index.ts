@@ -730,6 +730,11 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       senderShip,
       isGroup,
       channelNest,
+<<<<<<< po/add-ship-owner-and-approval-mechanism
+=======
+      hostShip,
+      channelName,
+>>>>>>> master
       timestamp,
       parentId,
       isThreadReply,
@@ -883,6 +888,8 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       ...(attachments.length > 0 && { Attachments: attachments }),
       OriginatingChannel: "tlon",
       OriginatingTo: `tlon:${isGroup ? groupChannel : botShipName}`,
+      // Include thread context for automatic reply routing
+      ...(parentId && { ThreadId: String(parentId), ReplyToId: String(parentId) }),
     });
 
     const dispatchStartTime = Date.now();
