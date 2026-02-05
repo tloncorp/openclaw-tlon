@@ -265,6 +265,14 @@ export class UrbitSSEClient {
         return;
       }
 
+      // Check for poke-ack/nack events (not tied to subscriptions)
+      if ('ok' in parsed) {
+        this.logger.log?.(`[SSE] Poke ack (ok) for id ${parsed.id}`);
+      } else if ('err' in parsed) {
+        const errMsg = (parsed as any).err;
+        this.logger.error?.(`[SSE] Poke NACK (error) for id ${parsed.id}: ${typeof errMsg === 'string' ? errMsg : JSON.stringify(errMsg)}`);
+      }
+
       if (parsed.id && this.eventHandlers.has(parsed.id)) {
         const { event } = this.eventHandlers.get(parsed.id) ?? {};
         if (event && parsed.json) {

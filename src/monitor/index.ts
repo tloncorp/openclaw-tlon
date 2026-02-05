@@ -517,7 +517,11 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         humanDelay,
         deliver: async (payload: ReplyPayload) => {
           let replyText = payload.text;
-          if (!replyText) {return;}
+          runtime.log?.(`[tlon][deliver-debug] deliver called: isGroup=${isGroup} groupChannel=${groupChannel} replyTextLen=${replyText?.length ?? 0} parentId=${parentId}`);
+          if (!replyText) {
+            runtime.log?.(`[tlon][deliver-debug] replyText empty, skipping`);
+            return;
+          }
 
           // Use settings store value if set, otherwise fall back to file config
           const showSignature = effectiveShowModelSig;
@@ -532,7 +536,12 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
 
           if (isGroup && groupChannel) {
             const parsed = parseChannelNest(groupChannel);
-            if (!parsed) {return;}
+            runtime.log?.(`[tlon][deliver-debug] parseChannelNest(${groupChannel}) = ${JSON.stringify(parsed)}`);
+            if (!parsed) {
+              runtime.log?.(`[tlon][deliver-debug] parseChannelNest returned null, aborting send`);
+              return;
+            }
+            runtime.log?.(`[tlon][deliver-debug] calling sendGroupMessage: hostShip=${parsed.hostShip} channelName=${parsed.channelName} botShipName=${botShipName} replyToId=${parentId}`);
             await sendGroupMessage({
               api: api,
               fromShip: botShipName,
@@ -541,6 +550,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
               text: replyText,
               replyToId: parentId ?? undefined,
             });
+            runtime.log?.(`[tlon][deliver-debug] sendGroupMessage completed successfully`);
             // Track thread participation for future replies without mention
             if (parentId) {
               participatedThreads.add(String(parentId));

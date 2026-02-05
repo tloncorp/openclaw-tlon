@@ -81,6 +81,7 @@ export async function sendGroupMessage({
   text,
   replyToId,
 }: SendGroupParams) {
+  console.error(`[send] sendGroupMessage: fromShip=${fromShip} hostShip=${hostShip} channelName=${channelName} replyToId=${replyToId} textLen=${text.length}`);
   const story: Story = markdownToStory(text);
   return sendGroupMessageWithStory({ api, fromShip, hostShip, channelName, story, replyToId });
 }
@@ -106,9 +107,11 @@ export async function sendGroupMessageWithStory({
     }
   }
 
+  const nest = `chat/${hostShip}/${channelName}`;
+  console.error(`[send] sendGroupMessageWithStory: nest=${nest} fromShip=${fromShip} replyToId=${replyToId} formattedReplyId=${formattedReplyId} sentAt=${sentAt}`);
   const action = {
     channel: {
-      nest: `chat/${hostShip}/${channelName}`,
+      nest,
       action: formattedReplyId
         ? {
             // Thread reply - needs post wrapper around reply action
@@ -135,20 +138,30 @@ export async function sendGroupMessageWithStory({
                 sent: sentAt,
                 kind: "/chat",
                 blob: null,
-                meta: null,
+                meta: {
+                  title: "",
+                  image: "",
+                  description: "",
+                  cover: "",
+                },
               },
             },
           },
     },
   };
 
-  await api.poke({
-    app: "channels",
-    mark: "channel-action-1",
-    json: action,
-  });
-
-  return { channel: "tlon", messageId: `${fromShip}/${sentAt}` };
+  try {
+    const result = await api.poke({
+      app: "channels",
+      mark: "channel-action-1",
+      json: action,
+    });
+    console.error(`[send] poke succeeded, result=${JSON.stringify(result)}`);
+    return { channel: "tlon", messageId: `${fromShip}/${sentAt}` };
+  } catch (err) {
+    console.error(`[send] poke FAILED: ${String(err)}`);
+    throw err;
+  }
 }
 
 export function buildMediaText(text: string | undefined, mediaUrl: string | undefined): string {
