@@ -4,6 +4,7 @@ import type {
   ChannelSetupInput,
   OpenClawConfig,
 } from "openclaw/plugin-sdk";
+import { configureClient } from "@tloncorp/api";
 import {
   applyAccountNameToChannelSection,
   DEFAULT_ACCOUNT_ID,
@@ -23,6 +24,7 @@ import {
   sendDmWithStory,
   sendGroupMessageWithStory,
 } from "./urbit/send.js";
+import { uploadImageFromUrl } from "./urbit/upload.js";
 
 // Simple HTTP-only poke that doesn't open an EventSource (avoids conflict with monitor's SSE)
 async function createHttpPokeApi(params: { url: string; code: string; ship: string }) {
@@ -210,6 +212,15 @@ const tlonOutbound: ChannelOutboundAdapter = {
       throw new Error(`Invalid Tlon target. Use ${formatTargetHint()}`);
     }
 
+    configureClient({
+      shipUrl: account.url,
+      shipName: account.ship.replace(/^~/, ""),
+      verbose: false,
+      getCode: async () => account.code!,
+    });
+
+    const uploadedUrl = mediaUrl ? await uploadImageFromUrl(mediaUrl) : undefined;
+
     const api = await createHttpPokeApi({
       url: account.url,
       ship: account.ship,
@@ -218,7 +229,7 @@ const tlonOutbound: ChannelOutboundAdapter = {
 
     try {
       const fromShip = normalizeShip(account.ship);
-      const story = buildMediaStory(text, mediaUrl);
+      const story = buildMediaStory(text, uploadedUrl);
 
       if (parsed.kind === "dm") {
         return await sendDmWithStory({
@@ -261,7 +272,7 @@ export const tlonPlugin: ChannelPlugin = {
   },
   capabilities: {
     chatTypes: ["direct", "group", "thread"],
-    media: false,
+    media: true,
     reply: true,
     threads: true,
   },

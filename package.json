@@ -4,6 +4,7 @@
   "description": "OpenClaw Tlon/Urbit channel plugin",
   "type": "module",
   "scripts": {
+    "dev": "./dev/run.sh",
     "format": "oxfmt --check",
     "format:fix": "oxfmt --write",
     "lint": "oxlint --type-aware",
@@ -13,6 +14,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@tloncorp/api": "github:tloncorp/api-beta#5b73da666c698a534a2db38871338db3462f1520",
     "@urbit/aura": "^3.0.0",
     "@urbit/http-api": "^3.0.0"
   },
