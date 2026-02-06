@@ -16,6 +16,8 @@ export type TlonResolvedAccount = {
   showModelSignature: boolean | null;
   autoAcceptDmInvites: boolean | null;
   autoAcceptGroupInvites: boolean | null;
+  /** Ship that receives approval requests for DMs, channel mentions, and group invites */
+  ownerShip: string | null;
 };
 
 export function resolveTlonAccount(
@@ -36,6 +38,7 @@ export function resolveTlonAccount(
         showModelSignature?: boolean;
         autoAcceptDmInvites?: boolean;
         autoAcceptGroupInvites?: boolean;
+        ownerShip?: string;
         accounts?: Record<string, Record<string, unknown>>;
       }
     | undefined;
@@ -56,6 +59,7 @@ export function resolveTlonAccount(
       showModelSignature: null,
       autoAcceptDmInvites: null,
       autoAcceptGroupInvites: null,
+      ownerShip: null,
     };
   }
 
@@ -82,6 +86,7 @@ export function resolveTlonAccount(
   const autoAcceptGroupInvites = (account?.autoAcceptGroupInvites ??
     base.autoAcceptGroupInvites ??
     null) as boolean | null;
+  const ownerShip = (account?.ownerShip ?? base.ownerShip ?? null) as string | null;
   const configured = Boolean(ship && url && code);
 
   return {
@@ -99,6 +104,7 @@ export function resolveTlonAccount(
     showModelSignature,
     autoAcceptDmInvites,
     autoAcceptGroupInvites,
+    ownerShip,
   };
 }
 

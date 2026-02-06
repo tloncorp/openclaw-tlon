@@ -9,6 +9,7 @@ Tlon/Urbit channel plugin for [OpenClaw](https://github.com/openclaw/openclaw). 
 - **Thread Replies**: Support for threaded conversations
 - **Rich Content**: Images, links, and formatted text
 - **Ship Authorization**: Allowlist ships for DM access
+- **Approval System**: Approve/deny new DMs, channel mentions, and group invites via DM
 - **Settings Store**: Hot-reload config via Urbit settings-store
 - **SSE Ack**: Proper event acknowledgment for reliable message delivery
 - **Cite Resolution**: Parse and fetch quoted message content
@@ -25,6 +26,64 @@ channels:
     url: "https://your-ship.tlon.network"
     code: "your-access-code"
 ```
+
+## Approval System
+
+The approval system lets you control who can interact with your bot. When enabled, you'll receive DM notifications for:
+
+- **DM requests** from ships not on your `dmAllowlist`
+- **Channel mentions** from ships not authorized for that channel
+- **Group invites** from ships not on your `groupInviteAllowlist`
+
+### Setup
+
+Add `ownerShip` to your config (the ship that will receive approval requests):
+
+```yaml
+channels:
+  tlon:
+    ownerShip: "~your-ship"
+```
+
+Or set the `TLON_OWNER_SHIP` environment variable.
+
+### Usage
+
+When someone not on the allowlist tries to interact, you'll receive a DM like:
+
+```
+New DM request from ~sampel-palnet:
+"Hello, I'd like to chat with your bot..."
+
+Reply "approve", "deny", or "block" (ID: dm-1234567890-abc)
+```
+
+Reply with `approve`, `deny`, or `block`:
+- **approve**: Allow the interaction. For DMs, adds to `dmAllowlist`. For channels, adds to that channel's allowlist. The original message is then processed.
+- **deny**: Reject this request. The ship can try again later.
+- **block**: Permanently block the ship using Tlon's native blocking. All future messages are silently ignored.
+
+For group invites, `approve` joins the group (each invite requires separate approval).
+
+You can also specify an ID to handle multiple pending requests: `approve dm-1234567890-abc`
+
+### Notes
+
+- The owner ship is always allowed to DM the bot (can't lock yourself out)
+- Pending approvals persist across restarts via settings-store
+- Denials are silent (the requester receives no notification)
+
+### Admin Commands
+
+The owner can also send these commands via DM to manage the bot:
+
+| Command | Description |
+|---------|-------------|
+| `blocked` | List all currently blocked ships |
+| `pending` | List all pending approval requests |
+| `unblock ~ship` | Unblock a previously blocked ship |
+
+These commands are handled directly and don't go to the LLM.
 
 ## Documentation
 
@@ -59,6 +118,7 @@ cd openclaw-tlon
 #    - TLON_SHIP: Your ship name (e.g., ~zod)
 #    - TLON_CODE: Your ship's access code
 #    - TLON_DM_ALLOWLIST: Your ship (to allow DMs to the bot)
+#    - TLON_OWNER_SHIP: Your ship (to receive approval requests)
 #
 # Optional: Use OpenRouter for alternative models
 #    - MODEL: e.g., openrouter/anthropic/claude-sonnet-4-5

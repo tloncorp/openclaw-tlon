@@ -21,6 +21,21 @@ import {
   isSummarizationRequest,
   type ParsedCite,
 } from "./utils.js";
+import {
+  type PendingApproval,
+  type AdminCommand,
+  createPendingApproval,
+  formatApprovalRequest,
+  formatApprovalConfirmation,
+  parseApprovalResponse,
+  isApprovalResponse,
+  findPendingApproval,
+  removePendingApproval,
+  parseAdminCommand,
+  isAdminCommand,
+  formatBlockedList,
+  formatPendingList,
+} from "./approval.js";
 
 export type MonitorTlonOpts = {
   runtime?: RuntimeEnv;
@@ -122,6 +137,10 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
   let effectiveAutoAcceptDmInvites: boolean = account.autoAcceptDmInvites ?? false;
   let effectiveAutoAcceptGroupInvites: boolean = account.autoAcceptGroupInvites ?? false;
   let effectiveGroupInviteAllowlist: string[] = account.groupInviteAllowlist;
+  let effectiveOwnerShip: string | null = account.ownerShip
+    ? normalizeShip(account.ownerShip)
+    : null;
+  let pendingApprovals: PendingApproval[] = [];
   let currentSettings: TlonSettingsStore = {};
 
   // Track threads we've participated in (by parentId) - respond without mention requirement
@@ -279,6 +298,14 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         `[tlon] Using groupInviteAllowlist from settings store: ${effectiveGroupInviteAllowlist.join(", ")}`,
       );
     }
+    if (currentSettings.ownerShip) {
+      effectiveOwnerShip = normalizeShip(currentSettings.ownerShip);
+      runtime.log?.(`[tlon] Using ownerShip from settings store: ${effectiveOwnerShip}`);
+    }
+    if (currentSettings.pendingApprovals?.length) {
+      pendingApprovals = currentSettings.pendingApprovals;
+      runtime.log?.(`[tlon] Loaded ${pendingApprovals.length} pending approval(s) from settings`);
+    }
   } catch (err) {
     runtime.log?.(`[tlon] Settings store not available, using file config: ${String(err)}`);
   }
@@ -322,6 +349,367 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     }
 
     return resolved.length > 0 ? resolved.join("\n") + "\n\n" : "";
+  }
+
+  // Helper to save pending approvals to settings store
+  async function savePendingApprovals(): Promise<void> {
+    try {
+      await api!.poke({
+        app: "settings",
+        mark: "settings-event",
+        json: {
+          "put-entry": {
+            desk: "moltbot",
+            "bucket-key": "tlon",
+            "entry-key": "pendingApprovals",
+            value: JSON.stringify(pendingApprovals),
+          },
+        },
+      });
+    } catch (err) {
+      runtime.error?.(`[tlon] Failed to save pending approvals: ${String(err)}`);
+    }
+  }
+
+  // Helper to update dmAllowlist in settings store
+  async function addToDmAllowlist(ship: string): Promise<void> {
+    const normalizedShip = normalizeShip(ship);
+    if (!effectiveDmAllowlist.includes(normalizedShip)) {
+      effectiveDmAllowlist = [...effectiveDmAllowlist, normalizedShip];
+    }
+    try {
+      await api!.poke({
+        app: "settings",
+        mark: "settings-event",
+        json: {
+          "put-entry": {
+            desk: "moltbot",
+            "bucket-key": "tlon",
+            "entry-key": "dmAllowlist",
+            value: effectiveDmAllowlist,
+          },
+        },
+      });
+      runtime.log?.(`[tlon] Added ${normalizedShip} to dmAllowlist`);
+    } catch (err) {
+      runtime.error?.(`[tlon] Failed to update dmAllowlist: ${String(err)}`);
+    }
+  }
+
+  // Helper to update channelRules in settings store
+  async function addToChannelAllowlist(ship: string, channelNest: string): Promise<void> {
+    const normalizedShip = normalizeShip(ship);
+    const channelRules = currentSettings.channelRules ?? {};
+    const rule = channelRules[channelNest] ?? { mode: "restricted", allowedShips: [] };
+    const allowedShips = [...(rule.allowedShips ?? [])]; // Clone to avoid mutation
+
+    if (!allowedShips.includes(normalizedShip)) {
+      allowedShips.push(normalizedShip);
+    }
+
+    const updatedRules = {
+      ...channelRules,
+      [channelNest]: { ...rule, allowedShips },
+    };
+
+    // Update local state immediately (don't wait for settings subscription)
+    currentSettings = { ...currentSettings, channelRules: updatedRules };
+
+    try {
+      await api!.poke({
+        app: "settings",
+        mark: "settings-event",
+        json: {
+          "put-entry": {
+            desk: "moltbot",
+            "bucket-key": "tlon",
+            "entry-key": "channelRules",
+            value: JSON.stringify(updatedRules),
+          },
+        },
+      });
+      runtime.log?.(`[tlon] Added ${normalizedShip} to ${channelNest} allowlist`);
+    } catch (err) {
+      runtime.error?.(`[tlon] Failed to update channelRules: ${String(err)}`);
+    }
+  }
+
+  // Helper to block a ship using Tlon's native blocking
+  async function blockShip(ship: string): Promise<void> {
+    const normalizedShip = normalizeShip(ship);
+    try {
+      await api!.poke({
+        app: "chat",
+        mark: "chat-block-ship",
+        json: { ship: normalizedShip },
+      });
+      runtime.log?.(`[tlon] Blocked ship ${normalizedShip}`);
+    } catch (err) {
+      runtime.error?.(`[tlon] Failed to block ship ${normalizedShip}: ${String(err)}`);
+    }
+  }
+
+  // Check if a ship is blocked using Tlon's native block list
+  async function isShipBlocked(ship: string): Promise<boolean> {
+    const normalizedShip = normalizeShip(ship);
+    try {
+      const blocked = (await api!.scry("/chat/blocked.json")) as string[] | undefined;
+      return Array.isArray(blocked) && blocked.some((s) => normalizeShip(s) === normalizedShip);
+    } catch (err) {
+      runtime.log?.(`[tlon] Failed to check blocked list: ${String(err)}`);
+      return false;
+    }
+  }
+
+  // Get all blocked ships
+  async function getBlockedShips(): Promise<string[]> {
+    try {
+      const blocked = (await api!.scry("/chat/blocked.json")) as string[] | undefined;
+      return Array.isArray(blocked) ? blocked : [];
+    } catch (err) {
+      runtime.log?.(`[tlon] Failed to get blocked list: ${String(err)}`);
+      return [];
+    }
+  }
+
+  // Helper to unblock a ship using Tlon's native blocking
+  async function unblockShip(ship: string): Promise<boolean> {
+    const normalizedShip = normalizeShip(ship);
+    try {
+      await api!.poke({
+        app: "chat",
+        mark: "chat-unblock-ship",
+        json: { ship: normalizedShip },
+      });
+      runtime.log?.(`[tlon] Unblocked ship ${normalizedShip}`);
+      return true;
+    } catch (err) {
+      runtime.error?.(`[tlon] Failed to unblock ship ${normalizedShip}: ${String(err)}`);
+      return false;
+    }
+  }
+
+  // Helper to send DM notification to owner
+  async function sendOwnerNotification(message: string): Promise<void> {
+    if (!effectiveOwnerShip) {
+      runtime.log?.("[tlon] No ownerShip configured, cannot send notification");
+      return;
+    }
+    try {
+      await sendDm({
+        api: api!,
+        fromShip: botShipName,
+        toShip: effectiveOwnerShip,
+        text: message,
+      });
+      runtime.log?.(`[tlon] Sent notification to owner ${effectiveOwnerShip}`);
+    } catch (err) {
+      runtime.error?.(`[tlon] Failed to send notification to owner: ${String(err)}`);
+    }
+  }
+
+  // Queue a new approval request and notify the owner
+  async function queueApprovalRequest(approval: PendingApproval): Promise<void> {
+    // Check if ship is blocked - silently ignore
+    if (await isShipBlocked(approval.requestingShip)) {
+      runtime.log?.(`[tlon] Ignoring request from blocked ship ${approval.requestingShip}`);
+      return;
+    }
+
+    // Check for duplicate - if found, update it with new content and re-notify
+    const existingIndex = pendingApprovals.findIndex(
+      (a) =>
+        a.type === approval.type &&
+        a.requestingShip === approval.requestingShip &&
+        (approval.type !== "channel" || a.channelNest === approval.channelNest) &&
+        (approval.type !== "group" || a.groupFlag === approval.groupFlag),
+    );
+
+    if (existingIndex !== -1) {
+      // Update existing approval with new content (preserves the original ID)
+      const existing = pendingApprovals[existingIndex];
+      if (approval.originalMessage) {
+        existing.originalMessage = approval.originalMessage;
+        existing.messagePreview = approval.messagePreview;
+      }
+      runtime.log?.(
+        `[tlon] Updated existing approval for ${approval.requestingShip} (${approval.type}) - re-sending notification`,
+      );
+      await savePendingApprovals();
+      const message = formatApprovalRequest(existing);
+      await sendOwnerNotification(message);
+      return;
+    }
+
+    pendingApprovals.push(approval);
+    await savePendingApprovals();
+
+    const message = formatApprovalRequest(approval);
+    await sendOwnerNotification(message);
+    runtime.log?.(
+      `[tlon] Queued approval request: ${approval.id} (${approval.type} from ${approval.requestingShip})`,
+    );
+  }
+
+  // Process the owner's approval response
+  async function handleApprovalResponse(text: string): Promise<boolean> {
+    const parsed = parseApprovalResponse(text);
+    if (!parsed) {
+      return false;
+    }
+
+    const approval = findPendingApproval(pendingApprovals, parsed.id);
+    if (!approval) {
+      await sendOwnerNotification("No pending approval found" + (parsed.id ? ` for ID: ${parsed.id}` : ""));
+      return true; // Still consumed the message
+    }
+
+    if (parsed.action === "approve") {
+      switch (approval.type) {
+        case "dm":
+          await addToDmAllowlist(approval.requestingShip);
+          // Process the original message if available
+          if (approval.originalMessage) {
+            runtime.log?.(
+              `[tlon] Processing original message from ${approval.requestingShip} after approval`,
+            );
+            await processMessage({
+              messageId: approval.originalMessage.messageId,
+              senderShip: approval.requestingShip,
+              messageText: approval.originalMessage.messageText,
+              messageContent: approval.originalMessage.messageContent,
+              isGroup: false,
+              timestamp: approval.originalMessage.timestamp,
+            });
+          }
+          break;
+
+        case "channel":
+          if (approval.channelNest) {
+            await addToChannelAllowlist(approval.requestingShip, approval.channelNest);
+            // Process the original message if available
+            if (approval.originalMessage) {
+              const parsed = parseChannelNest(approval.channelNest);
+              runtime.log?.(
+                `[tlon] Processing original message from ${approval.requestingShip} in ${approval.channelNest} after approval`,
+              );
+              await processMessage({
+                messageId: approval.originalMessage.messageId,
+                senderShip: approval.requestingShip,
+                messageText: approval.originalMessage.messageText,
+                messageContent: approval.originalMessage.messageContent,
+                isGroup: true,
+                channelNest: approval.channelNest,
+                hostShip: parsed?.hostShip,
+                channelName: parsed?.channelName,
+                timestamp: approval.originalMessage.timestamp,
+                parentId: approval.originalMessage.parentId,
+                isThreadReply: approval.originalMessage.isThreadReply,
+              });
+            }
+          }
+          break;
+
+        case "group":
+          // Accept the group invite (don't add to allowlist - each invite requires approval)
+          if (approval.groupFlag) {
+            try {
+              await api!.poke({
+                app: "groups",
+                mark: "group-join",
+                json: {
+                  flag: approval.groupFlag,
+                  "join-all": true,
+                },
+              });
+              runtime.log?.(`[tlon] Joined group ${approval.groupFlag} after approval`);
+
+              // Immediately discover channels from the newly joined group
+              // Small delay to allow the join to propagate
+              setTimeout(async () => {
+                try {
+                  const discoveredChannels = await fetchAllChannels(api!, runtime);
+                  let newCount = 0;
+                  for (const channelNest of discoveredChannels) {
+                    if (!watchedChannels.has(channelNest)) {
+                      watchedChannels.add(channelNest);
+                      newCount++;
+                    }
+                  }
+                  if (newCount > 0) {
+                    runtime.log?.(`[tlon] Discovered ${newCount} new channel(s) after joining group`);
+                  }
+                } catch (err) {
+                  runtime.log?.(`[tlon] Channel discovery after group join failed: ${String(err)}`);
+                }
+              }, 2000);
+            } catch (err) {
+              runtime.error?.(`[tlon] Failed to join group ${approval.groupFlag}: ${String(err)}`);
+            }
+          }
+          break;
+      }
+
+      await sendOwnerNotification(formatApprovalConfirmation(approval, "approve"));
+    } else if (parsed.action === "block") {
+      // Block the ship using Tlon's native blocking
+      await blockShip(approval.requestingShip);
+      await sendOwnerNotification(formatApprovalConfirmation(approval, "block"));
+    } else {
+      // Denied - just remove from pending, no notification to requester
+      await sendOwnerNotification(formatApprovalConfirmation(approval, "deny"));
+    }
+
+    // Remove from pending
+    pendingApprovals = removePendingApproval(pendingApprovals, approval.id);
+    await savePendingApprovals();
+
+    return true;
+  }
+
+  // Handle admin commands from owner (unblock, blocked, pending)
+  async function handleAdminCommand(text: string): Promise<boolean> {
+    const command = parseAdminCommand(text);
+    if (!command) {
+      return false;
+    }
+
+    switch (command.type) {
+      case "blocked": {
+        const blockedShips = await getBlockedShips();
+        await sendOwnerNotification(formatBlockedList(blockedShips));
+        runtime.log?.(`[tlon] Owner requested blocked ships list (${blockedShips.length} ships)`);
+        return true;
+      }
+
+      case "pending": {
+        await sendOwnerNotification(formatPendingList(pendingApprovals));
+        runtime.log?.(`[tlon] Owner requested pending approvals list (${pendingApprovals.length} pending)`);
+        return true;
+      }
+
+      case "unblock": {
+        const shipToUnblock = command.ship;
+        const isBlocked = await isShipBlocked(shipToUnblock);
+        if (!isBlocked) {
+          await sendOwnerNotification(`${shipToUnblock} is not blocked.`);
+          return true;
+        }
+        const success = await unblockShip(shipToUnblock);
+        if (success) {
+          await sendOwnerNotification(`Unblocked ${shipToUnblock}.`);
+        } else {
+          await sendOwnerNotification(`Failed to unblock ${shipToUnblock}.`);
+        }
+        return true;
+      }
+    }
+  }
+
+  // Check if a ship is the owner (always allowed to DM)
+  function isOwner(ship: string): boolean {
+    if (!effectiveOwnerShip) {return false;}
+    return normalizeShip(ship) === effectiveOwnerShip;
   }
 
   const processMessage = async (params: {
@@ -625,18 +1013,38 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         runtime.log?.(`[tlon] Responding to thread we participated in (no mention): ${parentId}`);
       }
 
-      const { mode, allowedShips } = resolveChannelAuthorization(cfg, nest, currentSettings);
-      if (mode === "restricted") {
-        if (allowedShips.length === 0) {
-          runtime.log?.(`[tlon] Access denied: ${senderShip} in ${nest} (no allowlist)`);
-          return;
-        }
-        const normalizedAllowed = allowedShips.map(normalizeShip);
-        if (!normalizedAllowed.includes(senderShip)) {
-          runtime.log?.(
-            `[tlon] Access denied: ${senderShip} in ${nest} (allowed: ${allowedShips.join(", ")})`,
-          );
-          return;
+      // Owner is always allowed
+      if (isOwner(senderShip)) {
+        runtime.log?.(`[tlon] Owner ${senderShip} is always allowed in channels`);
+      } else {
+        const { mode, allowedShips } = resolveChannelAuthorization(cfg, nest, currentSettings);
+        if (mode === "restricted") {
+          const normalizedAllowed = allowedShips.map(normalizeShip);
+          if (!normalizedAllowed.includes(senderShip)) {
+            // If owner is configured, queue approval request
+            if (effectiveOwnerShip) {
+              const approval = createPendingApproval({
+                type: "channel",
+                requestingShip: senderShip,
+                channelNest: nest,
+                messagePreview: messageText.substring(0, 100),
+                originalMessage: {
+                  messageId: messageId ?? "",
+                  messageText,
+                  messageContent: content.content,
+                  timestamp: content.sent || Date.now(),
+                  parentId: parentId ?? undefined,
+                  isThreadReply,
+                },
+              });
+              await queueApprovalRequest(approval);
+            } else {
+              runtime.log?.(
+                `[tlon] Access denied: ${senderShip} in ${nest} (allowed: ${allowedShips.join(", ")})`,
+              );
+            }
+            return;
+          }
         }
       }
 
@@ -669,25 +1077,51 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     try {
       // Handle DM invite lists (arrays)
       if (Array.isArray(event)) {
-        if (effectiveAutoAcceptDmInvites) {
-          for (const invite of event as DmInvite[]) {
-            const ship = normalizeShip(invite.ship || "");
-            if (!ship || processedDmInvites.has(ship)) {continue;}
+        for (const invite of event as DmInvite[]) {
+          const ship = normalizeShip(invite.ship || "");
+          if (!ship || processedDmInvites.has(ship)) {continue;}
 
-            // Only auto-accept from ships in the allowlist
-            if (isDmAllowed(ship, effectiveDmAllowlist)) {
-              try {
-                await api.poke({
-                  app: "chat",
-                  mark: "chat-dm-rsvp",
-                  json: { ship, ok: true },
-                });
-                processedDmInvites.add(ship);
-                runtime.log?.(`[tlon] Auto-accepted DM invite from ${ship}`);
-              } catch (err) {
-                runtime.error?.(`[tlon] Failed to auto-accept DM from ${ship}: ${String(err)}`);
-              }
+          // Owner is always allowed
+          if (isOwner(ship)) {
+            try {
+              await api.poke({
+                app: "chat",
+                mark: "chat-dm-rsvp",
+                json: { ship, ok: true },
+              });
+              processedDmInvites.add(ship);
+              runtime.log?.(`[tlon] Auto-accepted DM invite from owner ${ship}`);
+            } catch (err) {
+              runtime.error?.(`[tlon] Failed to auto-accept DM from owner: ${String(err)}`);
             }
+            continue;
+          }
+
+          // Auto-accept if on allowlist and auto-accept is enabled
+          if (effectiveAutoAcceptDmInvites && isDmAllowed(ship, effectiveDmAllowlist)) {
+            try {
+              await api.poke({
+                app: "chat",
+                mark: "chat-dm-rsvp",
+                json: { ship, ok: true },
+              });
+              processedDmInvites.add(ship);
+              runtime.log?.(`[tlon] Auto-accepted DM invite from ${ship}`);
+            } catch (err) {
+              runtime.error?.(`[tlon] Failed to auto-accept DM from ${ship}: ${String(err)}`);
+            }
+            continue;
+          }
+
+          // If owner is configured and ship is not on allowlist, queue approval
+          if (effectiveOwnerShip && !isDmAllowed(ship, effectiveDmAllowlist)) {
+            const approval = createPendingApproval({
+              type: "dm",
+              requestingShip: ship,
+              messagePreview: "(DM invite - no message yet)",
+            });
+            await queueApprovalRequest(approval);
+            processedDmInvites.add(ship); // Mark as processed to avoid duplicate notifications
           }
         }
         return;
@@ -713,9 +1147,57 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       const messageText = citedContent + rawText;
       if (!messageText.trim()) {return;}
 
-      // For DMs, check allowlist (uses settings store if available)
+      // Check if this is the owner sending an approval response
+      if (isOwner(senderShip) && isApprovalResponse(messageText)) {
+        const handled = await handleApprovalResponse(messageText);
+        if (handled) {
+          runtime.log?.(`[tlon] Processed approval response from owner: ${messageText}`);
+          return;
+        }
+      }
+
+      // Check if this is the owner sending an admin command
+      if (isOwner(senderShip) && isAdminCommand(messageText)) {
+        const handled = await handleAdminCommand(messageText);
+        if (handled) {
+          runtime.log?.(`[tlon] Processed admin command from owner: ${messageText}`);
+          return;
+        }
+      }
+
+      // Owner is always allowed to DM (bypass allowlist)
+      if (isOwner(senderShip)) {
+        runtime.log?.(`[tlon] Processing DM from owner ${senderShip}`);
+        await processMessage({
+          messageId: messageId ?? "",
+          senderShip,
+          messageText,
+          messageContent: essay.content,
+          isGroup: false,
+          timestamp: essay.sent || Date.now(),
+        });
+        return;
+      }
+
+      // For DMs from others, check allowlist
       if (!isDmAllowed(senderShip, effectiveDmAllowlist)) {
-        runtime.log?.(`[tlon] Blocked DM from ${senderShip}: not in allowlist`);
+        // If owner is configured, queue approval request
+        if (effectiveOwnerShip) {
+          const approval = createPendingApproval({
+            type: "dm",
+            requestingShip: senderShip,
+            messagePreview: messageText.substring(0, 100),
+            originalMessage: {
+              messageId: messageId ?? "",
+              messageText,
+              messageContent: essay.content,
+              timestamp: essay.sent || Date.now(),
+            },
+          });
+          await queueApprovalRequest(approval);
+        } else {
+          runtime.log?.(`[tlon] Blocked DM from ${senderShip}: not in allowlist`);
+        }
         return;
       }
 
@@ -851,6 +1333,22 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
           `[tlon] Settings: groupInviteAllowlist updated to ${effectiveGroupInviteAllowlist.join(", ")}`,
         );
       }
+
+      // Update owner ship
+      if (newSettings.ownerShip !== undefined) {
+        effectiveOwnerShip = newSettings.ownerShip
+          ? normalizeShip(newSettings.ownerShip)
+          : account.ownerShip
+            ? normalizeShip(account.ownerShip)
+            : null;
+        runtime.log?.(`[tlon] Settings: ownerShip = ${effectiveOwnerShip}`);
+      }
+
+      // Update pending approvals
+      if (newSettings.pendingApprovals !== undefined) {
+        pendingApprovals = newSettings.pendingApprovals;
+        runtime.log?.(`[tlon] Settings: pendingApprovals updated (${pendingApprovals.length} items)`);
+      }
     });
 
     try {
@@ -982,7 +1480,6 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
 
       // Helper to process pending invites
       const processPendingInvites = async (foreigns: Foreigns) => {
-        if (!effectiveAutoAcceptGroupInvites) {return;}
         if (!foreigns || typeof foreigns !== "object") {return;}
 
         for (const [groupFlag, foreign] of Object.entries(foreigns)) {
@@ -992,31 +1489,72 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
           const validInvite = foreign.invites.find((inv) => inv.valid);
           if (!validInvite) {continue;}
 
-          // SECURITY: Check if inviter is on allowlist
-          // If allowlist is empty, accept all (backward-compatible, but logged as warning)
           const inviterShip = validInvite.from;
-          if (effectiveGroupInviteAllowlist.length > 0) {
-            const normalizedInviter = normalizeShip(inviterShip);
-            const isAllowed = effectiveGroupInviteAllowlist
-              .map((s) => normalizeShip(s))
-              .some((s) => s === normalizedInviter);
+          const normalizedInviter = normalizeShip(inviterShip);
 
-            if (!isAllowed) {
+          // Owner invites are always accepted
+          if (isOwner(inviterShip)) {
+            try {
+              await api.poke({
+                app: "groups",
+                mark: "group-join",
+                json: {
+                  flag: groupFlag,
+                  "join-all": true,
+                },
+              });
+              processedGroupInvites.add(groupFlag);
               runtime.log?.(
-                `[tlon] Rejected group invite from ${inviterShip} (not in groupInviteAllowlist): ${groupFlag}`,
+                `[tlon] Auto-accepted group invite from owner: ${groupFlag}`,
               );
-              processedGroupInvites.add(groupFlag); // Mark as processed to avoid spam
-              continue;
+            } catch (err) {
+              runtime.error?.(`[tlon] Failed to accept group invite from owner: ${String(err)}`);
             }
-          } else {
-            // SECURITY: Fail-safe to deny - require explicit allowlist
-            runtime.log?.(
-              `[tlon] Skipping group invite from ${inviterShip} - no groupInviteAllowlist configured (fail-safe)`,
-            );
-            processedGroupInvites.add(groupFlag);
             continue;
           }
 
+          // Skip if auto-accept is disabled
+          if (!effectiveAutoAcceptGroupInvites) {
+            // If owner is configured, queue approval
+            if (effectiveOwnerShip) {
+              const approval = createPendingApproval({
+                type: "group",
+                requestingShip: inviterShip,
+                groupFlag,
+              });
+              await queueApprovalRequest(approval);
+              processedGroupInvites.add(groupFlag);
+            }
+            continue;
+          }
+
+          // Check if inviter is on allowlist
+          const isAllowed = effectiveGroupInviteAllowlist.length > 0
+            ? effectiveGroupInviteAllowlist
+                .map((s) => normalizeShip(s))
+                .some((s) => s === normalizedInviter)
+            : false; // Fail-safe: empty allowlist means deny
+
+          if (!isAllowed) {
+            // If owner is configured, queue approval
+            if (effectiveOwnerShip) {
+              const approval = createPendingApproval({
+                type: "group",
+                requestingShip: inviterShip,
+                groupFlag,
+              });
+              await queueApprovalRequest(approval);
+              processedGroupInvites.add(groupFlag);
+            } else {
+              runtime.log?.(
+                `[tlon] Rejected group invite from ${inviterShip} (not in groupInviteAllowlist): ${groupFlag}`,
+              );
+              processedGroupInvites.add(groupFlag);
+            }
+            continue;
+          }
+
+          // Inviter is on allowlist - accept the invite
           try {
             await api.poke({
               app: "groups",

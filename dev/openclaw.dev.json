@@ -52,6 +52,7 @@
       "ship": "${TLON_SHIP}",
       "code": "${TLON_CODE}",
       "dmAllowlist": ["${TLON_DM_ALLOWLIST}"],
+      "ownerShip": "${TLON_OWNER_SHIP}",
       "autoDiscoverChannels": true
     }
   }

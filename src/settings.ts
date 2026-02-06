@@ -11,6 +11,26 @@
 
 import type { UrbitSSEClient } from "./urbit/sse-client.js";
 
+/** Pending approval request stored for persistence */
+export type PendingApproval = {
+  id: string;
+  type: "dm" | "channel" | "group";
+  requestingShip: string;
+  channelNest?: string;
+  groupFlag?: string;
+  messagePreview?: string;
+  /** Full message context for processing after approval */
+  originalMessage?: {
+    messageId: string;
+    messageText: string;
+    messageContent: unknown;
+    timestamp: number;
+    parentId?: string;
+    isThreadReply?: boolean;
+  };
+  timestamp: number;
+};
+
 export type TlonSettingsStore = {
   groupChannels?: string[];
   dmAllowlist?: string[];
@@ -28,6 +48,10 @@ export type TlonSettingsStore = {
     }
   >;
   defaultAuthorizedShips?: string[];
+  /** Ship that receives approval requests for DMs, channel mentions, and group invites */
+  ownerShip?: string;
+  /** Pending approval requests awaiting owner response */
+  pendingApprovals?: PendingApproval[];
 };
 
 export type TlonSettingsState = {
@@ -108,6 +132,8 @@ function parseSettingsResponse(raw: unknown): TlonSettingsStore {
     defaultAuthorizedShips: Array.isArray(settings.defaultAuthorizedShips)
       ? settings.defaultAuthorizedShips.filter((x): x is string => typeof x === "string")
       : undefined,
+    ownerShip: typeof settings.ownerShip === "string" ? settings.ownerShip : undefined,
+    pendingApprovals: parsePendingApprovals(settings.pendingApprovals),
   };
 }
 
@@ -123,6 +149,43 @@ function isChannelRulesObject(
     }
   }
   return true;
+}
+
+/**
+ * Parse pendingApprovals - handles both JSON string and array formats.
+ * Settings-store stores complex objects as JSON strings.
+ */
+function parsePendingApprovals(value: unknown): PendingApproval[] | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  // If it's a string, try to parse as JSON
+  let parsed: unknown = value;
+  if (typeof value === "string") {
+    try {
+      parsed = JSON.parse(value);
+    } catch {
+      return undefined;
+    }
+  }
+
+  // Validate it's an array
+  if (!Array.isArray(parsed)) {
+    return undefined;
+  }
+
+  // Filter to valid PendingApproval objects
+  return parsed.filter((item): item is PendingApproval => {
+    if (!item || typeof item !== "object") {return false;}
+    const obj = item as Record<string, unknown>;
+    return (
+      typeof obj.id === "string" &&
+      (obj.type === "dm" || obj.type === "channel" || obj.type === "group") &&
+      typeof obj.requestingShip === "string" &&
+      typeof obj.timestamp === "number"
+    );
+  });
 }
 
 /**
@@ -207,6 +270,12 @@ function applySettingsUpdate(
       next.defaultAuthorizedShips = Array.isArray(value)
         ? value.filter((x): x is string => typeof x === "string")
         : undefined;
+      break;
+    case "ownerShip":
+      next.ownerShip = typeof value === "string" ? value : undefined;
+      break;
+    case "pendingApprovals":
+      next.pendingApprovals = parsePendingApprovals(value);
       break;
   }
 
