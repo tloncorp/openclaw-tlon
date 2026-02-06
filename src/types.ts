@@ -16,6 +16,35 @@ export type TlonResolvedAccount = {
   showModelSignature: boolean | null;
   autoAcceptDmInvites: boolean | null;
   autoAcceptGroupInvites: boolean | null;
+  groupActivity: GroupActivityConfig | null;
+};
+
+export const GROUP_ACTIVITY_EVENT_TYPES = [
+  "group-ask",
+  "group-kick",
+  "group-join",
+  "group-invite",
+  "group-role",
+  "chan-init",
+] as const;
+
+export type GroupActivityEventType = (typeof GROUP_ACTIVITY_EVENT_TYPES)[number];
+
+export type GroupActivityConfig = {
+  enabled?: boolean;
+  target?: string;
+  events?: Partial<Record<GroupActivityEventType, boolean>>;
+  format?: "emoji" | "plain";
+  batchWindowMs?: number;
+  rateLimitPerMinute?: number;
+};
+
+export type NormalizedGroupActivityEvent = {
+  type: GroupActivityEventType;
+  group: string;
+  ship?: string;
+  roles?: string[];
+  channel?: string;
 };
 
 export function resolveTlonAccount(
@@ -36,6 +65,7 @@ export function resolveTlonAccount(
         showModelSignature?: boolean;
         autoAcceptDmInvites?: boolean;
         autoAcceptGroupInvites?: boolean;
+        groupActivity?: GroupActivityConfig;
         accounts?: Record<string, Record<string, unknown>>;
       }
     | undefined;
@@ -56,6 +86,7 @@ export function resolveTlonAccount(
       showModelSignature: null,
       autoAcceptDmInvites: null,
       autoAcceptGroupInvites: null,
+      groupActivity: null,
     };
   }
 
@@ -82,6 +113,20 @@ export function resolveTlonAccount(
   const autoAcceptGroupInvites = (account?.autoAcceptGroupInvites ??
     base.autoAcceptGroupInvites ??
     null) as boolean | null;
+  const baseGroupActivity = (base as { groupActivity?: GroupActivityConfig }).groupActivity;
+  const accountGroupActivity = (account as { groupActivity?: GroupActivityConfig } | undefined)
+    ?.groupActivity;
+  const groupActivity =
+    baseGroupActivity || accountGroupActivity
+      ? {
+          ...(baseGroupActivity ?? {}),
+          ...(accountGroupActivity ?? {}),
+          events: {
+            ...(baseGroupActivity?.events ?? {}),
+            ...(accountGroupActivity?.events ?? {}),
+          },
+        }
+      : null;
   const configured = Boolean(ship && url && code);
 
   return {
@@ -99,6 +144,7 @@ export function resolveTlonAccount(
     showModelSignature,
     autoAcceptDmInvites,
     autoAcceptGroupInvites,
+    groupActivity,
   };
 }
 

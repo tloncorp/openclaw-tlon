@@ -9,6 +9,7 @@ Tlon/Urbit channel plugin for [OpenClaw](https://github.com/openclaw/openclaw). 
 - **Thread Replies**: Support for threaded conversations
 - **Rich Content**: Images, links, and formatted text
 - **Ship Authorization**: Allowlist ships for DM access
+- **Group Activity Monitoring**: Join/kick/invite/role/channel events via %activity
 - **Settings Store**: Hot-reload config via Urbit settings-store
 - **SSE Ack**: Proper event acknowledgment for reliable message delivery
 - **Cite Resolution**: Parse and fetch quoted message content
@@ -24,7 +25,24 @@ channels:
     ship: "~your-ship"
     url: "https://your-ship.tlon.network"
     code: "your-access-code"
+    groupActivity:
+      enabled: true
+      target: "~bill" # DM target (ship or chat/...)
+      events:
+        group-ask: true
+        group-join: true
+        group-kick: true
+        group-invite: true
+        group-role: true
+        chan-init: true
+      format: "emoji" # or "plain"
+      batchWindowMs: 5000
+      rateLimitPerMinute: 10
 ```
+
+Notes:
+- If `events` is omitted, all group activity events are enabled.
+- If `events` includes a key with `false`, that event is disabled.
 
 ## Documentation
 
@@ -36,58 +54,13 @@ For group administration, message history, and other API operations, see the [Tl
 
 ## Development
 
-### Prerequisites
+This repo contains the standalone plugin source. Changes here can be synced to an OpenClaw fork for PRs.
 
-- Docker
-- [GitHub CLI](https://cli.github.com/) (`gh`) authenticated with access to tloncorp repos
-- A local Urbit ship running (e.g., on `http://localhost:8080`)
-- Anthropic API key
+### Workflow
 
-### Quick Start
-
-```bash
-# 1. Clone this repo
-gh repo clone tloncorp/openclaw-tlon
-cd openclaw-tlon
-
-# 2. Run setup (clones api-beta and tlon-skill as siblings, creates .env)
-./dev/setup.sh
-
-# 3. Edit .env with your credentials
-#    - ANTHROPIC_API_KEY: Your Anthropic API key
-#    - TLON_URL: Use http://host.docker.internal:<port> (not localhost!)
-#    - TLON_SHIP: Your ship name (e.g., ~zod)
-#    - TLON_CODE: Your ship's access code
-#    - TLON_DM_ALLOWLIST: Your ship (to allow DMs to the bot)
-
-# 4. Start the dev environment
-docker compose -f dev/docker-compose.yml up --build
-
-# 5. Access OpenClaw at http://localhost:18789
-```
-
-### Directory Structure
-
-After setup, you'll have three sibling directories:
-
-```
-parent/
-├── api-beta/           # @tloncorp/api - shared API library
-├── tlon-skill/         # AgentSkills skill with tlon-run CLI
-└── openclaw-tlon/      # This repo - OpenClaw plugin
-```
-
-All three are mounted into the Docker container and linked via npm link.
-
-### Making Changes
-
-1. Edit code in any of the three repos
-2. Restart the container to rebuild: `docker compose -f dev/docker-compose.yml up --build`
-3. For faster iteration, you can also run OpenClaw directly on your host with npm link
-
-### Legacy Workflow
-
-For syncing to an OpenClaw fork (for upstream PRs):
+1. **Develop here** - Make changes in this repo
+2. **Test locally** - Copy to your OpenClaw's `extensions/tlon/`
+3. **Create PR** - Use the sync script to update an OpenClaw fork:
 
 ```bash
 # Sync to your openclaw fork
@@ -98,6 +71,20 @@ cd ~/Projects/openclaw-fork
 git add extensions/tlon
 git commit -m "tlon: description of changes"
 git push origin my-feature-branch
+# Create PR on GitHub
+```
+
+### Local Testing
+
+```bash
+# Install dependencies
+npm install
+
+# Copy to local OpenClaw
+cp -r . ~/.openclaw/extensions/tlon/
+
+# Restart OpenClaw gateway
+openclaw gateway restart
 ```
 
 ## License

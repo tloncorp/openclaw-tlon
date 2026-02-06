@@ -105,6 +105,18 @@ export class UrbitSSEClient {
     return subId;
   }
 
+  async resubscribe(subscriptionId: number): Promise<boolean> {
+    const subscription = this.subscriptions.find((sub) => sub.id === subscriptionId);
+    if (!subscription) {
+      return false;
+    }
+    if (!this.isConnected) {
+      return false;
+    }
+    await this.sendSubscription(subscription);
+    return true;
+  }
+
   private async sendSubscription(subscription: {
     id: number;
     action: "subscribe";

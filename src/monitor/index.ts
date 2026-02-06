@@ -3,11 +3,23 @@ import { format } from "node:util";
 import type { Foreigns, DmInvite } from "../urbit/foreigns.js";
 import { getTlonRuntime } from "../runtime.js";
 import { createSettingsManager, type TlonSettingsStore } from "../settings.js";
-import { normalizeShip, parseChannelNest } from "../targets.js";
-import { resolveTlonAccount } from "../types.js";
+import { normalizeShip, parseChannelNest, parseTlonTarget } from "../targets.js";
+import {
+  type GroupActivityEventType,
+  type NormalizedGroupActivityEvent,
+  resolveTlonAccount,
+} from "../types.js";
 import { authenticate } from "../urbit/auth.js";
 import { sendDm, sendGroupMessage } from "../urbit/send.js";
 import { UrbitSSEClient } from "../urbit/sse-client.js";
+import { EventBatcher } from "../event-batcher.js";
+import { RateLimiter } from "../rate-limiter.js";
+import { formatGroupActivityEvents, formatGroupFlag } from "../formatters.js";
+import {
+  extractActivityEnvelope,
+  isGroupActivityEventType,
+  normalizeGroupActivityEvent,
+} from "../event-handlers.js";
 import { fetchAllChannels, fetchInitData } from "./discovery.js";
 import { cacheMessage, getChannelHistory, fetchThreadHistory } from "./history.js";
 import { downloadMessageImages } from "./media.js";
@@ -126,6 +138,106 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
 
   // Track threads we've participated in (by parentId) - respond without mention requirement
   const participatedThreads = new Set<string>();
+
+  const groupActivityConfig = account.groupActivity ?? null;
+  const groupActivityEnabled = groupActivityConfig?.enabled === true;
+  const groupActivityTarget = groupActivityConfig?.target ?? account.ship ?? null;
+  const groupActivityFormat = groupActivityConfig?.format ?? "emoji";
+  const groupActivityBatchWindowMs = Math.max(
+    0,
+    groupActivityConfig?.batchWindowMs ?? 5000,
+  );
+  const groupActivityRateLimit = Math.max(1, groupActivityConfig?.rateLimitPerMinute ?? 10);
+  const groupActivityEvents = groupActivityConfig?.events ?? {};
+
+  const isGroupActivityEventEnabled = (eventType: GroupActivityEventType): boolean => {
+    if (!groupActivityEnabled) {
+      return false;
+    }
+    if (!groupActivityEvents || Object.keys(groupActivityEvents).length === 0) {
+      return true;
+    }
+    return groupActivityEvents[eventType] !== false;
+  };
+
+  let groupActivityTargetWarned = false;
+
+  const resolveGroupActivityTarget = () => {
+    if (!groupActivityTarget) {
+      return null;
+    }
+    return parseTlonTarget(groupActivityTarget);
+  };
+
+  const sendGroupActivityMessage = async (text: string): Promise<void> => {
+    if (!text.trim()) {
+      return;
+    }
+    const target = resolveGroupActivityTarget();
+    if (!target) {
+      if (!groupActivityTargetWarned) {
+        runtime.log?.("[tlon] Group activity target not configured; skipping notifications");
+        groupActivityTargetWarned = true;
+      }
+      return;
+    }
+
+    if (target.kind === "dm") {
+      await sendDm({ api, fromShip: botShipName, toShip: target.ship, text });
+      return;
+    }
+
+    await sendGroupMessage({
+      api,
+      fromShip: botShipName,
+      hostShip: target.hostShip,
+      channelName: target.channelName,
+      text,
+    });
+  };
+
+  const groupActivityRateLimiter = new RateLimiter({
+    maxPerMinute: groupActivityRateLimit,
+    onThrottle: (group, count) => {
+      const msg = `⚠️ High activity in ${formatGroupFlag(group)} (${count} events in last minute, throttling notifications)`;
+      void sendGroupActivityMessage(msg);
+    },
+    onResume: (group) => {
+      const msg = `✅ Resuming notifications for ${formatGroupFlag(group)} after high activity.`;
+      void sendGroupActivityMessage(msg);
+    },
+    logger: {
+      log: (msg) => runtime.log?.(msg),
+      error: (msg) => runtime.error?.(msg),
+    },
+  });
+
+  const groupActivityBatcher = new EventBatcher<NormalizedGroupActivityEvent>({
+    windowMs: groupActivityBatchWindowMs,
+    buildKey: (event) => `${event.group}:${event.type}`,
+    onFlush: async (_key, events) => {
+      if (!groupActivityEnabled) {
+        return;
+      }
+      const normalizedEvents = events.map((entry) => entry.event);
+      const first = normalizedEvents[0];
+      if (!first) {
+        return;
+      }
+      if (!groupActivityRateLimiter.checkRateLimit(first.group)) {
+        return;
+      }
+      const message = formatGroupActivityEvents(normalizedEvents, groupActivityFormat);
+      if (!message) {
+        return;
+      }
+      await sendGroupActivityMessage(message);
+    },
+    logger: {
+      log: (msg) => runtime.log?.(msg),
+      error: (msg) => runtime.error?.(msg),
+    },
+  });
 
   // Fetch bot's nickname from contacts
   try {
@@ -564,6 +676,74 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
   const watchedChannels = new Set<string>(groupChannels);
   const _watchedDMs = new Set<string>();
 
+  let activitySubscriptionId: number | null = null;
+  let activityReconnectAttempts = 0;
+  let activityReconnectTimer: NodeJS.Timeout | null = null;
+
+  const scheduleActivityResubscribe = (reason: string) => {
+    if (!groupActivityEnabled || !api || activitySubscriptionId === null) {
+      return;
+    }
+    if (!api.isConnected) {
+      runtime.log?.(`[tlon] Activity resubscribe delayed (SSE not connected): ${reason}`);
+      return;
+    }
+    if (activityReconnectTimer) {
+      return;
+    }
+    activityReconnectAttempts += 1;
+    const delay = Math.min(1000 * Math.pow(2, activityReconnectAttempts - 1), 30000);
+    runtime.log?.(`[tlon] Activity resubscribe in ${delay}ms (${reason})`);
+    activityReconnectTimer = setTimeout(async () => {
+      activityReconnectTimer = null;
+      try {
+        const ok = await api.resubscribe(activitySubscriptionId);
+        if (ok) {
+          activityReconnectAttempts = 0;
+          runtime.log?.("[tlon] Activity subscription restored");
+          return;
+        }
+        scheduleActivityResubscribe("retry");
+      } catch (error) {
+        runtime.error?.(`[tlon] Activity resubscribe failed: ${String(error)}`);
+        scheduleActivityResubscribe("error");
+      }
+    }, delay);
+  };
+
+  const handleActivityEvent = (data: unknown) => {
+    if (!groupActivityEnabled) {
+      return;
+    }
+    try {
+      const { timeId, incomingEvent } = extractActivityEnvelope(data);
+      if (!incomingEvent) {
+        return;
+      }
+      const incomingType =
+        typeof (incomingEvent as { type?: unknown })?.type === "string"
+          ? String((incomingEvent as { type?: unknown }).type)
+          : null;
+      const normalized = normalizeGroupActivityEvent(incomingEvent);
+      if (!normalized) {
+        if (incomingType && isGroupActivityEventType(incomingType)) {
+          runtime.log?.(
+            `[tlon] Malformed group activity event (${incomingType}); missing group or ship data`,
+          );
+        }
+        return;
+      }
+      if (!isGroupActivityEventEnabled(normalized.type)) {
+        return;
+      }
+      groupActivityBatcher.queueEvent(normalized, timeId);
+    } catch (error: any) {
+      runtime.error?.(
+        `[tlon] Error handling activity event: ${error?.message ?? String(error)}`,
+      );
+    }
+  };
+
   // Firehose handler for all channel messages (/v2)
   const handleChannelsFirehose = async (event: any) => {
     try {
@@ -764,6 +944,28 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       },
     });
     runtime.log?.("[tlon] Subscribed to chat firehose (/v3)");
+
+    // Subscribe to activity notifications for group-level events
+    if (groupActivityEnabled) {
+      try {
+        activitySubscriptionId = await api.subscribe({
+          app: "activity",
+          path: "/notifications",
+          event: handleActivityEvent,
+          err: (error) => {
+            runtime.error?.(`[tlon] Activity subscription error: ${String(error)}`);
+            scheduleActivityResubscribe("error");
+          },
+          quit: () => {
+            runtime.log?.("[tlon] Activity subscription ended");
+            scheduleActivityResubscribe("quit");
+          },
+        });
+        runtime.log?.("[tlon] Subscribed to activity notifications (/notifications)");
+      } catch (err) {
+        runtime.log?.(`[tlon] Activity subscription failed: ${String(err)}`);
+      }
+    }
 
     // Subscribe to contacts updates to track nickname changes
     await api.subscribe({
@@ -1115,7 +1317,14 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
           "abort",
           () => {
             clearInterval(pollInterval);
-            resolve(null);
+            void (async () => {
+              try {
+                await groupActivityBatcher.flushAll();
+              } catch (error) {
+                runtime.error?.(`[tlon] Failed to flush group activity batches: ${String(error)}`);
+              }
+              resolve(null);
+            })();
           },
           { once: true },
         );
