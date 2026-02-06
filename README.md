@@ -41,7 +41,7 @@ For group administration, message history, and other API operations, see the [Tl
 - Docker
 - [GitHub CLI](https://cli.github.com/) (`gh`) authenticated with access to tloncorp repos
 - A local Urbit ship running (e.g., on `http://localhost:8080`)
-- Anthropic API key
+- Anthropic API key (or OpenRouter API key for alternative models)
 
 ### Quick Start
 
@@ -59,6 +59,10 @@ cd openclaw-tlon
 #    - TLON_SHIP: Your ship name (e.g., ~zod)
 #    - TLON_CODE: Your ship's access code
 #    - TLON_DM_ALLOWLIST: Your ship (to allow DMs to the bot)
+#
+# Optional: Use OpenRouter for alternative models
+#    - MODEL: e.g., openrouter/anthropic/claude-sonnet-4-5
+#    - OPENROUTER_API_KEY: Your OpenRouter API key
 
 # 4. Start the dev environment
 docker compose -f dev/docker-compose.yml up --build
