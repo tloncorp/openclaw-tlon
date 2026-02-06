@@ -28,4 +28,23 @@ describe("Tlon config schema", () => {
 
     expect(parsed.accounts?.primary?.ship).toBe("~zod");
   });
+
+  it("accepts group activity config", () => {
+    const parsed = TlonConfigSchema.parse({
+      groupActivity: {
+        enabled: true,
+        target: "~zod",
+        events: {
+          "group-join": true,
+          "group-ask": true,
+        },
+        format: "emoji",
+        batchWindowMs: 5000,
+        rateLimitPerMinute: 10,
+      },
+    });
+
+    expect(parsed.groupActivity?.enabled).toBe(true);
+    expect(parsed.groupActivity?.events?.["group-join"]).toBe(true);
+  });
 });
