@@ -214,6 +214,16 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         settingsValue: currentSettings.groupChannels,
       },
       {
+        key: "defaultAuthorizedShips",
+        fileValue: account.defaultAuthorizedShips,
+        settingsValue: currentSettings.defaultAuthorizedShips,
+      },
+      {
+        key: "autoDiscoverChannels",
+        fileValue: account.autoDiscoverChannels,
+        settingsValue: currentSettings.autoDiscoverChannels,
+      },
+      {
         key: "autoAcceptDmInvites",
         fileValue: account.autoAcceptDmInvites,
         settingsValue: currentSettings.autoAcceptDmInvites,
