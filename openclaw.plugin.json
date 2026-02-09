@@ -1,6 +1,7 @@
 {
   "id": "tlon",
   "channels": ["tlon"],
+  "skills": ["skills/tlon"],
   "configSchema": {
     "type": "object",
     "additionalProperties": false,
