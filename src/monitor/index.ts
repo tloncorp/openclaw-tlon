@@ -137,6 +137,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
   let effectiveAutoAcceptDmInvites: boolean = account.autoAcceptDmInvites ?? false;
   let effectiveAutoAcceptGroupInvites: boolean = account.autoAcceptGroupInvites ?? false;
   let effectiveGroupInviteAllowlist: string[] = account.groupInviteAllowlist;
+  let effectiveAutoDiscoverChannels: boolean = account.autoDiscoverChannels ?? false;
   let effectiveOwnerShip: string | null = account.ownerShip
     ? normalizeShip(account.ownerShip)
     : null;
@@ -214,6 +215,16 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         settingsValue: currentSettings.groupChannels,
       },
       {
+        key: "defaultAuthorizedShips",
+        fileValue: account.defaultAuthorizedShips,
+        settingsValue: currentSettings.defaultAuthorizedShips,
+      },
+      {
+        key: "autoDiscoverChannels",
+        fileValue: account.autoDiscoverChannels,
+        settingsValue: currentSettings.autoDiscoverChannels,
+      },
+      {
         key: "autoAcceptDmInvites",
         fileValue: account.autoAcceptDmInvites,
         settingsValue: currentSettings.autoAcceptDmInvites,
@@ -270,6 +281,26 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     if (currentSettings.groupChannels?.length) {
       groupChannels = currentSettings.groupChannels;
       runtime.log?.(`[tlon] Using groupChannels from settings store: ${groupChannels.join(", ")}`);
+    }
+    if (currentSettings.defaultAuthorizedShips?.length) {
+      runtime.log?.(
+        `[tlon] Using defaultAuthorizedShips from settings store: ${currentSettings.defaultAuthorizedShips.join(", ")}`,
+      );
+    }
+    if (currentSettings.autoDiscoverChannels !== undefined) {
+      effectiveAutoDiscoverChannels = currentSettings.autoDiscoverChannels;
+      runtime.log?.(
+        `[tlon] Using autoDiscoverChannels from settings store: ${effectiveAutoDiscoverChannels}`,
+      );
+    }
+    if (currentSettings.defaultAuthorizedShips !== undefined) {
+      runtime.log?.(
+        `[tlon] Settings: defaultAuthorizedShips updated to ${(newSettings.defaultAuthorizedShips || []).join(", ")}`,
+      );
+    }
+    if (currentSettings.autoDiscoverChannels !== undefined) {
+      effectiveAutoDiscoverChannels = newSettings.autoDiscoverChannels;
+      runtime.log?.(`[tlon] Settings: autoDiscoverChannels = ${effectiveAutoDiscoverChannels}`);
     }
     if (currentSettings.dmAllowlist?.length) {
       effectiveDmAllowlist = currentSettings.dmAllowlist;
