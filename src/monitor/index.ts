@@ -293,12 +293,12 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         `[tlon] Using autoDiscoverChannels from settings store: ${effectiveAutoDiscoverChannels}`,
       );
     }
-    if (newSettings.defaultAuthorizedShips !== undefined) {
+    if (currentSettings.defaultAuthorizedShips !== undefined) {
       runtime.log?.(
         `[tlon] Settings: defaultAuthorizedShips updated to ${(newSettings.defaultAuthorizedShips || []).join(", ")}`,
       );
     }
-    if (newSettings.autoDiscoverChannels !== undefined) {
+    if (currentSettings.autoDiscoverChannels !== undefined) {
       effectiveAutoDiscoverChannels = newSettings.autoDiscoverChannels;
       runtime.log?.(`[tlon] Settings: autoDiscoverChannels = ${effectiveAutoDiscoverChannels}`);
     }
