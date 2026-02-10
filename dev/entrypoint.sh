@@ -15,13 +15,23 @@ npm install
 
 # Link api-beta if mounted (for local development)
 if [ -f "/workspace/api-beta/package.json" ]; then
-  echo "==> Linking local api-beta..."
   cd /workspace/api-beta
-  npm install
-  npm run build
-  npm link
+  
+  # Only install/build if not already done
+  if [ ! -d "node_modules" ]; then
+    echo "==> Installing api-beta dependencies..."
+    npm install
+  fi
+  
+  if [ ! -d "dist" ]; then
+    echo "==> Building api-beta..."
+    npm run build
+  fi
+  
+  # Always ensure link is set up
+  npm link 2>/dev/null || true
   cd /workspace/openclaw-tlon
-  npm link @tloncorp/api
+  npm link @tloncorp/api 2>/dev/null || true
 fi
 
 # Remove bundled tlon plugin to avoid duplicate ID conflict
