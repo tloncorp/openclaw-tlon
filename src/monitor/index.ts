@@ -164,7 +164,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
   // Store init foreigns for processing after settings are loaded
   let initForeigns: Foreigns | null = null;
 
-  if (account.autoDiscoverChannels !== false) {
+  if (effectiveAutoDiscoverChannels) {
     try {
       const initData = await fetchInitData(api, runtime);
       if (initData.channels.length > 0) {
@@ -292,15 +292,6 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       runtime.log?.(
         `[tlon] Using autoDiscoverChannels from settings store: ${effectiveAutoDiscoverChannels}`,
       );
-    }
-    if (currentSettings.defaultAuthorizedShips !== undefined) {
-      runtime.log?.(
-        `[tlon] Settings: defaultAuthorizedShips updated to ${(newSettings.defaultAuthorizedShips || []).join(", ")}`,
-      );
-    }
-    if (currentSettings.autoDiscoverChannels !== undefined) {
-      effectiveAutoDiscoverChannels = newSettings.autoDiscoverChannels;
-      runtime.log?.(`[tlon] Settings: autoDiscoverChannels = ${effectiveAutoDiscoverChannels}`);
     }
     if (currentSettings.dmAllowlist?.length) {
       effectiveDmAllowlist = currentSettings.dmAllowlist;
@@ -1365,6 +1356,18 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         );
       }
 
+      if (newSettings.defaultAuthorizedShips !== undefined) {
+        runtime.log?.(
+          `[tlon] Settings: defaultAuthorizedShips updated to ${(newSettings.defaultAuthorizedShips || []).join(", ")}`,
+        );
+      }
+
+      // Update auto-discover channels
+      if (newSettings.autoDiscoverChannels !== undefined) {
+        effectiveAutoDiscoverChannels = newSettings.autoDiscoverChannels;
+        runtime.log?.(`[tlon] Settings: autoDiscoverChannels = ${effectiveAutoDiscoverChannels}`);
+      }
+
       // Update owner ship
       if (newSettings.ownerShip !== undefined) {
         effectiveOwnerShip = newSettings.ownerShip
@@ -1639,7 +1642,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     }
 
     // Discover channels to watch
-    if (account.autoDiscoverChannels !== false) {
+    if (effectiveAutoDiscoverChannels) {
       const discoveredChannels = await fetchAllChannels(api, runtime);
       for (const channelNest of discoveredChannels) {
         watchedChannels.add(channelNest);
@@ -1661,7 +1664,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       async () => {
         if (!opts.abortSignal?.aborted) {
           try {
-            if (account.autoDiscoverChannels !== false) {
+            if (effectiveAutoDiscoverChannels) {
               const discoveredChannels = await fetchAllChannels(api, runtime);
               for (const channelNest of discoveredChannels) {
                 if (!watchedChannels.has(channelNest)) {
