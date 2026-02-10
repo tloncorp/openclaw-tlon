@@ -8,10 +8,11 @@ services:
     ports:
       - "18789:18789"
     volumes:
-      # Mount local repos (assumes sibling directories)
-      - ../../api-beta:/workspace/api-beta
-      - ../../tlon-skill:/workspace/tlon-skill
+      # Mount plugin repo
       - ..:/workspace/openclaw-tlon
+      # Optional: mount api-beta for local development (comment out to use npm)
+      - ../../api-beta:/workspace/api-beta
+      # Note: tlon-skill is installed from npm, no mount needed
       # Persist OpenClaw state
       - openclaw-state:/root/.openclaw
       # Dev config

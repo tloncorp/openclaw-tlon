@@ -14,9 +14,9 @@ clone_if_missing() {
   fi
 }
 
-# Clone sibling repos (requires gh CLI authenticated)
+# Clone api-beta for local development (optional - can comment out to use npm version)
 clone_if_missing ../api-beta api-beta
-clone_if_missing ../tlon-skill tlon-skill
+# Note: tlon-skill is installed from npm, no clone needed
 
 # Create .env if missing
 if [ ! -f .env ]; then
