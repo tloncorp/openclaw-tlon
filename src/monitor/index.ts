@@ -7,6 +7,7 @@ import { normalizeShip, parseChannelNest } from "../targets.js";
 import { resolveTlonAccount } from "../types.js";
 import { authenticate } from "../urbit/auth.js";
 import { sendDm, sendGroupMessage } from "../urbit/send.js";
+import { createTlonStream, type TlonStreamHandle } from "./stream.js";
 import { UrbitSSEClient } from "../urbit/sse-client.js";
 import { fetchAllChannels, fetchInitData } from "./discovery.js";
 import { cacheMessage, getChannelHistory, fetchThreadHistory } from "./history.js";
@@ -919,6 +920,29 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     ).responsePrefix;
     const humanDelay = core.channel.reply.resolveHumanDelayConfig(cfg, route.agentId);
 
+    // Create stream handler for group channels when streamMode is "partial"
+    const canStream = isGroup && groupChannel && account.streamMode === "partial";
+    let tlonStream: TlonStreamHandle | undefined;
+    if (canStream) {
+      const parsed = parseChannelNest(groupChannel);
+      if (parsed) {
+        tlonStream = createTlonStream({
+          api: api,
+          fromShip: botShipName,
+          hostShip: parsed.hostShip,
+          channelName: parsed.channelName,
+          replyToId: parentId ?? undefined,
+          log: (msg) => runtime.log?.(`[tlon] ${msg}`),
+          warn: (msg) => runtime.log?.(`[tlon] ${msg}`),
+        });
+      }
+    }
+
+    const updateStreamFromPartial = (text?: string) => {
+      if (!tlonStream || !text) {return;}
+      tlonStream.update(text);
+    };
+
     await core.channel.reply.dispatchReplyWithBufferedBlockDispatcher({
       ctx: ctxPayload,
       cfg,
@@ -926,6 +950,16 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         responsePrefix,
         humanDelay,
         deliver: async (payload: ReplyPayload) => {
+          // Stop streaming when final delivery happens
+          if (tlonStream) {
+            await tlonStream.flush();
+            tlonStream.stop();
+            tlonStream = undefined;
+            // Stream already sent the message, no need to send again
+            // But we do need to handle model signature if enabled
+            if (!effectiveShowModelSig) {return;}
+          }
+
           let replyText = payload.text;
           if (!replyText) {return;}
 
@@ -965,7 +999,14 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
           runtime.error?.(
             `[tlon] ${info.kind} reply failed after ${dispatchDuration}ms: ${String(err)}`,
           );
+          // Stop streaming on error
+          tlonStream?.stop();
         },
+      },
+      replyOptions: {
+        onPartialReply: tlonStream
+          ? (payload) => updateStreamFromPartial(payload.text)
+          : undefined,
       },
     });
   };

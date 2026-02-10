@@ -28,6 +28,8 @@ export const TlonAccountSchema = z.object({
   autoAcceptGroupInvites: z.boolean().optional(), // Auto-accept all group invites
   // Owner ship for approval system
   ownerShip: ShipSchema.optional(), // Ship that receives approval requests and can approve/deny
+  // Stream mode for partial replies (group channels only, DMs don't support edit)
+  streamMode: z.enum(["off", "partial"]).optional(), // off = send final, partial = edit in place
 });
 
 export const TlonConfigSchema = z.object({
@@ -48,6 +50,8 @@ export const TlonConfigSchema = z.object({
   autoAcceptGroupInvites: z.boolean().optional(), // Auto-accept all group invites
   // Owner ship for approval system
   ownerShip: ShipSchema.optional(), // Ship that receives approval requests and can approve/deny
+  // Stream mode for partial replies (group channels only, DMs don't support edit)
+  streamMode: z.enum(["off", "partial"]).optional(), // off = send final, partial = edit in place
 });
 
 export const tlonChannelConfigSchema = buildChannelConfigSchema(TlonConfigSchema);

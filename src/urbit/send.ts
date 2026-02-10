@@ -151,6 +151,92 @@ export async function sendGroupMessageWithStory({
   return { channel: "tlon", messageId: `${fromShip}/${sentAt}` };
 }
 
+type EditGroupParams = {
+  api: TlonPokeApi;
+  fromShip: string;
+  hostShip: string;
+  channelName: string;
+  postId: string;
+  sentAt: number;
+  text: string;
+  replyToId?: string | null;
+};
+
+/**
+ * Edit an existing group message. Only works for channel posts (not DMs).
+ */
+export async function editGroupMessage({
+  api,
+  fromShip,
+  hostShip,
+  channelName,
+  postId,
+  sentAt,
+  text,
+  replyToId,
+}: EditGroupParams) {
+  const story: Story = markdownToStory(text);
+
+  // Format reply ID as @ud if needed
+  let formattedReplyId = replyToId;
+  if (replyToId && /^\d+$/.test(replyToId)) {
+    try {
+      formattedReplyId = scot("ud", BigInt(replyToId));
+    } catch {
+      // Fall back to raw ID
+    }
+  }
+
+  const memo = {
+    content: story,
+    author: fromShip,
+    sent: sentAt,
+  };
+
+  const action = {
+    channel: {
+      nest: `chat/${hostShip}/${channelName}`,
+      action: formattedReplyId
+        ? {
+            // Editing a thread reply
+            post: {
+              reply: {
+                id: formattedReplyId,
+                action: {
+                  edit: {
+                    id: postId,
+                    memo,
+                  },
+                },
+              },
+            },
+          }
+        : {
+            // Editing a top-level post
+            post: {
+              edit: {
+                id: postId,
+                essay: {
+                  ...memo,
+                  kind: "/chat",
+                  blob: null,
+                  meta: null,
+                },
+              },
+            },
+          },
+    },
+  };
+
+  await api.poke({
+    app: "channels",
+    mark: "channel-action-1",
+    json: action,
+  });
+
+  return { channel: "tlon", messageId: postId };
+}
+
 export function buildMediaText(text: string | undefined, mediaUrl: string | undefined): string {
   const cleanText = text?.trim() ?? "";
   const cleanUrl = mediaUrl?.trim() ?? "";

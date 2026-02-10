@@ -1,5 +1,7 @@
 import type { OpenClawConfig } from "openclaw/plugin-sdk";
 
+export type TlonStreamMode = "off" | "partial";
+
 export type TlonResolvedAccount = {
   accountId: string;
   name: string | null;
@@ -19,6 +21,8 @@ export type TlonResolvedAccount = {
   defaultAuthorizedShips: string[];
   /** Ship that receives approval requests for DMs, channel mentions, and group invites */
   ownerShip: string | null;
+  /** Stream mode for partial replies (group channels only - DMs don't support edit) */
+  streamMode: TlonStreamMode;
 };
 
 export function resolveTlonAccount(
@@ -40,6 +44,7 @@ export function resolveTlonAccount(
         autoAcceptDmInvites?: boolean;
         autoAcceptGroupInvites?: boolean;
         ownerShip?: string;
+        streamMode?: TlonStreamMode;
         accounts?: Record<string, Record<string, unknown>>;
       }
     | undefined;
@@ -60,7 +65,9 @@ export function resolveTlonAccount(
       showModelSignature: null,
       autoAcceptDmInvites: null,
       autoAcceptGroupInvites: null,
+      defaultAuthorizedShips: [],
       ownerShip: null,
+      streamMode: "off",
     };
   }
 
@@ -88,6 +95,7 @@ export function resolveTlonAccount(
     base.autoAcceptGroupInvites ??
     null) as boolean | null;
   const ownerShip = (account?.ownerShip ?? base.ownerShip ?? null) as string | null;
+  const streamMode = ((account?.streamMode ?? base.streamMode ?? "off") as TlonStreamMode);
   const configured = Boolean(ship && url && code);
 
   return {
@@ -105,7 +113,9 @@ export function resolveTlonAccount(
     showModelSignature,
     autoAcceptDmInvites,
     autoAcceptGroupInvites,
+    defaultAuthorizedShips: [],
     ownerShip,
+    streamMode,
   };
 }
 
