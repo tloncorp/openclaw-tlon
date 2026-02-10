@@ -19,16 +19,16 @@ npm link
 
 # Build and link tlon-skill (depends on api-beta)
 cd /workspace/tlon-skill
-npm link @tloncorp/api
 npm install
+npm link @tloncorp/api
 npm run build
 npm link
 
 # Install openclaw-tlon plugin dependencies
 cd /workspace/openclaw-tlon
 npm install
+npm link @tloncorp/api
 # No build step needed - OpenClaw loads TypeScript directly
-# Note: When migrating to @tloncorp/api, add: npm link @tloncorp/api
 
 # Remove bundled tlon plugin to avoid duplicate ID conflict
 rm -rf "$(npm root -g)/openclaw/extensions/tlon"
