@@ -37,6 +37,7 @@ export type TlonSettingsStore = {
   autoDiscover?: boolean;
   showModelSig?: boolean;
   autoAcceptDmInvites?: boolean;
+  autoDiscoverChannels?: boolean;
   autoAcceptGroupInvites?: boolean;
   /** Ships allowed to invite us to groups (when autoAcceptGroupInvites is true) */
   groupInviteAllowlist?: string[];

@@ -16,6 +16,7 @@ export type TlonResolvedAccount = {
   showModelSignature: boolean | null;
   autoAcceptDmInvites: boolean | null;
   autoAcceptGroupInvites: boolean | null;
+  defaultAuthorizedShips: string[];
   /** Ship that receives approval requests for DMs, channel mentions, and group invites */
   ownerShip: string | null;
 };
