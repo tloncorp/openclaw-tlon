@@ -4,7 +4,7 @@ import type {
   ChannelSetupInput,
   OpenClawConfig,
 } from "openclaw/plugin-sdk";
-import { configureClient } from "@tloncorp/api";
+import { configureClient, sendPost, sendReply } from "@tloncorp/api";
 import {
   applyAccountNameToChannelSection,
   DEFAULT_ACCOUNT_ID,
@@ -15,57 +15,10 @@ import { monitorTlonProvider } from "./monitor/index.js";
 import { tlonOnboardingAdapter } from "./onboarding.js";
 import { formatTargetHint, normalizeShip, parseTlonTarget } from "./targets.js";
 import { resolveTlonAccount, listTlonAccountIds } from "./types.js";
-import { authenticate } from "./urbit/auth.js";
 import { ensureUrbitConnectPatched, Urbit } from "./urbit/http-api.js";
-import {
-  buildMediaStory,
-  sendDm,
-  sendGroupMessage,
-  sendDmWithStory,
-  sendGroupMessageWithStory,
-} from "./urbit/send.js";
+import { buildMediaStory } from "./urbit/send.js";
+import { markdownToStory } from "./urbit/story.js";
 import { uploadImageFromUrl } from "./urbit/upload.js";
-
-// Simple HTTP-only poke that doesn't open an EventSource (avoids conflict with monitor's SSE)
-async function createHttpPokeApi(params: { url: string; code: string; ship: string }) {
-  const cookie = await authenticate(params.url, params.code);
-  const channelId = `${Math.floor(Date.now() / 1000)}-${Math.random().toString(36).substring(2, 8)}`;
-  const channelUrl = `${params.url}/~/channel/${channelId}`;
-  const shipName = params.ship.replace(/^~/, "");
-
-  return {
-    poke: async (pokeParams: { app: string; mark: string; json: unknown }) => {
-      const pokeId = Date.now();
-      const pokeData = {
-        id: pokeId,
-        action: "poke",
-        ship: shipName,
-        app: pokeParams.app,
-        mark: pokeParams.mark,
-        json: pokeParams.json,
-      };
-
-      const response = await fetch(channelUrl, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-          Cookie: cookie.split(";")[0],
-        },
-        body: JSON.stringify([pokeData]),
-      });
-
-      if (!response.ok && response.status !== 204) {
-        const errorText = await response.text();
-        throw new Error(`Poke failed: ${response.status} - ${errorText}`);
-      }
-
-      return pokeId;
-    },
-    delete: async () => {
-      // No-op for HTTP-only client
-    },
-  };
-}
 
 const TLON_CHANNEL_ID = "tlon" as const;
 
@@ -167,39 +120,54 @@ const tlonOutbound: ChannelOutboundAdapter = {
       throw new Error(`Invalid Tlon target. Use ${formatTargetHint()}`);
     }
 
-    // Use HTTP-only poke (no EventSource) to avoid conflicts with monitor's SSE connection
-    const api = await createHttpPokeApi({
-      url: account.url,
-      ship: account.ship,
-      code: account.code,
+    // Configure api-beta client
+    configureClient({
+      shipUrl: account.url,
+      shipName: account.ship.replace(/^~/, ""),
+      verbose: false,
+      getCode: async () => account.code!,
     });
 
-    try {
-      const fromShip = normalizeShip(account.ship);
-      if (parsed.kind === "dm") {
-        return await sendDm({
-          api,
-          fromShip,
-          toShip: parsed.ship,
-          text,
-        });
-      }
-      const replyId = (replyToId ?? threadId) ? String(replyToId ?? threadId) : undefined;
-      return await sendGroupMessage({
-        api,
-        fromShip,
-        hostShip: parsed.hostShip,
-        channelName: parsed.channelName,
-        text,
-        replyToId: replyId,
+    const fromShip = normalizeShip(account.ship);
+    const sentAt = Date.now();
+    const story = markdownToStory(text);
+    const parentId = replyToId ?? threadId;
+
+    if (parsed.kind === "dm") {
+      // DM - channelId is the recipient ship
+      await sendPost({
+        channelId: parsed.ship,
+        authorId: fromShip,
+        sentAt,
+        content: story,
       });
-    } finally {
-      try {
-        await api.delete();
-      } catch {
-        // ignore cleanup errors
-      }
+      return { channel: "tlon", messageId: `${fromShip}/${sentAt}` };
     }
+
+    // Group channel
+    const channelId = parsed.nest;
+
+    if (parentId) {
+      // Thread reply
+      await sendReply({
+        channelId,
+        parentId: String(parentId),
+        parentAuthor: fromShip, // TODO: should be original post author
+        authorId: fromShip,
+        sentAt,
+        content: story,
+      });
+    } else {
+      // Regular post
+      await sendPost({
+        channelId,
+        authorId: fromShip,
+        sentAt,
+        content: story,
+      });
+    }
+
+    return { channel: "tlon", messageId: `${fromShip}/${sentAt}` };
   },
   sendMedia: async ({ cfg, to, text, mediaUrl, accountId, replyToId, threadId }) => {
     const account = resolveTlonAccount(cfg, accountId ?? undefined);
@@ -212,6 +180,7 @@ const tlonOutbound: ChannelOutboundAdapter = {
       throw new Error(`Invalid Tlon target. Use ${formatTargetHint()}`);
     }
 
+    // Configure api-beta client
     configureClient({
       shipUrl: account.url,
       shipName: account.ship.replace(/^~/, ""),
@@ -220,41 +189,46 @@ const tlonOutbound: ChannelOutboundAdapter = {
     });
 
     const uploadedUrl = mediaUrl ? await uploadImageFromUrl(mediaUrl) : undefined;
+    const fromShip = normalizeShip(account.ship);
+    const sentAt = Date.now();
+    const story = buildMediaStory(text, uploadedUrl);
+    const parentId = replyToId ?? threadId;
 
-    const api = await createHttpPokeApi({
-      url: account.url,
-      ship: account.ship,
-      code: account.code,
-    });
-
-    try {
-      const fromShip = normalizeShip(account.ship);
-      const story = buildMediaStory(text, uploadedUrl);
-
-      if (parsed.kind === "dm") {
-        return await sendDmWithStory({
-          api,
-          fromShip,
-          toShip: parsed.ship,
-          story,
-        });
-      }
-      const replyId = (replyToId ?? threadId) ? String(replyToId ?? threadId) : undefined;
-      return await sendGroupMessageWithStory({
-        api,
-        fromShip,
-        hostShip: parsed.hostShip,
-        channelName: parsed.channelName,
-        story,
-        replyToId: replyId,
+    if (parsed.kind === "dm") {
+      // DM - channelId is the recipient ship
+      await sendPost({
+        channelId: parsed.ship,
+        authorId: fromShip,
+        sentAt,
+        content: story,
       });
-    } finally {
-      try {
-        await api.delete();
-      } catch {
-        // ignore cleanup errors
-      }
+      return { channel: "tlon", messageId: `${fromShip}/${sentAt}` };
     }
+
+    // Group channel
+    const channelId = parsed.nest;
+
+    if (parentId) {
+      // Thread reply
+      await sendReply({
+        channelId,
+        parentId: String(parentId),
+        parentAuthor: fromShip, // TODO: should be original post author
+        authorId: fromShip,
+        sentAt,
+        content: story,
+      });
+    } else {
+      // Regular post
+      await sendPost({
+        channelId,
+        authorId: fromShip,
+        sentAt,
+        content: story,
+      });
+    }
+
+    return { channel: "tlon", messageId: `${fromShip}/${sentAt}` };
   },
 };
 
