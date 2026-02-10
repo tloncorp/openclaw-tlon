@@ -164,38 +164,6 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
   // Store init foreigns for processing after settings are loaded
   let initForeigns: Foreigns | null = null;
 
-  if (effectiveAutoDiscoverChannels) {
-    try {
-      const initData = await fetchInitData(api, runtime);
-      if (initData.channels.length > 0) {
-        groupChannels = initData.channels;
-      }
-      initForeigns = initData.foreigns;
-    } catch (error: any) {
-      runtime.error?.(`[tlon] Auto-discovery failed: ${error?.message ?? String(error)}`);
-    }
-  }
-
-  // Merge manual config with auto-discovered channels
-  if (account.groupChannels.length > 0) {
-    for (const ch of account.groupChannels) {
-      if (!groupChannels.includes(ch)) {
-        groupChannels.push(ch);
-      }
-    }
-    runtime.log?.(
-      `[tlon] Added ${account.groupChannels.length} manual groupChannels to monitoring`,
-    );
-  }
-
-  if (groupChannels.length > 0) {
-    runtime.log?.(
-      `[tlon] Monitoring ${groupChannels.length} group channel(s): ${groupChannels.join(", ")}`,
-    );
-  } else {
-    runtime.log?.("[tlon] No group channels to monitor (DMs only)");
-  }
-
   // Migrate file config to settings store (seed on first run)
   async function migrateConfigToSettings() {
     const migrations: Array<{ key: string; fileValue: unknown; settingsValue: unknown }> = [
@@ -278,10 +246,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     await migrateConfigToSettings();
 
     // Apply settings overrides
-    if (currentSettings.groupChannels?.length) {
-      groupChannels = currentSettings.groupChannels;
-      runtime.log?.(`[tlon] Using groupChannels from settings store: ${groupChannels.join(", ")}`);
-    }
+    // Note: groupChannels from settings store are merged AFTER discovery runs (below)
     if (currentSettings.defaultAuthorizedShips?.length) {
       runtime.log?.(
         `[tlon] Using defaultAuthorizedShips from settings store: ${currentSettings.defaultAuthorizedShips.join(", ")}`,
@@ -330,6 +295,48 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     }
   } catch (err) {
     runtime.log?.(`[tlon] Settings store not available, using file config: ${String(err)}`);
+  }
+
+  // Run channel discovery AFTER settings are loaded (so settings store value is used)
+  if (effectiveAutoDiscoverChannels) {
+    try {
+      const initData = await fetchInitData(api, runtime);
+      if (initData.channels.length > 0) {
+        groupChannels = initData.channels;
+      }
+      initForeigns = initData.foreigns;
+    } catch (error: any) {
+      runtime.error?.(`[tlon] Auto-discovery failed: ${error?.message ?? String(error)}`);
+    }
+  }
+
+  // Merge manual config with auto-discovered channels
+  if (account.groupChannels.length > 0) {
+    for (const ch of account.groupChannels) {
+      if (!groupChannels.includes(ch)) {
+        groupChannels.push(ch);
+      }
+    }
+    runtime.log?.(
+      `[tlon] Added ${account.groupChannels.length} manual groupChannels to monitoring`,
+    );
+  }
+
+  // Also merge settings store groupChannels (may have been set via tlon settings command)
+  if (currentSettings.groupChannels?.length) {
+    for (const ch of currentSettings.groupChannels) {
+      if (!groupChannels.includes(ch)) {
+        groupChannels.push(ch);
+      }
+    }
+  }
+
+  if (groupChannels.length > 0) {
+    runtime.log?.(
+      `[tlon] Monitoring ${groupChannels.length} group channel(s): ${groupChannels.join(", ")}`,
+    );
+  } else {
+    runtime.log?.("[tlon] No group channels to monitor (DMs only)");
   }
 
   // Helper to resolve cited message content
