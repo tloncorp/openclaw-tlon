@@ -13,7 +13,6 @@ Tlon/Urbit channel plugin for [OpenClaw](https://github.com/openclaw/openclaw). 
 - **Settings Store**: Hot-reload config via Urbit settings-store
 - **SSE Ack**: Proper event acknowledgment for reliable message delivery
 - **Cite Resolution**: Parse and fetch quoted message content
-- **Stream Mode**: Optional partial reply streaming with in-place edits (group channels only)
 
 ## Installation
 
@@ -26,10 +25,6 @@ channels:
     ship: "~your-ship"
     url: "https://your-ship.tlon.network"
     code: "your-access-code"
-    ownerShip: "~your-owner-ship"  # Receives approval requests
-    dmAllowlist:
-      - "~trusted-ship"
-    streamMode: "off"  # "off" or "partial" (group channels only)
 ```
 
 ## Approval System
@@ -90,34 +85,13 @@ The owner can also send these commands via DM to manage the bot:
 
 These commands are handled directly and don't go to the LLM.
 
-## Stream Mode
-
-Stream mode enables partial reply streaming for group channels. When enabled, the bot sends an initial message as soon as content starts generating, then edits it in place as more content arrives.
-
-```yaml
-channels:
-  tlon:
-    streamMode: "partial"  # Enable streaming
-```
-
-**Options:**
-- `off` (default): Wait for complete response before sending
-- `partial`: Send initial message early, edit as content grows
-
-**Limitations:**
-- Only works in group channels (DMs don't support message editing)
-- Tlon caps messages at ~4096 characters
-- May look "janky" as the message updates in place
-
 ## Documentation
 
 Full documentation: https://docs.openclaw.ai/channels/tlon
 
 ## Companion Skill
 
-The plugin bundles [@tloncorp/tlon-skill](https://www.npmjs.com/package/@tloncorp/tlon-skill) for group administration, message history, and other API operations. It's automatically installed as an npm dependency.
-
-For standalone usage or development, see the [tlon-skill repo](https://github.com/tloncorp/tlon-skill).
+For group administration, message history, and other API operations, see the [Tlon Skill](https://github.com/tloncorp/tlon-skill).
 
 ## Development
 
@@ -158,15 +132,16 @@ docker compose -f dev/docker-compose.yml up --build
 
 ### Directory Structure
 
-After setup, you'll have two sibling directories:
+After setup, you'll have three sibling directories:
 
 ```
 parent/
 ├── api-beta/           # @tloncorp/api - shared API library
+├── tlon-skill/         # AgentSkills skill with tlon-run CLI
 └── openclaw-tlon/      # This repo - OpenClaw plugin
 ```
 
-The tlon-skill is installed via npm (`@tloncorp/tlon-skill`) and doesn't need to be cloned separately for normal development.
+All three are mounted into the Docker container and linked via npm link.
 
 ### Making Changes
 
