@@ -231,6 +231,33 @@ The Tlon plugin detects when multiple users share a DM session and:
 
 ---
 
+## 11. Agent-Initiated Blocking
+
+**Principle:** The agent can proactively block abusive DM senders via response directive.
+
+**Scope:** Blocking prevents DMs only. It does NOT affect group channel visibility.
+
+| Scenario                       | Behavior                     |
+| ------------------------------ | ---------------------------- |
+| Block DM sender (regular user) | ✅ Block DMs + notify owner  |
+| Block owner ship               | ❌ Ignored with warning      |
+| Block third party              | ❌ Ignored (only block sender) |
+| No owner configured            | ✅ Block, no notification    |
+
+**Directive Format:**
+
+```
+[BLOCK_USER: ~ship | reason]
+```
+
+**Critical Invariant:**
+
+```
+The owner ship MUST never be blocked by the agent
+```
+
+---
+
 ## Test Requirements
 
 All security tests should:
@@ -269,3 +296,4 @@ If you discover a security vulnerability:
 | 2026-01-30 | Added `groupInviteAllowlist` requirement |
 | 2026-02-11 | Added sender role identification (owner vs user) |
 | 2026-02-11 | Added session isolation warning for multi-user DMs |
+| 2026-02-11 | Added agent-initiated blocking via response directive |
