@@ -1,18 +1,36 @@
 /**
  * Group Management Tests
  *
- * Tests the bot's ability to query groups.
- * Note: Group creation/deletion requires elevated permissions that the bot may not have.
+ * Tests the bot's ability to query and interact with groups.
+ * Uses existing groups on test user's ship.
  */
 
 import { describe, test, expect, beforeAll } from "vitest";
+import { Urbit } from "@tloncorp/api";
 import { createTestClient, getTestConfig, type TestClient } from "../lib/index.js";
 
 describe("groups", () => {
   let client: TestClient;
+  let testUserUrbit: Urbit;
+  let existingGroups: string[] = [];
 
-  beforeAll(() => {
-    client = createTestClient(getTestConfig());
+  beforeAll(async () => {
+    const config = getTestConfig();
+    client = createTestClient(config);
+
+    // Connect as test user to check existing groups
+    const shipClean = config.testUser.shipName.replace(/^~/, "");
+    testUserUrbit = new Urbit(config.testUser.shipUrl, config.testUser.code);
+    testUserUrbit.ship = shipClean;
+    await testUserUrbit.connect();
+
+    // Get existing groups
+    const groups = await testUserUrbit.scry<Record<string, unknown>>({
+      app: "groups",
+      path: "/groups",
+    });
+    existingGroups = Object.keys(groups);
+    console.log("Test user's existing groups:", existingGroups);
   });
 
   test("lists groups", async () => {
@@ -20,36 +38,30 @@ describe("groups", () => {
 
     expect(response.success).toBe(true);
     expect(response.text).toBeDefined();
-    // Bot should respond with groups list or indicate none exist
+    console.log("Bot response:", response.text?.slice(0, 200));
   });
 
-  test("handles group query when no groups exist", async () => {
-    // Check bot's actual groups
-    const groups = await client.state.groups();
-    const groupFlags = Object.keys(groups);
-
-    if (groupFlags.length === 0) {
-      // Bot has no groups - verify it handles this gracefully
+  test("handles group queries", async () => {
+    if (existingGroups.length === 0) {
+      // No groups - test the "no groups" response
       const response = await client.prompt("What groups am I in?");
       expect(response.success).toBe(true);
       expect(response.text).toBeDefined();
-      // Response should indicate no groups or similar
-      console.log("Bot has no groups, response:", response.text?.slice(0, 100));
+      console.log("No groups response:", response.text?.slice(0, 200));
     } else {
-      // Bot has groups - test getting info about the first one
-      const firstGroup = groupFlags[0];
+      // Has groups - test querying a specific one
+      const firstGroup = existingGroups[0];
       const response = await client.prompt(`Tell me about the group ${firstGroup}`);
       expect(response.success).toBe(true);
       expect(response.text).toBeDefined();
-      console.log("Bot has groups:", groupFlags);
+      console.log("Group info response:", response.text?.slice(0, 200));
     }
   });
 
   test("responds to group-related questions", async () => {
-    const response = await client.prompt("Can you help me with Tlon groups?");
+    const response = await client.prompt("How do Tlon groups work?");
 
     expect(response.success).toBe(true);
     expect(response.text).toBeDefined();
-    // Bot should respond helpfully about groups
   });
 });
