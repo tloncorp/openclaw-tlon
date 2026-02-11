@@ -877,7 +877,10 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       },
     });
 
-    const fromLabel = isGroup ? `${senderShip} in ${channelNest}` : senderShip;
+    const senderRole = isOwner(senderShip) ? "owner" : "user";
+    const fromLabel = isGroup
+      ? `${senderShip} [${senderRole}] in ${channelNest}`
+      : `${senderShip} [${senderRole}]`;
 
     // Prepend attachment annotations to message body (similar to Signal format)
     let bodyWithAttachments = messageText;
@@ -907,6 +910,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       ConversationLabel: fromLabel,
       SenderName: senderShip,
       SenderId: senderShip,
+      SenderRole: senderRole,
       Provider: "tlon",
       Surface: "tlon",
       MessageSid: messageId,
