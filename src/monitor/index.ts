@@ -147,6 +147,10 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
   // Track threads we've participated in (by parentId) - respond without mention requirement
   const participatedThreads = new Set<string>();
 
+  // Track DM senders per session to detect shared sessions (security warning)
+  const dmSendersBySession = new Map<string, Set<string>>();
+  let sharedSessionWarningSent = false;
+
   // Fetch bot's nickname from contacts
   try {
     const selfProfile = await api.scry("/contacts/v1/self.json");
@@ -876,6 +880,39 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         id: isGroup ? (groupChannel ?? senderShip) : senderShip,
       },
     });
+
+    // Warn if multiple users share a DM session (insecure dmScope configuration)
+    if (!isGroup) {
+      const sessionKey = route.sessionKey;
+      if (!dmSendersBySession.has(sessionKey)) {
+        dmSendersBySession.set(sessionKey, new Set());
+      }
+      const senders = dmSendersBySession.get(sessionKey)!;
+      if (senders.size > 0 && !senders.has(senderShip)) {
+        // Log warning
+        runtime.log?.(
+          `[tlon] ⚠️ SECURITY: Multiple users sharing DM session. ` +
+            `Configure "session.dmScope: per-channel-peer" in OpenClaw config.`,
+        );
+
+        // Notify owner via DM (once per monitor session)
+        if (!sharedSessionWarningSent && effectiveOwnerShip) {
+          sharedSessionWarningSent = true;
+          const warningMsg =
+            `⚠️ Security Warning: Multiple users are sharing a DM session with this bot. ` +
+            `This can leak conversation context between users.\n\n` +
+            `Fix: Add to your OpenClaw config:\n` +
+            `session:\n  dmScope: "per-channel-peer"\n\n` +
+            `Docs: https://docs.openclaw.ai/concepts/session#secure-dm-mode`;
+
+          // Send async, don't block message processing
+          sendDm({ api, fromShip: botShipName, toShip: effectiveOwnerShip, text: warningMsg }).catch(
+            (err) => runtime.error?.(`[tlon] Failed to send security warning to owner: ${err}`),
+          );
+        }
+      }
+      senders.add(senderShip);
+    }
 
     const senderRole = isOwner(senderShip) ? "owner" : "user";
     const fromLabel = isGroup
