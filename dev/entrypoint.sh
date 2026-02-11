@@ -1,44 +1,44 @@
 #!/bin/bash
 set -e
 
-# Validate repos are mounted
-for repo in api-beta tlon-skill openclaw-tlon; do
-  if [ ! -f "/workspace/$repo/package.json" ]; then
-    echo "ERROR: /workspace/$repo not found. Run ./dev/setup.sh first."
-    exit 1
-  fi
-done
+# Validate plugin repo is mounted
+if [ ! -f "/workspace/openclaw-tlon/package.json" ]; then
+  echo "ERROR: /workspace/openclaw-tlon not found. Run ./dev/setup.sh first."
+  exit 1
+fi
 
-echo "==> Setting up npm links..."
+echo "==> Installing plugin dependencies..."
 
-# Build and link api-beta
-cd /workspace/api-beta
-npm install
-npm run build
-npm link
-
-# Build and link tlon-skill (depends on api-beta)
-cd /workspace/tlon-skill
-npm install
-npm link @tloncorp/api
-npm run build
-npm link
-
-# Install openclaw-tlon plugin dependencies
+# Install openclaw-tlon plugin dependencies (includes @tloncorp/tlon-skill from npm)
 cd /workspace/openclaw-tlon
 npm install
-npm link @tloncorp/api
-# No build step needed - OpenClaw loads TypeScript directly
+
+# Link api-beta if mounted (for local development)
+if [ -f "/workspace/api-beta/package.json" ]; then
+  cd /workspace/api-beta
+  
+  # Only install/build if not already done
+  if [ ! -d "node_modules" ]; then
+    echo "==> Installing api-beta dependencies..."
+    npm install
+  fi
+  
+  if [ ! -d "dist" ]; then
+    echo "==> Building api-beta..."
+    npm run build
+  fi
+  
+  # Always ensure link is set up
+  npm link 2>/dev/null || true
+  cd /workspace/openclaw-tlon
+  npm link @tloncorp/api 2>/dev/null || true
+fi
 
 # Remove bundled tlon plugin to avoid duplicate ID conflict
 rm -rf "$(npm root -g)/openclaw/extensions/tlon"
 
 # Plugin is loaded from /workspace/openclaw-tlon via plugins.load.paths in config
-
-# Install skill (symlink so changes persist to host)
-mkdir -p /root/.openclaw/skills
-ln -sf /workspace/tlon-skill /root/.openclaw/skills/tlon
-ln -sf /workspace/tlon-skill/bin/tlon-run /usr/local/bin/tlon-run
+# Skill is loaded from node_modules/@tloncorp/tlon-skill (via plugin's skills path)
 
 # Upsert a marked block into a file (preserves content outside the markers)
 # Usage: upsert_block <file> <content>
