@@ -10,13 +10,15 @@ services:
     volumes:
       # Mount plugin repo
       - ..:/workspace/openclaw-tlon
+      # Mount tlonbot for config and prompts
+      - ../../tlonbot:/workspace/tlonbot
       # Optional: mount api-beta for local development (comment out to use npm)
       - ../../api-beta:/workspace/api-beta
       # Note: tlon-skill is installed from npm, no mount needed
       # Persist OpenClaw state
       - openclaw-state:/root/.openclaw
-      # Dev config
-      - ./openclaw.dev.json:/root/.openclaw/openclaw.json:ro
+      # Config from tlonbot
+      - ../../tlonbot/openclaw.json:/root/.openclaw/openclaw.json:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
