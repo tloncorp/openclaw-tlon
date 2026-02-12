@@ -12,9 +12,10 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 /**
  * Find the tlon binary from the skill package
  */
-function findTlonBinary(): string | null {
-  // Check in node_modules/@tloncorp/tlon-skill
+function findTlonBinary(): string {
+  // Check in node_modules/.bin
   const skillBin = join(__dirname, "node_modules", ".bin", "tlon");
+  console.log(`[tlon] Checking for binary at: ${skillBin}, exists: ${existsSync(skillBin)}`);
   if (existsSync(skillBin)) return skillBin;
 
   // Check for platform-specific binary directly
@@ -22,9 +23,11 @@ function findTlonBinary(): string | null {
   const arch = process.arch;
   const platformPkg = `@tloncorp/tlon-skill-${platform}-${arch}`;
   const platformBin = join(__dirname, "node_modules", platformPkg, "tlon");
+  console.log(`[tlon] Checking for platform binary at: ${platformBin}, exists: ${existsSync(platformBin)}`);
   if (existsSync(platformBin)) return platformBin;
 
   // Fallback to PATH
+  console.log(`[tlon] Falling back to PATH lookup for 'tlon'`);
   return "tlon";
 }
 
@@ -98,6 +101,7 @@ const plugin = {
 
     // Register the tlon tool
     const tlonBinary = findTlonBinary();
+    api.logger.info(`[tlon] Registering tlon tool, binary: ${tlonBinary}`);
     api.registerTool({
       name: "tlon",
       description:
@@ -118,7 +122,7 @@ const plugin = {
       async execute(_id: string, params: { command: string }) {
         try {
           const args = shellSplit(params.command);
-          const output = await runTlonCommand(tlonBinary!, args);
+          const output = await runTlonCommand(tlonBinary, args);
           return {
             content: [{ type: "text", text: output }],
           };
