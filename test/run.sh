@@ -10,7 +10,12 @@ if [ -f .env ]; then
   set +a
 fi
 
-GATEWAY_URL="${TEST_GATEWAY_URL:-http://localhost:18789}"
+if [ -n "$TEST_GATEWAY_URL" ]; then
+  GATEWAY_URL="$TEST_GATEWAY_URL"
+else
+  GATEWAY_PORT="${OPENCLAW_GATEWAY_PORT:-18789}"
+  GATEWAY_URL="http://localhost:${GATEWAY_PORT}"
+fi
 MAX_WAIT=60
 
 echo "Waiting for gateway at $GATEWAY_URL..."
@@ -35,5 +40,8 @@ echo "  TLON_URL=$TLON_URL"
 echo "  TLON_SHIP=$TLON_SHIP"
 echo "  TEST_USER_SHIP=$TEST_USER_SHIP"
 
-# Run the tests
-exec pnpm vitest run test/cases/ "$@"
+# Run integration test files sequentially to avoid overlapping DM prompts.
+for test_file in test/cases/*.test.ts; do
+  echo "Running $test_file..."
+  pnpm vitest run "$test_file" "$@" || exit $?
+done

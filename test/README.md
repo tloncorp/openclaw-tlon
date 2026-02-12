@@ -2,6 +2,13 @@
 
 Integration tests for the Tlon plugin. These tests prompt the bot and verify ship state changes.
 
+## Testing Principles
+
+- Assert from the **bot ship's perspective** (`config.bot` / `client.state`), not the test user's private state.
+- Include both **read** and **mutation** scenarios (for example: read group info, then create group/channel and verify).
+- Seed deterministic fixtures on the bot ship when needed (group/channel/profile fields), rather than depending on pre-existing test user data.
+- Avoid prompts that require visibility into the test user ship's private data.
+
 ## Setup
 
 Tests use the root `.env` file - the same one used by `docker-compose`. Just make sure your `.env` is configured for the dev environment.
@@ -35,7 +42,8 @@ If `TEST_USER_*` vars are not set, tests fall back to bot credentials (useful fo
 
 ```bash
 TEST_MODE=tlon                      # "tlon" (default) or "direct"
-TEST_GATEWAY_URL=http://localhost:18789   # For direct mode
+OPENCLAW_GATEWAY_PORT=18789               # Host port mapped to container 18789
+TEST_GATEWAY_URL=http://localhost:18789   # Optional override (default derives from OPENCLAW_GATEWAY_PORT)
 OPENCLAW_GATEWAY_TOKEN=...          # If gateway auth is enabled
 ```
 
@@ -61,7 +69,7 @@ pnpm test:ci
 The test runner automatically waits up to 60s for the gateway to be ready.
 
 **Note:** Tests run from your host machine and hit:
-- The dockerized OpenClaw gateway at `localhost:18789` (direct mode)
+- The dockerized OpenClaw gateway at `localhost:${OPENCLAW_GATEWAY_PORT:-18789}` (direct mode)
 - Your local Urbit ship for state verification (URL from `.env`, converted from `host.docker.internal` to `localhost`)
 
 ## Test Structure
@@ -97,7 +105,7 @@ describe("my feature", () => {
     const response = await client.prompt("Do something");
     expect(response.success).toBe(true);
 
-    // Verify state changed correctly
+    // Verify state changed on the bot ship
     const groups = await client.state.groups();
     expect(Object.keys(groups)).toContain("~host/expected-group");
   });

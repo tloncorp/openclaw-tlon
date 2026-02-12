@@ -6,7 +6,7 @@ services:
     env_file:
       - ../.env
     ports:
-      - "18789:18789"
+      - "${OPENCLAW_GATEWAY_PORT:-18789}:18789"
     volumes:
       # Mount plugin repo
       - ..:/workspace/openclaw-tlon

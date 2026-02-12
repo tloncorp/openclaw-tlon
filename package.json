@@ -15,10 +15,10 @@
     "test:integration": "./test/run.sh",
     "test:integration:watch": "./test/run.sh --watch",
     "test:all": "vitest run",
-    "test:ci": "docker compose -f dev/docker-compose.yml up -d && ./test/run.sh; docker compose -f dev/docker-compose.yml down"
+    "test:ci": "docker compose --env-file .env -f dev/docker-compose.yml up -d && ./test/run.sh; docker compose --env-file .env -f dev/docker-compose.yml down"
   },
   "dependencies": {
-    "@tloncorp/api": "github:tloncorp/api-beta#5b73da666c698a534a2db38871338db3462f1520",
+    "@tloncorp/api": "file:../api-beta",
     "@tloncorp/tlon-skill": "latest",
     "@urbit/aura": "^3.0.0",
     "@urbit/http-api": "^3.0.0"

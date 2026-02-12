@@ -5,6 +5,7 @@
  * Compatible with the root .env file used by docker-compose.
  */
 
+import { existsSync } from "node:fs";
 import type { TestMode, TestClientConfig, ShipCredentials } from "./client.js";
 
 export interface TestEnvConfig {
@@ -38,16 +39,17 @@ export interface TestEnvConfig {
 export function getTestConfig(): TestClientConfig {
   // Default to tlon mode (direct mode not yet implemented)
   const mode = (process.env.TEST_MODE ?? "tlon") as TestMode;
+  const runningInDocker = existsSync("/.dockerenv");
 
   // Bot ship credentials (for receiving DMs and checking state)
   let botUrl = requireEnv("TLON_URL");
-  botUrl = botUrl.replace("host.docker.internal", "localhost");
+  botUrl = normalizeShipUrl(botUrl, runningInDocker);
   const botShip = requireEnv("TLON_SHIP");
   const botCode = requireEnv("TLON_CODE");
 
   // Test user ship credentials (for sending DMs)
   let testUserUrl = process.env.TEST_USER_URL ?? botUrl;
-  testUserUrl = testUserUrl.replace("host.docker.internal", "localhost");
+  testUserUrl = normalizeShipUrl(testUserUrl, runningInDocker);
   const testUserShip = process.env.TEST_USER_SHIP ?? botShip;
   const testUserCode = process.env.TEST_USER_CODE ?? botCode;
 
@@ -73,6 +75,26 @@ export function getTestConfig(): TestClientConfig {
   }
 
   return config;
+}
+
+function normalizeShipUrl(url: string, runningInDocker: boolean): string {
+  // Host tests often use host.docker.internal in .env; map to localhost only outside Docker.
+  if (!runningInDocker) {
+    return url.replace("host.docker.internal", "localhost");
+  }
+
+  // In Docker, localhost points to the container itself, not the host ship.
+  try {
+    const parsed = new URL(url);
+    if (parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1") {
+      parsed.hostname = "host.docker.internal";
+      return parsed.toString();
+    }
+  } catch {
+    // If URL parsing fails, keep original value and let caller surface config errors.
+  }
+
+  return url;
 }
 
 function requireEnv(name: string): string {

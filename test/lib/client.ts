@@ -6,7 +6,7 @@
  * - Tlon mode: Send actual DM to bot (tests full plugin/skill stack)
  */
 
-import { Urbit } from "@tloncorp/api";
+import { Urbit, getTextContent } from "@tloncorp/api";
 import { sendDm, type TlonPokeApi } from "../../src/urbit/send.js";
 import { createStateClient, type StateClient, type StateClientConfig } from "./state.js";
 
@@ -86,6 +86,8 @@ export interface TlonClientConfig {
 export function createTlonClient(config: TlonClientConfig): TestClient {
   // State client uses BOT credentials to check bot's state
   const state = createStateClient(config.bot);
+  // Test user state client is used to poll DM posts for bot responses.
+  const testUserState = createStateClient(config.testUser);
 
   const { testUser, bot } = config;
 
@@ -113,67 +115,106 @@ export function createTlonClient(config: TlonClientConfig): TestClient {
       const timeoutMs = opts.timeoutMs ?? 60_000;
 
       try {
-        await ensureConnected();
+        const botShipNorm = bot.shipName.startsWith("~") ? bot.shipName : `~${bot.shipName}`;
+        // Snapshot latest bot DM timestamp before sending, so we only accept truly new replies.
+        let baselineBotSentAt = 0;
+        try {
+          const beforePosts = await testUserState.channelPosts(botShipNorm, 30);
+          baselineBotSentAt = (beforePosts ?? [])
+            .map((post) => {
+              const p = post as { authorId?: string; sentAt?: number };
+              return p.authorId === botShipNorm && typeof p.sentAt === "number" ? p.sentAt : 0;
+            })
+            .reduce((max, ts) => (ts > max ? ts : max), 0);
+        } catch (err) {
+          console.log(`DM baseline poll failed: ${err}`);
+        }
 
-        // Use the plugin's sendDm function for correct formatting
-        await sendDm({
-          api,
-          fromShip: testUser.shipName,
-          toShip: bot.shipName,
-          text,
-        });
+        // Use the plugin's sendDm function for correct formatting.
+        // Retry transient channel failures so tests don't fail fast and cascade prompts.
+        let sent = false;
+        let lastSendError = "";
+        for (let attempt = 1; attempt <= 3; attempt += 1) {
+          try {
+            await ensureConnected();
+            await sendDm({
+              api,
+              fromShip: testUser.shipName,
+              toShip: bot.shipName,
+              text,
+            });
+            sent = true;
+            break;
+          } catch (err) {
+            lastSendError = String(err);
+            console.log(`Send DM attempt ${attempt}/3 failed: ${lastSendError}`);
+            connected = false;
+            if (attempt < 3) {
+              await sleep(1000);
+            }
+          }
+        }
+        if (!sent) {
+          return {
+            success: false,
+            error: `Failed to send DM after 3 attempts: ${lastSendError}`,
+          };
+        }
 
         // Poll for response using the activity feed
         const startTime = Date.now();
-        const botShipNorm = bot.shipName.startsWith("~") ? bot.shipName : `~${bot.shipName}`;
-
-        // Record the send time to filter for new messages
-        const sentAt = Date.now();
+        let lastPollError = "";
+        let attempts = 0;
 
         while (Date.now() - startTime < timeoutMs) {
+          attempts += 1;
           await sleep(2000);
 
           try {
-            // Use activity feed to find DM responses
-            const activity = await urbit.scry<Record<string, ActivityEntry>>({
-              app: "activity",
-              path: "/v4/all",
-            });
-
-            // Look for dm-post entries from the bot
-            const botDmPosts = Object.values(activity)
-              .filter((entry): entry is ActivityEntry & { "dm-post": DmPost } => {
-                if (!entry["dm-post"]) return false;
-                const dmPost = entry["dm-post"];
-                // Check if from the bot ship
-                return dmPost.whom?.ship === botShipNorm;
+            // Poll DM channel directly to avoid activity timestamp parsing edge cases.
+            const dmPosts = await testUserState.channelPosts(botShipNorm, 30);
+            const botDmPosts = (dmPosts ?? [])
+              .map((post) => {
+                const p = post as {
+                  authorId?: string;
+                  sentAt?: number;
+                  textContent?: string | null;
+                  content?: unknown;
+                };
+                const textContent = p.textContent ?? getTextContent(p.content);
+                return {
+                  authorId: p.authorId,
+                  sentAt: p.sentAt,
+                  text: (textContent ?? "").trim(),
+                };
               })
-              .map((entry) => ({
-                content: extractActivityContent(entry["dm-post"].content),
-                // Time is the activity timestamp key, but we can use key.time
-                timestamp: parseUdTime(entry["dm-post"].key?.time),
-              }))
-              .filter((m) => m.content && m.timestamp > sentAt - 5000);
+              .filter((post) => post.authorId === botShipNorm)
+              .filter((post) => typeof post.sentAt === "number" && post.sentAt > baselineBotSentAt)
+              .filter((post) => post.text.length > 0);
 
             if (botDmPosts.length > 0) {
-              // Get the most recent
-              const latest = botDmPosts.sort((a, b) => b.timestamp - a.timestamp)[0];
+              const latest = botDmPosts.sort((a, b) => (b.sentAt ?? 0) - (a.sentAt ?? 0))[0];
               return {
                 success: true,
-                text: latest.content,
+                text: latest.text,
               };
             }
           } catch (err) {
-            // Scry failed, continue polling
-            console.log(`Activity scry failed: ${err}`);
+            // Poll failed, continue retrying until timeout.
+            lastPollError = String(err);
+            console.log(`DM poll failed: ${err}`);
           }
         }
 
         return {
           success: false,
-          error: `Timeout waiting for bot response after ${timeoutMs}ms`,
+          error:
+            `Timeout waiting for bot response after ${timeoutMs}ms ` +
+            `(attempts=${attempts}, baselineBotSentAt=${baselineBotSentAt})` +
+            (lastPollError ? `, lastPollError=${lastPollError}` : ""),
         };
       } catch (err) {
+        console.log(`Failed to send DM: ${err}`);
         return {
           success: false,
           error: `Failed to send DM: ${err}`,
@@ -233,53 +274,6 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-// Activity feed types
-interface DmPost {
-  key?: { id?: string; time?: string };
-  whom?: { ship?: string };
-  content?: unknown[];
-}
-
-interface ActivityEntry {
-  notified?: boolean;
-  "dm-post"?: DmPost;
-}
-
-function parseUdTime(udTime: string | undefined): number {
-  if (!udTime) return 0;
-  // @ud time format: "170.141.184.507.818.380.655.398.580.886.458.859.520"
-  // Remove dots and parse as BigInt, convert to ms
-  try {
-    const clean = udTime.replace(/\./g, "");
-    // Urbit time is in ~2000.1.1 epoch, roughly
-    // The timestamp is in 2^-64 second units from Unix epoch
-    // For our purposes, we just need relative ordering
-    return Number(BigInt(clean) / BigInt(1e12)); // Rough conversion to ms-ish scale
-  } catch {
-    return 0;
-  }
-}
-
-function extractActivityContent(content: unknown[] | undefined): string {
-  if (!content || !Array.isArray(content)) return "";
-  
-  return content
-    .map((block) => {
-      if (typeof block === "string") return block;
-      if (typeof block === "object" && block !== null) {
-        const b = block as { inline?: unknown[]; text?: string };
-        if (b.text) return b.text;
-        if (Array.isArray(b.inline)) {
-          return b.inline
-            .map((i) => (typeof i === "string" ? i : ""))
-            .join("");
-        }
-      }
-      return "";
-    })
-    .join(" ")
-    .trim();
-}
 
 interface ParsedWrit {
   author: string;
