@@ -9,16 +9,11 @@ importers:
   .:
     dependencies:
       '@tloncorp/api':
-<<<<<<< Updated upstream
-        specifier: github:tloncorp/api-beta#5b73da666c698a534a2db38871338db3462f1520
-        version: https://codeload.github.com/tloncorp/api-beta/tar.gz/5b73da666c698a534a2db38871338db3462f1520
-=======
-        specifier: file:../api-beta
-        version: file:../api-beta
+        specifier: github:tloncorp/api-beta#main
+        version: https://codeload.github.com/tloncorp/api-beta/tar.gz/ee00c8631516b347341de0ea12c07d34f9cec739
       '@tloncorp/tlon-skill':
         specifier: 0.1.7
         version: 0.1.7
->>>>>>> Stashed changes
       '@urbit/aura':
         specifier: ^3.0.0
         version: 3.0.0
@@ -1707,13 +1702,9 @@ packages:
     resolution: {integrity: sha512-5Kc5CM2Ysn3vTTArBs2vESUt0AQiWZA86yc1TI3B+lxXmtEq133C1nxXNOgnzhrivdPZIh3zLj5gDnZjoLL5GA==}
     engines: {node: '>=12.17.0'}
 
-<<<<<<< Updated upstream
-  '@tloncorp/api@https://codeload.github.com/tloncorp/api-beta/tar.gz/5b73da666c698a534a2db38871338db3462f1520':
-    resolution: {tarball: https://codeload.github.com/tloncorp/api-beta/tar.gz/5b73da666c698a534a2db38871338db3462f1520}
+  '@tloncorp/api@https://codeload.github.com/tloncorp/api-beta/tar.gz/ee00c8631516b347341de0ea12c07d34f9cec739':
+    resolution: {tarball: https://codeload.github.com/tloncorp/api-beta/tar.gz/ee00c8631516b347341de0ea12c07d34f9cec739}
     version: 0.0.1
-=======
-  '@tloncorp/api@file:../api-beta':
-    resolution: {directory: ../api-beta, type: directory}
 
   '@tloncorp/tlon-skill-darwin-arm64@0.1.7':
     resolution: {integrity: sha512-rnuCWU4QzmCUyV1DTIdcJl6S3RtlI+/gL1L+fV6XBIjVawPrO5O90UsbSs3Kios/P9Mixpo+3jNrvvTTeEhhRg==}
@@ -1742,7 +1733,6 @@ packages:
   '@tloncorp/tlon-skill@0.1.7':
     resolution: {integrity: sha512-F09HbFLNMQi1PMc04VdE9dD4axZLgAW2Wuwt7Jv6e0Ew67RNZ871cw6YYHVJRDSkZexbr3vTDIRCLOqi1h/nbw==}
     hasBin: true
->>>>>>> Stashed changes
 
   '@tokenizer/inflate@0.4.1':
     resolution: {integrity: sha512-2mAv+8pkG6GIZiF1kNg1jAjh27IDxEPKwdGul3snfztFerfPGI1LjDezZp3i7BElXompqEtPmoPx6c2wgtWsOA==}
@@ -2233,8 +2223,8 @@ packages:
   domutils@3.2.2:
     resolution: {integrity: sha512-6kZKyUajlDuqlHKVX1w7gyslj9MPIXzIFiz/rGu35uC1wMi+kMhQwGhl4lt9unC9Vb9INnY9Z3/ZA3+FhASLaw==}
 
-  dotenv@17.2.3:
-    resolution: {integrity: sha512-JVUnt+DUIzu87TABbhPmNfVdBDt18BLOWjMUFJMSi/Qqg7NTYtabbvSNJGOJ7afbRuv9D/lngizHtP7QyLQ+9w==}
+  dotenv@17.2.4:
+    resolution: {integrity: sha512-mudtfb4zRB4bVvdj0xRo+e6duH1csJRM8IukBqfTRvHotn9+LBXB8ynAidP9zHqoRC/fsllXgk4kCKlR21fIhw==}
     engines: {node: '>=12'}
 
   dunder-proto@1.0.1:
@@ -3983,16 +3973,16 @@ snapshots:
     dependencies:
       '@aws-crypto/sha256-browser': 5.2.0
       '@aws-crypto/sha256-js': 5.2.0
-      '@aws-sdk/core': 3.973.5
+      '@aws-sdk/core': 3.973.6
       '@aws-sdk/middleware-host-header': 3.972.3
       '@aws-sdk/middleware-logger': 3.972.3
       '@aws-sdk/middleware-recursion-detection': 3.972.3
-      '@aws-sdk/middleware-user-agent': 3.972.5
+      '@aws-sdk/middleware-user-agent': 3.972.6
       '@aws-sdk/region-config-resolver': 3.972.3
       '@aws-sdk/types': 3.973.1
       '@aws-sdk/util-endpoints': 3.980.0
       '@aws-sdk/util-user-agent-browser': 3.972.3
-      '@aws-sdk/util-user-agent-node': 3.972.3
+      '@aws-sdk/util-user-agent-node': 3.972.4
       '@smithy/config-resolver': 4.4.6
       '@smithy/core': 3.22.1
       '@smithy/fetch-http-handler': 5.3.9
@@ -4104,7 +4094,7 @@ snapshots:
 
   '@aws-sdk/credential-provider-env@3.972.3':
     dependencies:
-      '@aws-sdk/core': 3.973.5
+      '@aws-sdk/core': 3.973.6
       '@aws-sdk/types': 3.973.1
       '@smithy/property-provider': 4.2.8
       '@smithy/types': 4.12.0
@@ -4120,7 +4110,7 @@ snapshots:
 
   '@aws-sdk/credential-provider-http@3.972.5':
     dependencies:
-      '@aws-sdk/core': 3.973.5
+      '@aws-sdk/core': 3.973.6
       '@aws-sdk/types': 3.973.1
       '@smithy/fetch-http-handler': 5.3.9
       '@smithy/node-http-handler': 4.4.9
@@ -4146,7 +4136,7 @@ snapshots:
 
   '@aws-sdk/credential-provider-ini@3.972.3':
     dependencies:
-      '@aws-sdk/core': 3.973.5
+      '@aws-sdk/core': 3.973.6
       '@aws-sdk/credential-provider-env': 3.972.3
       '@aws-sdk/credential-provider-http': 3.972.5
       '@aws-sdk/credential-provider-login': 3.972.3
@@ -4184,7 +4174,7 @@ snapshots:
 
   '@aws-sdk/credential-provider-login@3.972.3':
     dependencies:
-      '@aws-sdk/core': 3.973.5
+      '@aws-sdk/core': 3.973.6
       '@aws-sdk/nested-clients': 3.980.0
       '@aws-sdk/types': 3.973.1
       '@smithy/property-provider': 4.2.8
@@ -4244,7 +4234,7 @@ snapshots:
 
   '@aws-sdk/credential-provider-process@3.972.3':
     dependencies:
-      '@aws-sdk/core': 3.973.5
+      '@aws-sdk/core': 3.973.6
       '@aws-sdk/types': 3.973.1
       '@smithy/property-provider': 4.2.8
       '@smithy/shared-ini-file-loader': 4.4.3
@@ -4263,7 +4253,7 @@ snapshots:
   '@aws-sdk/credential-provider-sso@3.972.3':
     dependencies:
       '@aws-sdk/client-sso': 3.980.0
-      '@aws-sdk/core': 3.973.5
+      '@aws-sdk/core': 3.973.6
       '@aws-sdk/token-providers': 3.980.0
       '@aws-sdk/types': 3.973.1
       '@smithy/property-provider': 4.2.8
@@ -4288,7 +4278,7 @@ snapshots:
 
   '@aws-sdk/credential-provider-web-identity@3.972.3':
     dependencies:
-      '@aws-sdk/core': 3.973.5
+      '@aws-sdk/core': 3.973.6
       '@aws-sdk/nested-clients': 3.980.0
       '@aws-sdk/types': 3.973.1
       '@smithy/property-provider': 4.2.8
@@ -4445,16 +4435,16 @@ snapshots:
     dependencies:
       '@aws-crypto/sha256-browser': 5.2.0
       '@aws-crypto/sha256-js': 5.2.0
-      '@aws-sdk/core': 3.973.5
+      '@aws-sdk/core': 3.973.6
       '@aws-sdk/middleware-host-header': 3.972.3
       '@aws-sdk/middleware-logger': 3.972.3
       '@aws-sdk/middleware-recursion-detection': 3.972.3
-      '@aws-sdk/middleware-user-agent': 3.972.5
+      '@aws-sdk/middleware-user-agent': 3.972.6
       '@aws-sdk/region-config-resolver': 3.972.3
       '@aws-sdk/types': 3.973.1
       '@aws-sdk/util-endpoints': 3.980.0
       '@aws-sdk/util-user-agent-browser': 3.972.3
-      '@aws-sdk/util-user-agent-node': 3.972.3
+      '@aws-sdk/util-user-agent-node': 3.972.4
       '@smithy/config-resolver': 4.4.6
       '@smithy/core': 3.22.1
       '@smithy/fetch-http-handler': 5.3.9
@@ -4600,7 +4590,7 @@ snapshots:
 
   '@aws-sdk/token-providers@3.980.0':
     dependencies:
-      '@aws-sdk/core': 3.973.5
+      '@aws-sdk/core': 3.973.6
       '@aws-sdk/nested-clients': 3.980.0
       '@aws-sdk/types': 3.973.1
       '@smithy/property-provider': 4.2.8
@@ -6067,7 +6057,7 @@ snapshots:
 
   '@tinyhttp/content-disposition@2.2.4': {}
 
-  '@tloncorp/api@https://codeload.github.com/tloncorp/api-beta/tar.gz/5b73da666c698a534a2db38871338db3462f1520':
+  '@tloncorp/api@https://codeload.github.com/tloncorp/api-beta/tar.gz/ee00c8631516b347341de0ea12c07d34f9cec739':
     dependencies:
       '@aws-sdk/client-s3': 3.983.0
       '@aws-sdk/s3-request-presigner': 3.983.0
@@ -6087,8 +6077,6 @@ snapshots:
     transitivePeerDependencies:
       - aws-crt
 
-<<<<<<< Updated upstream
-=======
   '@tloncorp/tlon-skill-darwin-arm64@0.1.7':
     optional: true
 
@@ -6108,7 +6096,6 @@ snapshots:
       '@tloncorp/tlon-skill-linux-arm64': 0.1.7
       '@tloncorp/tlon-skill-linux-x64': 0.1.7
 
->>>>>>> Stashed changes
   '@tokenizer/inflate@0.4.1':
     dependencies:
       debug: 4.4.3
@@ -6598,7 +6585,7 @@ snapshots:
       domelementtype: 2.3.0
       domhandler: 5.0.3
 
-  dotenv@17.2.3: {}
+  dotenv@17.2.4: {}
 
   dunder-proto@1.0.1:
     dependencies:
@@ -7446,7 +7433,7 @@ snapshots:
       commander: 14.0.3
       croner: 10.0.1
       discord-api-types: 0.38.38
-      dotenv: 17.2.3
+      dotenv: 17.2.4
       express: 5.2.1
       file-type: 21.3.0
       grammy: 1.39.3
