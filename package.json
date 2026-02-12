@@ -18,8 +18,8 @@
     "test:ci": "docker compose --env-file .env -f dev/docker-compose.yml up -d && ./test/run.sh; docker compose --env-file .env -f dev/docker-compose.yml down"
   },
   "dependencies": {
-    "@tloncorp/api": "file:../api-beta",
-    "@tloncorp/tlon-skill": "latest",
+    "@tloncorp/api": "github:tloncorp/api-beta#main",
+    "@tloncorp/tlon-skill": "0.1.7",
     "@urbit/aura": "^3.0.0",
     "@urbit/http-api": "^3.0.0"
   },
