@@ -14,6 +14,9 @@ clone_if_missing() {
   fi
 }
 
+# Clone tlonbot for config and prompts
+clone_if_missing ../tlonbot tlonbot
+
 # Clone api-beta for local development (optional - can comment out to use npm version)
 clone_if_missing ../api-beta api-beta
 # Note: tlon-skill is installed from npm, no clone needed
