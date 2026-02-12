@@ -2,10 +2,11 @@ import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { MoltbotPluginApi } from "openclaw/plugin-sdk";
+import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 import { emptyPluginConfigSchema } from "openclaw/plugin-sdk";
 import { tlonPlugin } from "./src/channel.js";
 import { setTlonRuntime } from "./src/runtime.js";
+import { getSessionRole } from "./src/session-roles.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -15,7 +16,9 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 function findTlonBinary(): string {
   // Check in node_modules/.bin
   const skillBin = join(__dirname, "node_modules", ".bin", "tlon");
-  console.log(`[tlon] Checking for binary at: ${skillBin}, exists: ${existsSync(skillBin)}`);
+  console.log(
+    `[tlon] Checking for binary at: ${skillBin}, exists: ${existsSync(skillBin)}`,
+  );
   if (existsSync(skillBin)) return skillBin;
 
   // Check for platform-specific binary directly
@@ -23,7 +26,9 @@ function findTlonBinary(): string {
   const arch = process.arch;
   const platformPkg = `@tloncorp/tlon-skill-${platform}-${arch}`;
   const platformBin = join(__dirname, "node_modules", platformPkg, "tlon");
-  console.log(`[tlon] Checking for platform binary at: ${platformBin}, exists: ${existsSync(platformBin)}`);
+  console.log(
+    `[tlon] Checking for platform binary at: ${platformBin}, exists: ${existsSync(platformBin)}`,
+  );
   if (existsSync(platformBin)) return platformBin;
 
   // Fallback to PATH
@@ -42,12 +47,28 @@ function shellSplit(str: string): string[] {
   let escape = false;
 
   for (const ch of str) {
-    if (escape) { cur += ch; escape = false; continue; }
-    if (ch === "\\" && !inSingle) { escape = true; continue; }
-    if (ch === '"' && !inSingle) { inDouble = !inDouble; continue; }
-    if (ch === "'" && !inDouble) { inSingle = !inSingle; continue; }
+    if (escape) {
+      cur += ch;
+      escape = false;
+      continue;
+    }
+    if (ch === "\\" && !inSingle) {
+      escape = true;
+      continue;
+    }
+    if (ch === '"' && !inSingle) {
+      inDouble = !inDouble;
+      continue;
+    }
+    if (ch === "'" && !inDouble) {
+      inSingle = !inSingle;
+      continue;
+    }
     if (/\s/.test(ch) && !inDouble && !inSingle) {
-      if (cur) { args.push(cur); cur = ""; }
+      if (cur) {
+        args.push(cur);
+        cur = "";
+      }
       continue;
     }
     cur += ch;
@@ -95,7 +116,7 @@ const plugin = {
   name: "Tlon",
   description: "Tlon/Urbit channel plugin",
   configSchema: emptyPluginConfigSchema(),
-  register(api: MoltbotPluginApi) {
+  register(api: OpenClawPluginApi) {
     setTlonRuntime(api.runtime);
     api.registerChannel({ plugin: tlonPlugin });
 
@@ -126,13 +147,46 @@ const plugin = {
           return {
             content: [{ type: "text", text: output }],
           };
-        } catch (error: any) {
+        } catch (error: unknown) {
+          const message =
+            error instanceof Error ? error.message : String(error);
           return {
-            content: [{ type: "text", text: `Error: ${error.message}` }],
+            content: [{ type: "text", text: `Error: ${message}` }],
             isError: true,
           };
         }
       },
+    });
+
+    // Tool access control: block sensitive tools for non-owners
+    const ownerOnlyTools = new Set([
+      "tlon",
+      "tlon_run",
+      "tlon-run",
+      "cron",
+      "read",
+    ]);
+
+    api.on("before_tool_call", (event, ctx) => {
+      if (!ownerOnlyTools.has(event.toolName)) {
+        return;
+      }
+
+      const role = getSessionRole(ctx.sessionKey ?? "");
+
+      if (role !== "owner") {
+        api.logger.warn(
+          `[tlon] Blocked ${event.toolName} tool for non-owner. Session: ${ctx.sessionKey}, Role: ${role}`,
+        );
+        return {
+          block: true,
+          blockReason: `The ${event.toolName} tool is not available.`,
+        };
+      }
+
+      api.logger.info(
+        `[tlon] Allowed ${event.toolName} tool for owner. Session: ${ctx.sessionKey}`,
+      );
     });
   },
 };

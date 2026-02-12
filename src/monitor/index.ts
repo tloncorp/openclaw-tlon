@@ -2,6 +2,7 @@ import type { RuntimeEnv, ReplyPayload, OpenClawConfig } from "openclaw/plugin-s
 import { format } from "node:util";
 import type { Foreigns, DmInvite } from "../urbit/foreigns.js";
 import { getTlonRuntime } from "../runtime.js";
+import { setSessionRole } from "../session-roles.js";
 import { createSettingsManager, type TlonSettingsStore } from "../settings.js";
 import { normalizeShip, parseChannelNest } from "../targets.js";
 import { resolveTlonAccount } from "../types.js";
@@ -965,6 +966,10 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     }
 
     const senderRole = isOwner(senderShip) ? "owner" : "user";
+    // Store role for before_tool_call hook (tool access control)
+    setSessionRole(route.sessionKey, senderRole);
+    runtime.log?.(`[tlon] Stored session role: sessionKey=${route.sessionKey}, role=${senderRole}`);
+
     const fromLabel = isGroup
       ? `${senderShip} [${senderRole}] in ${channelNest}`
       : `${senderShip} [${senderRole}]`;

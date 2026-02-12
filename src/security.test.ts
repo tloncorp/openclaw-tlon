@@ -8,7 +8,7 @@
  * - Bot mention detection boundaries
  */
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, beforeEach } from "vitest";
 import {
   isDmAllowed,
   isGroupInviteAllowed,
@@ -16,6 +16,11 @@ import {
   extractMessageText,
 } from "./monitor/utils.js";
 import { normalizeShip } from "./targets.js";
+import {
+  setSessionRole,
+  getSessionRole,
+  _testing as sessionRolesTesting,
+} from "./session-roles.js";
 
 describe("Security: DM Allowlist", () => {
   describe("isDmAllowed", () => {
@@ -593,6 +598,93 @@ describe("Security: Agent-Initiated Blocking", () => {
       const result2 = shouldAllowBlock("~owner-ship", "~owner-ship", "owner-ship");
       expect(result2.allowed).toBe(false);
       expect(result2.reason).toBe("Cannot block owner");
+    });
+  });
+});
+
+describe("Security: Tool Access Control", () => {
+  /**
+   * Tests for owner-only tool access control.
+   * Non-owners MUST NOT be able to use the tlon skill,
+   * enforced at the plugin hook level.
+   *
+   * The hook blocks ALL calls to the "tlon" tool for non-owners.
+   * No command parsing needed - the entire skill is owner-only.
+   *
+   * SECURITY.md Section 12: Tool Access Control (Owner-Only Skill)
+   */
+
+  describe("session role tracking", () => {
+    // Note: These tests use the actual session-roles module
+    // to verify the TTL-based tracking works correctly
+
+    beforeEach(() => {
+      sessionRolesTesting.clearAll();
+    });
+
+    it("stores and retrieves owner role", () => {
+      setSessionRole("session-1", "owner");
+      expect(getSessionRole("session-1")).toBe("owner");
+    });
+
+    it("stores and retrieves user role", () => {
+      setSessionRole("session-1", "user");
+      expect(getSessionRole("session-1")).toBe("user");
+    });
+
+    it("returns undefined for unknown sessions", () => {
+      expect(getSessionRole("unknown-session")).toBeUndefined();
+    });
+
+    it("overwrites previous role for same session", () => {
+      setSessionRole("session-1", "owner");
+      expect(getSessionRole("session-1")).toBe("owner");
+
+      setSessionRole("session-1", "user");
+      expect(getSessionRole("session-1")).toBe("user");
+    });
+
+    it("tracks multiple sessions independently", () => {
+      setSessionRole("session-owner", "owner");
+      setSessionRole("session-user", "user");
+
+      expect(getSessionRole("session-owner")).toBe("owner");
+      expect(getSessionRole("session-user")).toBe("user");
+    });
+
+    it("TTL is set to 1 hour", () => {
+      // Verify the TTL constant is correctly set
+      expect(sessionRolesTesting.getRoleTtlMs()).toBe(60 * 60 * 1000);
+    });
+  });
+
+  describe("fail-safe behavior", () => {
+    /**
+     * CRITICAL: When role is unknown (missing/expired), the hook MUST block.
+     * This fail-safe prevents tool execution if session tracking fails.
+     */
+
+    it("documents fail-safe: unknown role should block", () => {
+      // This test documents the expected behavior in index.ts:
+      // const role = getSessionRole(ctx.sessionKey ?? "");
+      // if (role !== "owner") { block }
+      //
+      // If role is undefined (unknown), it's !== "owner", so it blocks.
+      const role: "owner" | "user" | undefined = undefined;
+      const shouldBlock = role !== "owner";
+      expect(shouldBlock).toBe(true);
+    });
+
+    it("documents fail-safe: user role should block", () => {
+      const role: "owner" | "user" | undefined = "user";
+      const shouldBlock = role !== "owner";
+      expect(shouldBlock).toBe(true);
+    });
+
+    it("documents: owner role should not block", () => {
+      const role: "owner" | "user" | undefined = "owner";
+      const shouldBlock = role !== "owner";
+      expect(shouldBlock).toBe(false);
     });
   });
 });
