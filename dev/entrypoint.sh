@@ -22,18 +22,18 @@ npm install
 # Link api-beta if mounted (for local development)
 if [ -f "/workspace/api-beta/package.json" ]; then
   cd /workspace/api-beta
-  
+
   # Only install/build if not already done
   if [ ! -d "node_modules" ]; then
     echo "==> Installing api-beta dependencies..."
     npm install
   fi
-  
+
   if [ ! -d "dist" ]; then
     echo "==> Building api-beta..."
     npm run build
   fi
-  
+
   # Always ensure link is set up
   npm link 2>/dev/null || true
   cd /workspace/openclaw-tlon
@@ -84,6 +84,9 @@ upsert_block "$WORKSPACE_DIR/SOUL.md" "$(envsubst < /workspace/tlonbot/prompts/S
 # USER.md and TOOLS.md are static
 upsert_block "$WORKSPACE_DIR/USER.md" "$(cat /workspace/tlonbot/prompts/USER.md)"
 upsert_block "$WORKSPACE_DIR/TOOLS.md" "$(cat /workspace/tlonbot/prompts/TOOLS.md)"
+
+export WORKSPACE_DIR
+export TLON_RUN_PATH="/workspace/tlonbot/bin/tlon-run"
 
 # Generate gateway token if not set
 if [ -z "$OPENCLAW_GATEWAY_TOKEN" ]; then
