@@ -21,6 +21,9 @@ importers:
         specifier: ^3.0.0
         version: 3.0.0
     devDependencies:
+      dotenv:
+        specifier: ^17.2.4
+        version: 17.2.4
       openclaw:
         specifier: ^2026.1.30
         version: 2026.2.1(@napi-rs/canvas@0.1.89)(@types/express@5.0.6)(node-llama-cpp@3.15.1)(signal-polyfill@0.2.2)

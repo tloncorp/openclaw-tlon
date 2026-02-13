@@ -745,6 +745,18 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     return normalizeShip(ship) === effectiveOwnerShip;
   }
 
+  function extractDmPartnerShip(whom: unknown): string {
+    const raw =
+      typeof whom === "string"
+        ? whom
+        : whom && typeof whom === "object" && "ship" in whom && typeof whom.ship === "string"
+          ? whom.ship
+          : "";
+    const normalized = normalizeShip(raw);
+    // Keep DM routing strict: accept only patp-like values.
+    return /^~?[a-z-]+$/i.test(normalized) ? normalized : "";
+  }
+
   const processMessage = async (params: {
     messageId: string;
     senderShip: string;
@@ -1005,6 +1017,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
               runtime.log?.(`[tlon] Now tracking thread for future replies: ${parentId}`);
             }
           } else {
+            runtime.log?.(`[tlon] Sending DM reply from ${botShipName} to ${senderShip}`);
             await sendDm({ api: api, fromShip: botShipName, toShip: senderShip, text: replyText });
           }
         },
@@ -1198,7 +1211,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       }
       if (!("whom" in event) || !("response" in event)) {return;}
 
-      const _whom = event.whom; // DM partner ship or club ID
+      const whom = event.whom; // DM partner ship or club ID
       const messageId = event.id;
       const response = event.response;
 
@@ -1208,8 +1221,19 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
 
       if (!processedTracker.mark(messageId)) {return;}
 
-      const senderShip = normalizeShip(essay.author ?? "");
+      const authorShip = normalizeShip(essay.author ?? "");
+      const partnerShip = extractDmPartnerShip(whom);
+      const senderShip = partnerShip || authorShip;
+
+      // Ignore the bot's own outbound DM events.
+      if (authorShip === botShipName) {return;}
       if (!senderShip || senderShip === botShipName) {return;}
+
+      if (authorShip && partnerShip && authorShip !== partnerShip) {
+        runtime.log?.(
+          `[tlon] DM ship mismatch (author=${authorShip}, partner=${partnerShip}) - routing to partner`,
+        );
+      }
 
       // Resolve any cited/quoted messages first
       const citedContent = await resolveAllCites(essay.content);
