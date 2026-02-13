@@ -20,14 +20,12 @@ rm -rf "$(npm root -g)/openclaw/extensions/tlon"
 CONFIG_DIR=/root/.openclaw
 mkdir -p "$CONFIG_DIR"
 
-cat > "$CONFIG_DIR/openclaw.json" << EOF
+# Write config with hardcoded values (no shell expansion needed)
+cat > "$CONFIG_DIR/openclaw.json" << 'EOFCONFIG'
 {
   "agents": {
     "defaults": {
-      "workspace": "/root/.openclaw/workspace",
-      "model": {
-        "primary": "${OPENCLAW_MODEL:-openrouter/minimax/minimax-m2.1}"
-      }
+      "workspace": "/root/.openclaw/workspace"
     },
     "list": [
       {
@@ -59,14 +57,17 @@ cat > "$CONFIG_DIR/openclaw.json" << EOF
   "channels": {
     "tlon": {
       "enabled": true,
-      "url": "${TLON_URL}",
-      "ship": "${TLON_SHIP}",
-      "code": "${TLON_CODE}",
-      "dmAllowlist": ["${TLON_DM_ALLOWLIST}"]
+      "url": "http://ships:8080",
+      "ship": "~zod",
+      "code": "lidlut-tabwed-pillex-ridrup",
+      "dmAllowlist": ["~ten"]
     }
   }
 }
-EOF
+EOFCONFIG
+
+echo "==> Config written:"
+cat "$CONFIG_DIR/openclaw.json"
 
 # Create minimal workspace with test prompts
 WORKSPACE_DIR=/root/.openclaw/workspace
@@ -89,7 +90,7 @@ ls -la /root/.openclaw/
 ls -la /root/.openclaw/agents/ 2>/dev/null || true
 ls -la /root/.openclaw/agents/test/ 2>/dev/null || true
 
-cat > "$WORKSPACE_DIR/SOUL.md" << EOF
+cat > "$WORKSPACE_DIR/SOUL.md" << 'EOF'
 You are a test bot running integration tests.
 Reply helpfully to any message.
 When asked to create groups or manage channels, do so.
