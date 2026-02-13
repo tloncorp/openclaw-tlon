@@ -13,6 +13,9 @@ echo "==> Installing plugin dependencies..."
 cd /workspace/openclaw-tlon
 npm install
 
+echo "==> Installing tlon-skill..."
+npm install -g @tloncorp/tlon-skill
+
 # Remove bundled tlon plugin to avoid duplicate ID conflict
 rm -rf "$(npm root -g)/openclaw/extensions/tlon"
 
@@ -54,6 +57,18 @@ cat > "$CONFIG_DIR/openclaw.json" << EOF
     "entries": {
       "tlon": {
         "enabled": true
+      }
+    }
+  },
+  "skills": {
+    "entries": {
+      "tlon": {
+        "enabled": true,
+        "env": {
+          "URBIT_URL": "http://ships:8080",
+          "URBIT_SHIP": "~zod",
+          "URBIT_CODE": "lidlut-tabwed-pillex-ridrup"
+        }
       }
     }
   },
