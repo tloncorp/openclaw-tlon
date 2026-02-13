@@ -6,27 +6,29 @@ services:
       - bash
       - -c
       - |
+        set -e
         apt-get update && apt-get install -y curl xz-utils
         cd /data
         
-        # Download and extract zod
-        if [ ! -f rube-zod23.tgz ]; then
-          curl -sL https://bootstrap.urbit.org/rube-zod23.tgz -o rube-zod23.tgz
-        fi
-        tar xzf rube-zod23.tgz
+        echo "==> Downloading zod..."
+        curl -fSL https://bootstrap.urbit.org/rube-zod23.tgz -o rube-zod23.tgz || { echo "Failed to download zod"; exit 1; }
+        ls -la rube-zod23.tgz
+        echo "==> Extracting zod..."
+        tar xzf rube-zod23.tgz || { echo "Failed to extract zod"; exit 1; }
         
-        # Download and extract ten
-        if [ ! -f rube-ten23.tgz ]; then
-          curl -sL https://bootstrap.urbit.org/rube-ten23.tgz -o rube-ten23.tgz
-        fi
-        tar xzf rube-ten23.tgz
+        echo "==> Downloading ten..."
+        curl -fSL https://bootstrap.urbit.org/rube-ten23.tgz -o rube-ten23.tgz || { echo "Failed to download ten"; exit 1; }
+        ls -la rube-ten23.tgz
+        echo "==> Extracting ten..."
+        tar xzf rube-ten23.tgz || { echo "Failed to extract ten"; exit 1; }
         
-        # Get vere
-        curl -sL https://urbit.org/install/linux-x86_64/latest | tar xz
+        echo "==> Downloading vere..."
+        curl -fSL https://urbit.org/install/linux-x86_64/latest | tar xz || { echo "Failed to download vere"; exit 1; }
         VERE=$$(ls -1 vere-*-linux-x86_64 | head -1)
         chmod +x $$VERE
+        echo "==> Using vere: $$VERE"
         
-        # Start both ships (background zod, foreground ten)
+        echo "==> Starting ships..."
         ./$$VERE -t --loom 31 --http-port 8080 zod &
         ./$$VERE -t --loom 31 --http-port 8081 ten
     volumes:
