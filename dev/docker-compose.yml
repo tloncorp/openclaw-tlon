@@ -5,6 +5,9 @@ services:
       dockerfile: Dockerfile
     env_file:
       - ../.env
+    environment:
+      # Default to MiniMax 2.1 if MODEL not set in .env
+      - MODEL=${MODEL:-minimax/MiniMax-M2.1}
     ports:
       - "${OPENCLAW_GATEWAY_PORT:-18789}:18789"
     volumes:
