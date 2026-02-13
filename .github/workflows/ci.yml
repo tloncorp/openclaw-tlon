@@ -55,9 +55,9 @@ jobs:
           docker compose -f dev/docker-compose.ci.yml up -d zod bus
           
           echo "Waiting for ships to boot..."
-          # Wait for zod
+          # Wait for zod (port 35453)
           for i in {1..60}; do
-            if curl -sf http://localhost:8080 >/dev/null 2>&1; then
+            if curl -sf http://localhost:35453 >/dev/null 2>&1; then
               echo "~zod ready"
               break
             fi
@@ -69,9 +69,9 @@ jobs:
             sleep 3
           done
           
-          # Wait for bus
+          # Wait for bus (port 36963)
           for i in {1..60}; do
-            if curl -sf http://localhost:8081 >/dev/null 2>&1; then
+            if curl -sf http://localhost:36963 >/dev/null 2>&1; then
               echo "~bus ready"
               break
             fi
@@ -102,10 +102,10 @@ jobs:
 
       - name: Run integration tests
         env:
-          TLON_URL: http://localhost:8080
+          TLON_URL: http://localhost:35453
           TLON_SHIP: "~zod"
           TLON_CODE: lidlut-tabwed-pillex-ridrup
-          TEST_USER_URL: http://localhost:8081
+          TEST_USER_URL: http://localhost:36963
           TEST_USER_SHIP: "~bus"
           TEST_USER_CODE: riddec-bicrym-ridlev-pocsef
           TEST_MODE: tlon

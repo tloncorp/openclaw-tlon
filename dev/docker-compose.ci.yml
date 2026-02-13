@@ -15,11 +15,13 @@ services:
         curl -sL https://urbit.org/install/linux-x86_64/latest | tar xz
         VERE=$$(ls -1 vere-*-linux-x86_64 | head -1)
         chmod +x $$VERE
-        ./$$VERE -t --loom 31 --http-port 8080 zod
+        ./$$VERE -t --loom 31 --http-port 35453 zod
     volumes:
       - zod-data:/data
     ports:
-      - "8080:8080"
+      - "35453:35453"
+    networks:
+      - urbit
 
   # Fakeship (test user)
   bus:
@@ -37,11 +39,13 @@ services:
         curl -sL https://urbit.org/install/linux-x86_64/latest | tar xz
         VERE=$$(ls -1 vere-*-linux-x86_64 | head -1)
         chmod +x $$VERE
-        ./$$VERE -t --loom 31 --http-port 8080 bus
+        ./$$VERE -t --loom 31 --http-port 36963 bus
     volumes:
       - bus-data:/data
     ports:
-      - "8081:8080"
+      - "36963:36963"
+    networks:
+      - urbit
 
   # OpenClaw gateway with plugin
   openclaw:
@@ -49,7 +53,7 @@ services:
       context: .
       dockerfile: Dockerfile.ci
     environment:
-      - TLON_URL=http://zod:8080
+      - TLON_URL=http://zod:35453
       - TLON_SHIP=~zod
       - TLON_CODE=lidlut-tabwed-pillex-ridrup
       - TLON_DM_ALLOWLIST=~bus
@@ -60,6 +64,12 @@ services:
     volumes:
       - ..:/workspace/openclaw-tlon
       - openclaw-modules:/workspace/openclaw-tlon/node_modules
+    networks:
+      - urbit
+
+networks:
+  urbit:
+    driver: bridge
 
 volumes:
   zod-data:
