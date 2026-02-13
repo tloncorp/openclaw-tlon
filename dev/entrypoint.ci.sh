@@ -3,7 +3,9 @@ set -e
 
 # Ensure HOME is set correctly
 export HOME=/root
+export OPENCLAW_STATE_DIR=/root/.openclaw
 echo "==> HOME=$HOME"
+echo "==> OPENCLAW_STATE_DIR=$OPENCLAW_STATE_DIR"
 echo "==> User: $(whoami)"
 echo "==> Working directory: $(pwd)"
 
@@ -42,6 +44,10 @@ cat > "$CONFIG_DIR/openclaw.json" << EOF
     "mode": "local",
     "auth": {
       "token": "ci-test-token"
+    },
+    "session": {
+      "store": "/root/.openclaw/agents/{agentId}/sessions.json",
+      "resetPolicy": "never"
     }
   },
   "plugins": {
@@ -70,10 +76,16 @@ EOF
 WORKSPACE_DIR=/root/.openclaw/workspace
 mkdir -p "$WORKSPACE_DIR"
 
-# Create sessions directory for agent "test"
+# Create sessions.json file for agent "test"
+SESSIONS_FILE=/root/.openclaw/agents/test/sessions.json
+mkdir -p "$(dirname "$SESSIONS_FILE")"
+echo "[]" > "$SESSIONS_FILE"
+echo "==> Sessions file: $SESSIONS_FILE"
+
+# Also create sessions directory for transcripts
 SESSIONS_DIR=/root/.openclaw/agents/test/sessions
 mkdir -p "$SESSIONS_DIR"
-echo "==> Sessions directory: $SESSIONS_DIR"
+echo "==> Sessions dir: $SESSIONS_DIR"
 
 # Debug: show directory structure
 echo "==> Directory structure:"
