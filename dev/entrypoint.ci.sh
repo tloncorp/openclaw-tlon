@@ -87,9 +87,20 @@ EOF
 echo "==> Config written:"
 cat "$CONFIG_DIR/openclaw.json"
 
-# Create minimal workspace with test prompts
+# Create workspace and copy prompts from tlonbot
 WORKSPACE_DIR=/root/.openclaw/workspace
 mkdir -p "$WORKSPACE_DIR"
+
+# Clone tlonbot for prompts (shallow clone, just need the files)
+echo "==> Fetching tlonbot prompts..."
+git clone --depth 1 https://github.com/tloncorp/tlonbot.git /tmp/tlonbot 2>/dev/null || true
+if [ -d /tmp/tlonbot/prompts ]; then
+  cp /tmp/tlonbot/prompts/*.md "$WORKSPACE_DIR/" 2>/dev/null || true
+  echo "==> Copied prompts from tlonbot"
+  ls -la "$WORKSPACE_DIR/"
+else
+  echo "==> Warning: Could not fetch tlonbot prompts"
+fi
 
 # Create sessions directory and sessions.json file for agent "test"
 # NOTE: sessions.json goes INSIDE the sessions directory, not outside
@@ -106,11 +117,14 @@ ls -la /root/.openclaw/
 ls -la /root/.openclaw/agents/ 2>/dev/null || true
 ls -la /root/.openclaw/agents/test/ 2>/dev/null || true
 
-cat > "$WORKSPACE_DIR/SOUL.md" << 'EOF'
+# Fallback SOUL.md if tlonbot prompts weren't fetched
+if [ ! -f "$WORKSPACE_DIR/SOUL.md" ]; then
+  cat > "$WORKSPACE_DIR/SOUL.md" << 'EOF'
 You are a test bot running integration tests.
 Reply helpfully to any message.
 When asked to create groups or manage channels, do so.
 EOF
+fi
 
 echo "==> Starting OpenClaw gateway..."
 exec openclaw gateway --port 18789 --bind lan --verbose
