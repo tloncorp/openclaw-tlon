@@ -2,7 +2,6 @@ import type { RuntimeEnv, ReplyPayload, OpenClawConfig } from "openclaw/plugin-s
 import { format } from "node:util";
 import type { Foreigns, DmInvite } from "../urbit/foreigns.js";
 import { getTlonRuntime } from "../runtime.js";
-import { setSessionRole } from "../session-roles.js";
 import { createSettingsManager, type TlonSettingsStore } from "../settings.js";
 import { normalizeShip, parseChannelNest } from "../targets.js";
 import { resolveTlonAccount } from "../types.js";
@@ -542,56 +541,6 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     }
   }
 
-  // Regex to match block directives in agent responses
-  // Format: [BLOCK_USER: ~ship-name | reason for blocking]
-  const blockDirectiveRegex = /\[BLOCK_USER:\s*(~[\w-]+)\s*\|\s*(.+?)\]/g;
-
-  // Process block directives from agent response and return text with directives stripped
-  async function processBlockDirectives(text: string, senderShip: string): Promise<string> {
-    const matches = [...text.matchAll(blockDirectiveRegex)];
-
-    if (matches.length > 0) {
-      runtime.log?.(`[tlon] Found ${matches.length} block directive(s) in response`);
-      runtime.log?.(`[tlon] Sender ship: "${senderShip}" -> normalized: "${normalizeShip(senderShip)}"`);
-      runtime.log?.(`[tlon] Owner ship: "${effectiveOwnerShip}"`);
-    }
-
-    for (const match of matches) {
-      const targetShip = normalizeShip(match[1]);
-      const reason = match[2].trim();
-
-      runtime.log?.(`[tlon] Processing block directive: target="${targetShip}", reason="${reason}"`);
-
-      // Safety: Never block the owner
-      if (effectiveOwnerShip && targetShip === effectiveOwnerShip) {
-        runtime.warn?.(`[tlon] Agent attempted to block owner ship ${targetShip} - ignoring`);
-        continue;
-      }
-
-      // Only allow blocking the current message sender (not arbitrary third parties)
-      const normalizedSender = normalizeShip(senderShip);
-      if (targetShip !== normalizedSender) {
-        runtime.warn?.(`[tlon] Agent tried to block "${targetShip}" but sender is "${normalizedSender}" - ignoring`);
-        continue;
-      }
-
-      // Block the abusive sender
-      runtime.log?.(`[tlon] Executing block for ${targetShip}...`);
-      await blockShip(targetShip);
-
-      // Notify owner
-      if (effectiveOwnerShip) {
-        await sendOwnerNotification(
-          `[Agent Action] Blocked ${targetShip}\nReason: ${reason}`
-        );
-      }
-      runtime.log?.(`[tlon] Agent blocked ${targetShip}: ${reason}`);
-    }
-
-    // Strip directives from visible response
-    return text.replace(blockDirectiveRegex, "").trim();
-  }
-
   // Queue a new approval request and notify the owner
   async function queueApprovalRequest(approval: PendingApproval): Promise<void> {
     // Check if ship is blocked - silently ignore
@@ -966,10 +915,6 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     }
 
     const senderRole = isOwner(senderShip) ? "owner" : "user";
-    // Store role for before_tool_call hook (tool access control)
-    setSessionRole(route.sessionKey, senderRole);
-    runtime.log?.(`[tlon] Stored session role: sessionKey=${route.sessionKey}, role=${senderRole}`);
-
     const fromLabel = isGroup
       ? `${senderShip} [${senderRole}] in ${channelNest}`
       : `${senderShip} [${senderRole}]`;
@@ -1031,10 +976,6 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         deliver: async (payload: ReplyPayload) => {
           let replyText = payload.text;
           if (!replyText) {return;}
-
-          // Process any block directives in the response (strips them from text)
-          replyText = await processBlockDirectives(replyText, senderShip);
-          if (!replyText) {return;} // Response was only a directive
 
           // Use settings store value if set, otherwise fall back to file config
           const showSignature = effectiveShowModelSig;
