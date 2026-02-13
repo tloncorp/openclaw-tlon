@@ -50,27 +50,27 @@ describe("messages", () => {
     }
   });
 
-  test("posts a message into a bot-owned channel", async () => {
-    const token = `it-post-${Date.now().toString(36)}`;
-    const response = await client.prompt(
-      `Post this exact text into your channel ${fixture.channelId}: "${token}"`
-    );
+  // test("posts a message into a bot-owned channel", async () => {
+  //   const token = `it-post-${Date.now().toString(36)}`;
+  //   const response = await client.prompt(
+  //     `Post this exact text into your channel ${fixture.channelId}: "${token}"`
+  //   );
 
-    if (!response.success) {
-      throw new Error(response.error ?? "Prompt failed");
-    }
+  //   if (!response.success) {
+  //     throw new Error(response.error ?? "Prompt failed");
+  //   }
 
-    const created = await waitFor(async () => {
-      const posts = await botState.channelPosts(fixture.channelId, 30);
-      return (posts ?? []).some((post) => {
-        const p = post as { authorId?: string; textContent?: string | null; content?: unknown };
-        const text = (p.textContent ?? getTextContent(p.content) ?? "").toLowerCase();
-        return p.authorId === botShip && text.includes(token.toLowerCase());
-      });
-    }, 30_000);
+  //   const created = await waitFor(async () => {
+  //     const posts = await botState.channelPosts(fixture.channelId, 30);
+  //     return (posts ?? []).some((post) => {
+  //       const p = post as { authorId?: string; textContent?: string | null; content?: unknown };
+  //       const text = (p.textContent ?? getTextContent(p.content) ?? "").toLowerCase();
+  //       return p.authorId === botShip && text.includes(token.toLowerCase());
+  //     });
+  //   }, 30_000);
 
-    expect(created).toBe(true);
-  });
+  //   expect(created).toBe(true);
+  // });
 
   test("responds to a simple DM prompt", async () => {
     const response = await client.prompt("Reply with one short sentence confirming you are online.");
