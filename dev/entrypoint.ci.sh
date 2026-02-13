@@ -15,22 +15,43 @@ mkdir -p "$CONFIG_DIR"
 cat > "$CONFIG_DIR/openclaw.json" << EOF
 {
   "agents": {
-    "default": {
-      "model": "anthropic/claude-sonnet-4-20250514"
-    }
-  },
-  "tlon": {
-    "url": "${TLON_URL}",
-    "ship": "${TLON_SHIP}",
-    "code": "${TLON_CODE}",
-    "dmAllowlist": ["~bus"]
+    "defaults": {
+      "workspace": "/root/.openclaw/workspace",
+      "model": {
+        "primary": "${OPENCLAW_MODEL:-openrouter/minimax/minimax-m2.1}"
+      }
+    },
+    "list": [
+      {
+        "id": "test",
+        "identity": {
+          "name": "Test Bot",
+          "emoji": "🧪"
+        }
+      }
+    ]
   },
   "gateway": {
-    "port": 18789
+    "port": 18789,
+    "mode": "local"
   },
   "plugins": {
     "load": {
       "paths": ["/workspace/openclaw-tlon"]
+    },
+    "entries": {
+      "tlon": {
+        "enabled": true
+      }
+    }
+  },
+  "channels": {
+    "tlon": {
+      "enabled": true,
+      "url": "${TLON_URL}",
+      "ship": "${TLON_SHIP}",
+      "code": "${TLON_CODE}",
+      "dmAllowlist": ["${TLON_DM_ALLOWLIST}"]
     }
   }
 }
