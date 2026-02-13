@@ -80,4 +80,59 @@ describe("connectivity", () => {
     console.log(`✓ Got settings from bot ship:`, typeof settings);
     expect(settings).toBeDefined();
   });
+
+  test("can read DM channel posts from test user", async () => {
+    console.log(`Reading DM channel from test user's perspective...`);
+    try {
+      const posts = await userState.channelPosts(botShip, 10);
+      console.log(`✓ Got ${Array.isArray(posts) ? posts.length : 0} posts from DM channel`);
+      if (Array.isArray(posts) && posts.length > 0) {
+        console.log(`  Sample post:`, JSON.stringify(posts[0], null, 2).slice(0, 500));
+      }
+      expect(posts).toBeDefined();
+    } catch (err) {
+      console.log(`✗ Failed to read DM channel:`, err);
+      throw err;
+    }
+  });
+
+  test("can send DM from test user to bot", async () => {
+    console.log(`Sending test DM from ${userShip} to ${botShip}...`);
+    const { Urbit } = await import("@tloncorp/api");
+    const { sendDm } = await import("../../src/urbit/send.js");
+
+    const config = getTestConfig();
+    const testUserShipClean = config.testUser.shipName.replace(/^~/, "");
+    const urbit = new Urbit(config.testUser.shipUrl, config.testUser.code);
+    urbit.ship = testUserShipClean;
+
+    try {
+      await urbit.connect();
+      console.log(`✓ Connected urbit client for ${userShip}`);
+
+      const testMessage = `connectivity-test-${Date.now()}`;
+      await sendDm({
+        api: { poke: (params) => urbit.poke(params) },
+        fromShip: config.testUser.shipName,
+        toShip: config.bot.shipName,
+        text: testMessage,
+      });
+      console.log(`✓ Sent DM: "${testMessage}"`);
+
+      // Wait a bit for the message to propagate
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+
+      // Check if the message appears in the DM channel
+      const posts = await userState.channelPosts(botShip, 10);
+      const found = (posts ?? []).some((post) => {
+        const p = post as { textContent?: string };
+        return p.textContent?.includes(testMessage);
+      });
+      console.log(`✓ Message found in DM channel: ${found}`);
+      expect(found).toBe(true);
+    } catch (err) {
+      console.log(`✗ DM send failed:`, err);
+      throw err;
+    }
+  });
 });
