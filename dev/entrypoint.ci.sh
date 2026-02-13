@@ -13,7 +13,13 @@ echo "==> Installing plugin dependencies..."
 cd /workspace/openclaw-tlon
 npm install
 
-echo "==> Installing tlon-skill..."
+echo "==> Installing tlon-skill into plugin's node_modules..."
+cd /workspace/openclaw-tlon
+npm install @tloncorp/tlon-skill
+echo "==> tlon-skill installed:"
+ls -la node_modules/@tloncorp/tlon-skill/ 2>/dev/null || echo "  (will be in container node_modules)"
+
+# Also install globally for CLI access
 npm install -g @tloncorp/tlon-skill
 
 # Link tlon-skill into OpenClaw's skills directory so it can find SKILL.md
@@ -24,6 +30,16 @@ if [ -d "$OPENCLAW_SKILLS" ] && [ -d "$TLON_SKILL_PKG" ]; then
   ln -sf "$TLON_SKILL_PKG" "$OPENCLAW_SKILLS/tlon"
   ls -la "$OPENCLAW_SKILLS/"
 fi
+
+# Fetch tlon-run extension from tlonbot repo
+echo "==> Fetching tlon-run extension..."
+TLONBOT_EXT="/workspace/tlonbot-extension"
+mkdir -p "$TLONBOT_EXT"
+curl -fsSL "https://raw.githubusercontent.com/tloncorp/tlonbot/master/extension/index.js" -o "$TLONBOT_EXT/index.js"
+curl -fsSL "https://raw.githubusercontent.com/tloncorp/tlonbot/master/extension/openclaw.plugin.json" -o "$TLONBOT_EXT/openclaw.plugin.json"
+curl -fsSL "https://raw.githubusercontent.com/tloncorp/tlonbot/master/extension/package.json" -o "$TLONBOT_EXT/package.json"
+echo "==> tlon-run extension fetched:"
+ls -la "$TLONBOT_EXT/"
 
 # Remove bundled tlon plugin to avoid duplicate ID conflict
 rm -rf "$(npm root -g)/openclaw/extensions/tlon"
@@ -61,13 +77,37 @@ cat > "$CONFIG_DIR/openclaw.json" << EOF
   },
   "plugins": {
     "load": {
-      "paths": ["/workspace/openclaw-tlon"]
+      "paths": ["/workspace/openclaw-tlon", "/workspace/tlonbot-extension"]
     },
     "entries": {
       "tlon": {
         "enabled": true
+      },
+      "tlon-run": {
+        "enabled": true
       }
     }
+  },
+  "tools": {
+    "allow": [
+      "web_fetch",
+      "web_search",
+      "read",
+      "cron",
+      "tlon",
+      "tlon_run"
+    ],
+    "deny": [
+      "apply_patch",
+      "bash",
+      "canvas",
+      "edit",
+      "exec",
+      "gateway",
+      "nodes",
+      "process",
+      "write"
+    ]
   },
   "skills": {
     "entries": {
