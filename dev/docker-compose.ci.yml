@@ -20,12 +20,6 @@ services:
       - zod-data:/data
     ports:
       - "8080:8080"
-    healthcheck:
-      test: ["CMD-SHELL", "bash -c '</dev/tcp/localhost/8080' 2>/dev/null"]
-      interval: 10s
-      timeout: 5s
-      retries: 30
-      start_period: 60s
 
   # Fakeship (test user)
   bus:
@@ -48,12 +42,6 @@ services:
       - bus-data:/data
     ports:
       - "8081:8080"
-    healthcheck:
-      test: ["CMD-SHELL", "bash -c '</dev/tcp/localhost/8080' 2>/dev/null"]
-      interval: 10s
-      timeout: 5s
-      retries: 30
-      start_period: 60s
 
   # OpenClaw gateway with plugin
   openclaw:
@@ -72,11 +60,6 @@ services:
     volumes:
       - ..:/workspace/openclaw-tlon
       - openclaw-modules:/workspace/openclaw-tlon/node_modules
-    depends_on:
-      zod:
-        condition: service_healthy
-      bus:
-        condition: service_healthy
 
 volumes:
   zod-data:

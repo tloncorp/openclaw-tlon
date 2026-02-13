@@ -51,18 +51,50 @@ jobs:
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
         run: |
-          docker compose -f dev/docker-compose.ci.yml up -d
+          # Start ships first
+          docker compose -f dev/docker-compose.ci.yml up -d zod bus
           
-          echo "Waiting for services..."
-          # Wait for gateway to be ready
-          for i in {1..120}; do
+          echo "Waiting for ships to boot..."
+          # Wait for zod
+          for i in {1..60}; do
+            if curl -sf http://localhost:8080 >/dev/null 2>&1; then
+              echo "~zod ready"
+              break
+            fi
+            if [ $i -eq 60 ]; then
+              echo "Timeout waiting for ~zod"
+              docker compose -f dev/docker-compose.ci.yml logs zod
+              exit 1
+            fi
+            sleep 3
+          done
+          
+          # Wait for bus
+          for i in {1..60}; do
+            if curl -sf http://localhost:8081 >/dev/null 2>&1; then
+              echo "~bus ready"
+              break
+            fi
+            if [ $i -eq 60 ]; then
+              echo "Timeout waiting for ~bus"
+              docker compose -f dev/docker-compose.ci.yml logs bus
+              exit 1
+            fi
+            sleep 3
+          done
+          
+          # Start gateway now that ships are ready
+          docker compose -f dev/docker-compose.ci.yml up -d openclaw
+          
+          echo "Waiting for gateway..."
+          for i in {1..60}; do
             if curl -s http://localhost:18789/ | grep -qi openclaw; then
               echo "Gateway ready"
               break
             fi
-            if [ $i -eq 120 ]; then
+            if [ $i -eq 60 ]; then
               echo "Timeout waiting for gateway"
-              docker compose -f dev/docker-compose.ci.yml logs
+              docker compose -f dev/docker-compose.ci.yml logs openclaw
               exit 1
             fi
             sleep 2
