@@ -16,6 +16,15 @@ npm install
 echo "==> Installing tlon-skill..."
 npm install -g @tloncorp/tlon-skill
 
+# Link tlon-skill into OpenClaw's skills directory so it can find SKILL.md
+OPENCLAW_SKILLS="$(npm root -g)/openclaw/skills"
+TLON_SKILL_PKG="$(npm root -g)/@tloncorp/tlon-skill"
+if [ -d "$OPENCLAW_SKILLS" ] && [ -d "$TLON_SKILL_PKG" ]; then
+  echo "==> Linking tlon-skill into OpenClaw skills directory..."
+  ln -sf "$TLON_SKILL_PKG" "$OPENCLAW_SKILLS/tlon"
+  ls -la "$OPENCLAW_SKILLS/"
+fi
+
 # Remove bundled tlon plugin to avoid duplicate ID conflict
 rm -rf "$(npm root -g)/openclaw/extensions/tlon"
 
@@ -91,16 +100,14 @@ cat "$CONFIG_DIR/openclaw.json"
 WORKSPACE_DIR=/root/.openclaw/workspace
 mkdir -p "$WORKSPACE_DIR"
 
-# Clone tlonbot for prompts (shallow clone, just need the files)
+# Fetch tlonbot prompts directly from GitHub
 echo "==> Fetching tlonbot prompts..."
-git clone --depth 1 https://github.com/tloncorp/tlonbot.git /tmp/tlonbot 2>/dev/null || true
-if [ -d /tmp/tlonbot/prompts ]; then
-  cp /tmp/tlonbot/prompts/*.md "$WORKSPACE_DIR/" 2>/dev/null || true
-  echo "==> Copied prompts from tlonbot"
-  ls -la "$WORKSPACE_DIR/"
-else
-  echo "==> Warning: Could not fetch tlonbot prompts"
-fi
+TLONBOT_RAW="https://raw.githubusercontent.com/tloncorp/tlonbot/master/prompts"
+for f in SOUL.md TOOLS.md BOOTSTRAP.md USER.md; do
+  curl -fsSL "$TLONBOT_RAW/$f" -o "$WORKSPACE_DIR/$f" 2>/dev/null && echo "  - $f" || true
+done
+echo "==> Workspace contents:"
+ls -la "$WORKSPACE_DIR/"
 
 # Create sessions directory and sessions.json file for agent "test"
 # NOTE: sessions.json goes INSIDE the sessions directory, not outside
