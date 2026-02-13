@@ -1,6 +1,12 @@
 #!/bin/bash
 set -e
 
+# Ensure HOME is set correctly
+export HOME=/root
+echo "==> HOME=$HOME"
+echo "==> User: $(whoami)"
+echo "==> Working directory: $(pwd)"
+
 echo "==> Installing plugin dependencies..."
 cd /workspace/openclaw-tlon
 npm install
