@@ -6,11 +6,15 @@ describe("contacts", () => {
   let botState: StateClient;
   let botShip: string;
 
-  beforeAll(() => {
+  beforeAll(async () => {
     const config = getTestConfig();
     client = createTestClient(config);
     botState = createStateClient(config.bot);
     botShip = config.bot.shipName.startsWith("~") ? config.bot.shipName : `~${config.bot.shipName}`;
+
+    // Wait for any pending messages from previous tests to settle.
+    // This prevents the baseline timestamp from racing with message propagation.
+    await new Promise((resolve) => setTimeout(resolve, 5000));
   });
 
   test("reads the bot ship profile", async () => {
