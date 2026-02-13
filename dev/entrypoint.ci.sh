@@ -13,16 +13,9 @@ echo "==> Installing plugin dependencies..."
 cd /workspace/openclaw-tlon
 npm install
 
-# tlon-skill is installed as plugin dependency (see package.json)
+# tlon-skill comes in as plugin dependency (see package.json)
 echo "==> Checking tlon-skill from plugin dependencies..."
-ls -la /workspace/openclaw-tlon/node_modules/@tloncorp/tlon-skill/ 2>/dev/null || echo "  (will be in container node_modules volume)"
-
-# tlon-run extension is bundled in dev/tlon-run-extension/
-echo "==> Setting up tlon-run extension..."
-chmod +x /workspace/openclaw-tlon/dev/tlon-run-extension/tlon-run
-ln -sf /workspace/openclaw-tlon/dev/tlon-run-extension/tlon-run /usr/local/bin/tlon-run
-export WORKSPACE_DIR=/root/.openclaw/workspace
-ls -la /workspace/openclaw-tlon/dev/tlon-run-extension/
+ls -la /workspace/openclaw-tlon/node_modules/@tloncorp/tlon-skill/ 2>/dev/null || echo "  (in container node_modules volume)"
 
 # Remove bundled tlon plugin to avoid duplicate ID conflict
 rm -rf "$(npm root -g)/openclaw/extensions/tlon"
@@ -31,7 +24,6 @@ rm -rf "$(npm root -g)/openclaw/extensions/tlon"
 CONFIG_DIR=/root/.openclaw
 mkdir -p "$CONFIG_DIR"
 
-# Write config - use EOF (not 'EOFCONFIG') to allow env var expansion for API key
 cat > "$CONFIG_DIR/openclaw.json" << EOF
 {
   "agents": {
@@ -60,13 +52,10 @@ cat > "$CONFIG_DIR/openclaw.json" << EOF
   },
   "plugins": {
     "load": {
-      "paths": ["/workspace/openclaw-tlon", "/workspace/openclaw-tlon/dev/tlon-run-extension"]
+      "paths": ["/workspace/openclaw-tlon"]
     },
     "entries": {
       "tlon": {
-        "enabled": true
-      },
-      "tlon-run": {
         "enabled": true
       }
     }
@@ -77,8 +66,7 @@ cat > "$CONFIG_DIR/openclaw.json" << EOF
       "web_search",
       "read",
       "cron",
-      "tlon",
-      "tlon_run"
+      "tlon"
     ],
     "deny": [
       "apply_patch",
@@ -119,42 +107,38 @@ EOF
 echo "==> Config written:"
 cat "$CONFIG_DIR/openclaw.json"
 
-# Create workspace and copy prompts from tlonbot
+# Create workspace
 WORKSPACE_DIR=/root/.openclaw/workspace
 mkdir -p "$WORKSPACE_DIR"
 
-# Fetch tlonbot prompts directly from GitHub
+# Fetch tlonbot prompts (repo is private, so this may fail - that's ok)
 echo "==> Fetching tlonbot prompts..."
 TLONBOT_RAW="https://raw.githubusercontent.com/tloncorp/tlonbot/master/prompts"
 for f in SOUL.md TOOLS.md BOOTSTRAP.md USER.md; do
   curl -fsSL "$TLONBOT_RAW/$f" -o "$WORKSPACE_DIR/$f" 2>/dev/null && echo "  - $f" || true
 done
+
+# Fallback SOUL.md if prompts weren't fetched
+if [ ! -f "$WORKSPACE_DIR/SOUL.md" ]; then
+  cat > "$WORKSPACE_DIR/SOUL.md" << 'EOFPROMPT'
+You are a test bot running integration tests.
+Reply helpfully to any message.
+When asked to create groups, manage channels, or update your profile, do so.
+Use the tlon skill for Tlon/Urbit operations.
+EOFPROMPT
+fi
+
 echo "==> Workspace contents:"
 ls -la "$WORKSPACE_DIR/"
 
-# Create sessions directory and sessions.json file for agent "test"
-# NOTE: sessions.json goes INSIDE the sessions directory, not outside
+# Create sessions directory
 SESSIONS_DIR=/root/.openclaw/agents/test/sessions
 mkdir -p "$SESSIONS_DIR"
-SESSIONS_FILE="$SESSIONS_DIR/sessions.json"
-echo "{}" > "$SESSIONS_FILE"
-echo "==> Sessions dir: $SESSIONS_DIR"
-echo "==> Sessions file: $SESSIONS_FILE"
+echo "{}" > "$SESSIONS_DIR/sessions.json"
 
-# Debug: show directory structure
 echo "==> Directory structure:"
 ls -la /root/.openclaw/
-ls -la /root/.openclaw/agents/ 2>/dev/null || true
 ls -la /root/.openclaw/agents/test/ 2>/dev/null || true
-
-# Fallback SOUL.md if tlonbot prompts weren't fetched
-if [ ! -f "$WORKSPACE_DIR/SOUL.md" ]; then
-  cat > "$WORKSPACE_DIR/SOUL.md" << 'EOF'
-You are a test bot running integration tests.
-Reply helpfully to any message.
-When asked to create groups or manage channels, do so.
-EOF
-fi
 
 echo "==> Starting OpenClaw gateway..."
 exec openclaw gateway --port 18789 --bind lan --verbose
