@@ -1,0 +1,79 @@
+services:
+  # Fakezod (bot ship)
+  zod:
+    image: alpine:latest
+    command: |
+      sh -c '
+        apk add --no-cache curl tar
+        cd /data
+        if [ ! -f rube-zod23.tgz ]; then
+          curl -sL https://bootstrap.urbit.org/rube-zod23.tgz -o rube-zod23.tgz
+        fi
+        tar xzf rube-zod23.tgz
+        curl -sL https://urbit.org/install/linux-x86_64/latest | tar xz
+        VERE=$$(ls -1 vere-*-linux-x86_64 | head -1)
+        chmod +x $$VERE
+        ./$$VERE --loom 31 --http-port 8080 zod
+      '
+    volumes:
+      - zod-data:/data
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  # Fakeship (test user)
+  bus:
+    image: alpine:latest
+    command: |
+      sh -c '
+        apk add --no-cache curl tar
+        cd /data
+        if [ ! -f rube-bus9.tgz ]; then
+          curl -sL https://bootstrap.urbit.org/rube-bus9.tgz -o rube-bus9.tgz
+        fi
+        tar xzf rube-bus9.tgz
+        curl -sL https://urbit.org/install/linux-x86_64/latest | tar xz
+        VERE=$$(ls -1 vere-*-linux-x86_64 | head -1)
+        chmod +x $$VERE
+        ./$$VERE --loom 31 --http-port 8080 bus
+      '
+    volumes:
+      - bus-data:/data
+    ports:
+      - "8081:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  # OpenClaw gateway with plugin
+  openclaw:
+    build:
+      context: .
+      dockerfile: Dockerfile.ci
+    environment:
+      - TLON_URL=http://zod:8080
+      - TLON_SHIP=~zod
+      - TLON_CODE=lidlut-tabwed-pillex-ridrup
+      - TLON_DM_ALLOWLIST=~bus
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+    ports:
+      - "18789:18789"
+    volumes:
+      - ..:/workspace/openclaw-tlon
+      - openclaw-modules:/workspace/openclaw-tlon/node_modules
+    depends_on:
+      zod:
+        condition: service_healthy
+      bus:
+        condition: service_healthy
+
+volumes:
+  zod-data:
+  bus-data:
+  openclaw-modules:

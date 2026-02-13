@@ -33,10 +33,6 @@ jobs:
   integration-test:
     name: Integration Tests
     runs-on: ubuntu-latest
-    env:
-      BOT_PORT: 8080
-      TEST_USER_PORT: 8081
-
     steps:
       - uses: actions/checkout@v4
 
@@ -51,105 +47,43 @@ jobs:
 
       - run: pnpm install
 
-      - name: Cache ship archives
-        uses: actions/cache@v4
-        with:
-          path: |
-            rube-zod23.tgz
-            rube-bus9.tgz
-          key: urbit-ships-zod23-bus9
-
-      - name: Download ships
+      - name: Start services (ships + gateway)
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
-          [ -f rube-zod23.tgz ] || curl -sL https://bootstrap.urbit.org/rube-zod23.tgz -o rube-zod23.tgz
-          [ -f rube-bus9.tgz ] || curl -sL https://bootstrap.urbit.org/rube-bus9.tgz -o rube-bus9.tgz
-          tar xzf rube-zod23.tgz
-          tar xzf rube-bus9.tgz
-
-      - name: Download vere runtime
-        run: |
-          curl -sL https://urbit.org/install/linux-x86_64/latest | tar xz
-          VERE=$(ls -1 vere-*-linux-x86_64 | head -1)
-          echo "VERE=$VERE" >> $GITHUB_ENV
-          chmod +x $VERE
-
-      - name: Boot ships
-        run: |
-          ./$VERE --loom 31 --http-port $BOT_PORT -d zod
-          ./$VERE --loom 31 --http-port $TEST_USER_PORT -d bus
+          docker compose -f dev/docker-compose.ci.yml up -d
           
-          echo "Waiting for ships..."
-          for i in {1..60}; do
-            curl -s http://localhost:$BOT_PORT > /dev/null 2>&1 && \
-            curl -s http://localhost:$TEST_USER_PORT > /dev/null 2>&1 && break
+          echo "Waiting for services..."
+          # Wait for gateway to be ready
+          for i in {1..120}; do
+            if curl -s http://localhost:18789/ | grep -qi openclaw; then
+              echo "Gateway ready"
+              break
+            fi
+            if [ $i -eq 120 ]; then
+              echo "Timeout waiting for gateway"
+              docker compose -f dev/docker-compose.ci.yml logs
+              exit 1
+            fi
             sleep 2
           done
-          echo "Ships ready"
-
-      - name: Write .env for tests
-        run: |
-          cat > .env << EOF
-          TLON_URL=http://localhost:$BOT_PORT
-          TLON_SHIP=~zod
-          TLON_CODE=lidlut-tabwed-pillex-ridrup
-          TLON_DM_ALLOWLIST=~bus
-          TEST_USER_URL=http://localhost:$TEST_USER_PORT
-          TEST_USER_SHIP=~bus
-          TEST_USER_CODE=riddec-bicrym-ridlev-pocsef
-          TEST_MODE=tlon
-          ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}
-          EOF
-
-      - name: Build and start OpenClaw with plugin
-        run: |
-          # Build the plugin
-          pnpm build 2>/dev/null || true
-          
-          # Install OpenClaw
-          npm install -g openclaw@latest
-          
-          # Create config directory
-          mkdir -p ~/.openclaw
-          
-          # Create minimal config that loads this plugin
-          cat > ~/.openclaw/openclaw.json << EOF
-          {
-            "agents": {
-              "default": {
-                "model": "anthropic/claude-sonnet-4-20250514"
-              }
-            },
-            "tlon": {
-              "url": "http://localhost:$BOT_PORT",
-              "ship": "~zod",
-              "code": "lidlut-tabwed-pillex-ridrup",
-              "dmAllowlist": ["~bus"]
-            },
-            "gateway": {
-              "port": 18789
-            },
-            "extensions": ["${{ github.workspace }}"]
-          }
-          EOF
-          
-          # Start gateway in background
-          ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }} openclaw gateway start &
-          
-          # Wait for gateway
-          echo "Waiting for gateway..."
-          for i in {1..30}; do
-            curl -s http://localhost:18789/ | grep -qi openclaw && break || sleep 2
-          done
-          echo "Gateway ready"
 
       - name: Run integration tests
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          TLON_URL: http://localhost:8080
+          TLON_SHIP: "~zod"
+          TLON_CODE: lidlut-tabwed-pillex-ridrup
+          TEST_USER_URL: http://localhost:8081
+          TEST_USER_SHIP: "~bus"
+          TEST_USER_CODE: riddec-bicrym-ridlev-pocsef
+          TEST_MODE: tlon
+          TEST_GATEWAY_URL: http://localhost:18789
         run: pnpm test:integration
+
+      - name: Dump logs on failure
+        if: failure()
+        run: docker compose -f dev/docker-compose.ci.yml logs
 
       - name: Stop services
         if: always()
-        run: |
-          openclaw gateway stop 2>/dev/null || true
-          ./$VERE dock zod 2>/dev/null || true
-          ./$VERE dock bus 2>/dev/null || true
+        run: docker compose -f dev/docker-compose.ci.yml down -v
