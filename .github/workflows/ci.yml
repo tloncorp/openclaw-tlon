@@ -51,33 +51,33 @@ jobs:
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
         run: |
-          # Start ships first
-          docker compose -f dev/docker-compose.ci.yml up -d zod bus
+          # Start ships container (runs both zod and bus)
+          docker compose -f dev/docker-compose.ci.yml up -d ships
           
           echo "Waiting for ships to boot..."
-          # Wait for zod (port 35453)
+          # Wait for zod (port 8080)
           for i in {1..60}; do
-            if curl -sf http://localhost:35453 >/dev/null 2>&1; then
+            if curl -sf http://localhost:8080 >/dev/null 2>&1; then
               echo "~zod ready"
               break
             fi
             if [ $i -eq 60 ]; then
               echo "Timeout waiting for ~zod"
-              docker compose -f dev/docker-compose.ci.yml logs zod
+              docker compose -f dev/docker-compose.ci.yml logs ships
               exit 1
             fi
             sleep 3
           done
           
-          # Wait for bus (port 36963)
+          # Wait for bus (port 8081)
           for i in {1..60}; do
-            if curl -sf http://localhost:36963 >/dev/null 2>&1; then
+            if curl -sf http://localhost:8081 >/dev/null 2>&1; then
               echo "~bus ready"
               break
             fi
             if [ $i -eq 60 ]; then
               echo "Timeout waiting for ~bus"
-              docker compose -f dev/docker-compose.ci.yml logs bus
+              docker compose -f dev/docker-compose.ci.yml logs ships
               exit 1
             fi
             sleep 3
@@ -102,10 +102,10 @@ jobs:
 
       - name: Run integration tests
         env:
-          TLON_URL: http://localhost:35453
+          TLON_URL: http://localhost:8080
           TLON_SHIP: "~zod"
           TLON_CODE: lidlut-tabwed-pillex-ridrup
-          TEST_USER_URL: http://localhost:36963
+          TEST_USER_URL: http://localhost:8081
           TEST_USER_SHIP: "~bus"
           TEST_USER_CODE: riddec-bicrym-ridlev-pocsef
           TEST_MODE: tlon
