@@ -17,15 +17,12 @@ npm install
 echo "==> Checking tlon-skill from plugin dependencies..."
 ls -la /workspace/openclaw-tlon/node_modules/@tloncorp/tlon-skill/ 2>/dev/null || echo "  (will be in container node_modules volume)"
 
-# Fetch tlon-run extension from tlonbot repo
-echo "==> Fetching tlon-run extension..."
-TLONBOT_EXT="/workspace/tlonbot-extension"
-mkdir -p "$TLONBOT_EXT"
-curl -fsSL "https://raw.githubusercontent.com/tloncorp/tlonbot/master/extension/index.js" -o "$TLONBOT_EXT/index.js"
-curl -fsSL "https://raw.githubusercontent.com/tloncorp/tlonbot/master/extension/openclaw.plugin.json" -o "$TLONBOT_EXT/openclaw.plugin.json"
-curl -fsSL "https://raw.githubusercontent.com/tloncorp/tlonbot/master/extension/package.json" -o "$TLONBOT_EXT/package.json"
-echo "==> tlon-run extension fetched:"
-ls -la "$TLONBOT_EXT/"
+# tlon-run extension is bundled in dev/tlon-run-extension/
+echo "==> Setting up tlon-run extension..."
+chmod +x /workspace/openclaw-tlon/dev/tlon-run-extension/tlon-run
+ln -sf /workspace/openclaw-tlon/dev/tlon-run-extension/tlon-run /usr/local/bin/tlon-run
+export WORKSPACE_DIR=/root/.openclaw/workspace
+ls -la /workspace/openclaw-tlon/dev/tlon-run-extension/
 
 # Remove bundled tlon plugin to avoid duplicate ID conflict
 rm -rf "$(npm root -g)/openclaw/extensions/tlon"
@@ -63,7 +60,7 @@ cat > "$CONFIG_DIR/openclaw.json" << EOF
   },
   "plugins": {
     "load": {
-      "paths": ["/workspace/openclaw-tlon", "/workspace/tlonbot-extension"]
+      "paths": ["/workspace/openclaw-tlon", "/workspace/openclaw-tlon/dev/tlon-run-extension"]
     },
     "entries": {
       "tlon": {
