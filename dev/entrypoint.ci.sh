@@ -73,16 +73,14 @@ cat "$CONFIG_DIR/openclaw.json"
 WORKSPACE_DIR=/root/.openclaw/workspace
 mkdir -p "$WORKSPACE_DIR"
 
-# Create sessions.json file for agent "test"
-SESSIONS_FILE=/root/.openclaw/agents/test/sessions.json
-mkdir -p "$(dirname "$SESSIONS_FILE")"
-echo "[]" > "$SESSIONS_FILE"
-echo "==> Sessions file: $SESSIONS_FILE"
-
-# Also create sessions directory for transcripts
+# Create sessions directory and sessions.json file for agent "test"
+# NOTE: sessions.json goes INSIDE the sessions directory, not outside
 SESSIONS_DIR=/root/.openclaw/agents/test/sessions
 mkdir -p "$SESSIONS_DIR"
+SESSIONS_FILE="$SESSIONS_DIR/sessions.json"
+echo "{}" > "$SESSIONS_FILE"
 echo "==> Sessions dir: $SESSIONS_DIR"
+echo "==> Sessions file: $SESSIONS_FILE"
 
 # Debug: show directory structure
 echo "==> Directory structure:"
