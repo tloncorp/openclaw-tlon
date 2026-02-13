@@ -62,9 +62,12 @@ describe("groups", () => {
   test("adds a channel to an existing bot-owned group", async () => {
     const channelName = `it-${Date.now().toString(36)}`;
     const channelTitle = `IT ${channelName}`;
-    const response = await client.prompt(
-      `In group ${fixture.id}, add a new chat channel named "${channelName}" with title "${channelTitle}".`
-    );
+    const prompt = `In group ${fixture.id}, add a new chat channel named "${channelName}" with title "${channelTitle}".`;
+    console.log(`\n[TEST] Sending prompt: "${prompt}"`);
+    
+    const response = await client.prompt(prompt);
+    console.log(`[TEST] Response success: ${response.success}`);
+    console.log(`[TEST] Response text: ${response.text?.slice(0, 500)}`);
 
     if (!response.success) {
       throw new Error(response.error ?? "Prompt failed");
