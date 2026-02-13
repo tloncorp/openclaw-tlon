@@ -15,20 +15,20 @@ services:
         fi
         tar xzf rube-zod23.tgz
         
-        # Download and extract bus
-        if [ ! -f rube-bus9.tgz ]; then
-          curl -sL https://bootstrap.urbit.org/rube-bus9.tgz -o rube-bus9.tgz
+        # Download and extract ten
+        if [ ! -f rube-ten23.tgz ]; then
+          curl -sL https://bootstrap.urbit.org/rube-ten23.tgz -o rube-ten23.tgz
         fi
-        tar xzf rube-bus9.tgz
+        tar xzf rube-ten23.tgz
         
         # Get vere
         curl -sL https://urbit.org/install/linux-x86_64/latest | tar xz
         VERE=$$(ls -1 vere-*-linux-x86_64 | head -1)
         chmod +x $$VERE
         
-        # Start both ships (background zod, foreground bus)
+        # Start both ships (background zod, foreground ten)
         ./$$VERE -t --loom 31 --http-port 8080 zod &
-        ./$$VERE -t --loom 31 --http-port 8081 bus
+        ./$$VERE -t --loom 31 --http-port 8081 ten
     volumes:
       - ships-data:/data
     ports:
@@ -44,7 +44,7 @@ services:
       - TLON_URL=http://ships:8080
       - TLON_SHIP=~zod
       - TLON_CODE=lidlut-tabwed-pillex-ridrup
-      - TLON_DM_ALLOWLIST=~bus
+      - TLON_DM_ALLOWLIST=~ten
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
       - OPENCLAW_MODEL=openrouter/minimax/minimax-m2.1
     ports:

@@ -106,8 +106,8 @@ jobs:
           TLON_SHIP: "~zod"
           TLON_CODE: lidlut-tabwed-pillex-ridrup
           TEST_USER_URL: http://localhost:8081
-          TEST_USER_SHIP: "~bus"
-          TEST_USER_CODE: riddec-bicrym-ridlev-pocsef
+          TEST_USER_SHIP: "~ten"
+          TEST_USER_CODE: lapseg-nolmel-riswen-hopryc
           TEST_MODE: tlon
           TEST_GATEWAY_URL: http://localhost:18789
         run: pnpm test:integration
