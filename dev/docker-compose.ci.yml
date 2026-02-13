@@ -13,9 +13,9 @@ services:
         fi
         tar xzf rube-zod23.tgz
         curl -sL https://urbit.org/install/linux-x86_64/latest | tar xz
-        VERE=$(ls -1 vere-*-linux-x86_64 | head -1)
-        chmod +x $VERE
-        ./$VERE --loom 31 --http-port 8080 zod
+        VERE=$$(ls -1 vere-*-linux-x86_64 | head -1)
+        chmod +x $$VERE
+        ./$$VERE --loom 31 --http-port 8080 zod
     volumes:
       - zod-data:/data
     ports:
@@ -41,9 +41,9 @@ services:
         fi
         tar xzf rube-bus9.tgz
         curl -sL https://urbit.org/install/linux-x86_64/latest | tar xz
-        VERE=$(ls -1 vere-*-linux-x86_64 | head -1)
-        chmod +x $VERE
-        ./$VERE --loom 31 --http-port 8080 bus
+        VERE=$$(ls -1 vere-*-linux-x86_64 | head -1)
+        chmod +x $$VERE
+        ./$$VERE --loom 31 --http-port 8080 bus
     volumes:
       - bus-data:/data
     ports:
