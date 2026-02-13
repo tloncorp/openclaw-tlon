@@ -35,7 +35,7 @@ cat > "$CONFIG_DIR/openclaw.json" << EOF
     "port": 18789,
     "mode": "local",
     "auth": {
-      "mode": "none"
+      "token": "ci-test-token"
     }
   },
   "plugins": {
