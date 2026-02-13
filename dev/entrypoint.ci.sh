@@ -33,7 +33,10 @@ cat > "$CONFIG_DIR/openclaw.json" << EOF
   },
   "gateway": {
     "port": 18789,
-    "mode": "local"
+    "mode": "local",
+    "auth": {
+      "mode": "none"
+    }
   },
   "plugins": {
     "load": {
