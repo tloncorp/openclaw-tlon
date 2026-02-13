@@ -7,31 +7,149 @@ on:
     branches: [master]
 
 jobs:
-  test:
-    name: Test
+  unit-test:
+    name: Unit Tests
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v4
         with:
           version: 9
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: "20"
           cache: "pnpm"
 
-      - name: Install dependencies
-        run: pnpm install
+      - run: pnpm install
 
-      - name: Run tests
-        # Exclude config-schema.test.ts - requires clawdbot runtime (peer dependency)
-        run: npx vitest run --exclude src/config-schema.test.ts
+      - name: Run unit tests
+        run: npx vitest run src/ --exclude src/config-schema.test.ts
 
       - name: Run security tests
         run: npx vitest run src/security.test.ts
+
+  integration-test:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    env:
+      BOT_PORT: 8080
+      TEST_USER_PORT: 8081
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "pnpm"
+
+      - run: pnpm install
+
+      - name: Cache ship archives
+        uses: actions/cache@v4
+        with:
+          path: |
+            rube-zod23.tgz
+            rube-bus9.tgz
+          key: urbit-ships-zod23-bus9
+
+      - name: Download ships
+        run: |
+          [ -f rube-zod23.tgz ] || curl -sL https://bootstrap.urbit.org/rube-zod23.tgz -o rube-zod23.tgz
+          [ -f rube-bus9.tgz ] || curl -sL https://bootstrap.urbit.org/rube-bus9.tgz -o rube-bus9.tgz
+          tar xzf rube-zod23.tgz
+          tar xzf rube-bus9.tgz
+
+      - name: Download vere runtime
+        run: |
+          curl -sL https://urbit.org/install/linux-x86_64/latest | tar xz
+          VERE=$(ls -1 vere-*-linux-x86_64 | head -1)
+          echo "VERE=$VERE" >> $GITHUB_ENV
+          chmod +x $VERE
+
+      - name: Boot ships
+        run: |
+          ./$VERE --loom 31 --http-port $BOT_PORT -d zod
+          ./$VERE --loom 31 --http-port $TEST_USER_PORT -d bus
+          
+          echo "Waiting for ships..."
+          for i in {1..60}; do
+            curl -s http://localhost:$BOT_PORT > /dev/null 2>&1 && \
+            curl -s http://localhost:$TEST_USER_PORT > /dev/null 2>&1 && break
+            sleep 2
+          done
+          echo "Ships ready"
+
+      - name: Write .env for tests
+        run: |
+          cat > .env << EOF
+          TLON_URL=http://localhost:$BOT_PORT
+          TLON_SHIP=~zod
+          TLON_CODE=lidlut-tabwed-pillex-ridrup
+          TLON_DM_ALLOWLIST=~bus
+          TEST_USER_URL=http://localhost:$TEST_USER_PORT
+          TEST_USER_SHIP=~bus
+          TEST_USER_CODE=riddec-bicrym-ridlev-pocsef
+          TEST_MODE=tlon
+          ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}
+          EOF
+
+      - name: Build and start OpenClaw with plugin
+        run: |
+          # Build the plugin
+          pnpm build 2>/dev/null || true
+          
+          # Install OpenClaw
+          npm install -g openclaw@latest
+          
+          # Create config directory
+          mkdir -p ~/.openclaw
+          
+          # Create minimal config that loads this plugin
+          cat > ~/.openclaw/openclaw.json << EOF
+          {
+            "agents": {
+              "default": {
+                "model": "anthropic/claude-sonnet-4-20250514"
+              }
+            },
+            "tlon": {
+              "url": "http://localhost:$BOT_PORT",
+              "ship": "~zod",
+              "code": "lidlut-tabwed-pillex-ridrup",
+              "dmAllowlist": ["~bus"]
+            },
+            "gateway": {
+              "port": 18789
+            },
+            "extensions": ["${{ github.workspace }}"]
+          }
+          EOF
+          
+          # Start gateway in background
+          ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }} openclaw gateway start &
+          
+          # Wait for gateway
+          echo "Waiting for gateway..."
+          for i in {1..30}; do
+            curl -s http://localhost:18789/ | grep -qi openclaw && break || sleep 2
+          done
+          echo "Gateway ready"
+
+      - name: Run integration tests
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: pnpm test:integration
+
+      - name: Stop services
+        if: always()
+        run: |
+          openclaw gateway stop 2>/dev/null || true
+          ./$VERE dock zod 2>/dev/null || true
+          ./$VERE dock bus 2>/dev/null || true
