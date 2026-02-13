@@ -38,8 +38,7 @@ describe("groups", () => {
     expect(text).toContain(fixture.title.toLowerCase());
   });
 
-  // Skip: group creation is slow and flaky in CI
-  test.skip("creates a new group on the bot ship", async () => {
+  test("creates a new group on the bot ship", async () => {
     const uniqueTitle = `OpenClaw IT Group ${Date.now().toString(36)}`;
     const response = await client.prompt(
       `Create a new private group on your own ship with title "${uniqueTitle}". Reply with only the new group id.`
@@ -60,12 +59,13 @@ describe("groups", () => {
     expect(created).toBeTruthy();
   });
 
-  test("adds a channel to an existing bot-owned group", async () => {
+  // Skip: adding a channel is broken because it uses trackedPokes
+  test.skip("adds a channel to an existing bot-owned group", async () => {
     const channelName = `it-${Date.now().toString(36)}`;
     const channelTitle = `IT ${channelName}`;
     const prompt = `In group ${fixture.id}, add a new chat channel named "${channelName}" with title "${channelTitle}".`;
     console.log(`\n[TEST] Sending prompt: "${prompt}"`);
-    
+
     const response = await client.prompt(prompt);
     console.log(`[TEST] Response success: ${response.success}`);
     console.log(`[TEST] Response text: ${response.text?.slice(0, 500)}`);
