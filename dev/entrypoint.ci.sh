@@ -20,12 +20,15 @@ rm -rf "$(npm root -g)/openclaw/extensions/tlon"
 CONFIG_DIR=/root/.openclaw
 mkdir -p "$CONFIG_DIR"
 
-# Write config with hardcoded values (no shell expansion needed)
-cat > "$CONFIG_DIR/openclaw.json" << 'EOFCONFIG'
+# Write config - use EOF (not 'EOFCONFIG') to allow env var expansion for API key
+cat > "$CONFIG_DIR/openclaw.json" << EOF
 {
   "agents": {
     "defaults": {
-      "workspace": "/root/.openclaw/workspace"
+      "workspace": "/root/.openclaw/workspace",
+      "model": {
+        "primary": "openrouter/minimax/minimax-m2.1"
+      }
     },
     "list": [
       {
@@ -64,7 +67,7 @@ cat > "$CONFIG_DIR/openclaw.json" << 'EOFCONFIG'
     }
   }
 }
-EOFCONFIG
+EOF
 
 echo "==> Config written:"
 cat "$CONFIG_DIR/openclaw.json"
