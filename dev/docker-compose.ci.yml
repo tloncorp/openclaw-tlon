@@ -65,7 +65,8 @@ services:
       - TLON_SHIP=~zod
       - TLON_CODE=lidlut-tabwed-pillex-ridrup
       - TLON_DM_ALLOWLIST=~bus
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - OPENCLAW_MODEL=openrouter/minimax/minimax-m2.1
     ports:
       - "18789:18789"
     volumes:
