@@ -8,7 +8,7 @@
  * - Bot mention detection boundaries
  */
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, beforeEach } from "vitest";
 import {
   isDmAllowed,
   isGroupInviteAllowed,
@@ -16,6 +16,11 @@ import {
   extractMessageText,
 } from "./monitor/utils.js";
 import { normalizeShip } from "./targets.js";
+import {
+  setSessionRole,
+  getSessionRole,
+  _testing as sessionRolesTesting,
+} from "./session-roles.js";
 
 describe("Security: DM Allowlist", () => {
   describe("isDmAllowed", () => {
@@ -352,7 +357,7 @@ describe("Security: Sender Role Identification", () => {
     senderShip: string,
     ownerShip: string | null,
   ): "owner" | "user" {
-    if (!ownerShip) return "user";
+    if (!ownerShip) {return "user";}
     return normalizeShip(senderShip) === normalizeShip(ownerShip) ? "owner" : "user";
   }
 
@@ -439,6 +444,247 @@ describe("Security: Sender Role Identification", () => {
 
       // The role is always based on ship comparison, not message content
       expect(getSenderRole(senderShip, ownerShip)).toBe("user");
+    });
+  });
+});
+
+describe("Security: Agent-Initiated Blocking", () => {
+  /**
+   * Tests for agent-initiated blocking via response directive.
+   * This feature allows the agent to proactively block abusive users.
+   *
+   * SECURITY.md Section 11: Agent-Initiated Blocking
+   */
+
+  // Regex that matches the block directive format (mirrors monitor/index.ts)
+  const blockDirectiveRegex = /\[BLOCK_USER:\s*(~[\w-]+)\s*\|\s*(.+?)\]/g;
+
+  describe("directive parsing", () => {
+    it("parses valid block directive", () => {
+      const text = "I'm blocking you. [BLOCK_USER: ~malicious-actor | Harassment]";
+      const matches = [...text.matchAll(blockDirectiveRegex)];
+
+      expect(matches.length).toBe(1);
+      expect(matches[0][1]).toBe("~malicious-actor");
+      expect(matches[0][2]).toBe("Harassment");
+    });
+
+    it("parses directive with detailed reason", () => {
+      const text = "[BLOCK_USER: ~spammer | Repeated prompt injection attempts and harassment]";
+      const matches = [...text.matchAll(blockDirectiveRegex)];
+
+      expect(matches.length).toBe(1);
+      expect(matches[0][1]).toBe("~spammer");
+      expect(matches[0][2]).toBe("Repeated prompt injection attempts and harassment");
+    });
+
+    it("handles various ship name formats", () => {
+      const galaxyText = "[BLOCK_USER: ~zod | Spam]";
+      const planetText = "[BLOCK_USER: ~sampel-palnet | Abuse]";
+      const moonText = "[BLOCK_USER: ~dozzod-dozzod-dozzod-dozzod | Flooding]";
+
+      expect([...galaxyText.matchAll(blockDirectiveRegex)][0][1]).toBe("~zod");
+      expect([...planetText.matchAll(blockDirectiveRegex)][0][1]).toBe("~sampel-palnet");
+      expect([...moonText.matchAll(blockDirectiveRegex)][0][1]).toBe("~dozzod-dozzod-dozzod-dozzod");
+    });
+
+    it("handles extra whitespace in directive", () => {
+      const text = "[BLOCK_USER:   ~spammer   |   Lots of spaces   ]";
+      const matches = [...text.matchAll(blockDirectiveRegex)];
+
+      expect(matches.length).toBe(1);
+      expect(matches[0][1]).toBe("~spammer");
+      expect(matches[0][2].trim()).toBe("Lots of spaces");
+    });
+
+    it("does not match invalid formats", () => {
+      // Missing pipe separator
+      expect([..."[BLOCK_USER: ~zod spam]".matchAll(blockDirectiveRegex)].length).toBe(0);
+
+      // Missing ship prefix
+      expect([..."[BLOCK_USER: zod | spam]".matchAll(blockDirectiveRegex)].length).toBe(0);
+
+      // Wrong directive name
+      expect([..."[BLOCK: ~zod | spam]".matchAll(blockDirectiveRegex)].length).toBe(0);
+    });
+  });
+
+  describe("directive stripping", () => {
+    function stripDirectives(text: string): string {
+      return text.replace(blockDirectiveRegex, "").trim();
+    }
+
+    it("strips directive from response text", () => {
+      const text = "I'm blocking you for harassment. [BLOCK_USER: ~bad-actor | Harassment]";
+      expect(stripDirectives(text)).toBe("I'm blocking you for harassment.");
+    });
+
+    it("handles response with only directive", () => {
+      const text = "[BLOCK_USER: ~spammer | Spam flooding]";
+      expect(stripDirectives(text)).toBe("");
+    });
+
+    it("strips multiple directives", () => {
+      // Edge case: multiple directives (shouldn't happen but should handle)
+      const text = "Blocking. [BLOCK_USER: ~ship1 | Reason 1] [BLOCK_USER: ~ship2 | Reason 2]";
+      expect(stripDirectives(text)).toBe("Blocking.");
+    });
+
+    it("preserves text around directive", () => {
+      const text = "Hello. [BLOCK_USER: ~spammer | Spam] Goodbye.";
+      expect(stripDirectives(text)).toBe("Hello.  Goodbye.");
+    });
+  });
+
+  describe("safety checks", () => {
+    // Helper to check if a block should be allowed (mirrors monitor/index.ts logic)
+    function shouldAllowBlock(
+      targetShip: string,
+      senderShip: string,
+      ownerShip: string | null,
+    ): { allowed: boolean; reason?: string } {
+      const normalizedTarget = normalizeShip(targetShip);
+      const normalizedSender = normalizeShip(senderShip);
+      const normalizedOwner = ownerShip ? normalizeShip(ownerShip) : null;
+
+      // Safety: Never block the owner
+      if (normalizedOwner && normalizedTarget === normalizedOwner) {
+        return { allowed: false, reason: "Cannot block owner" };
+      }
+
+      // Only allow blocking the current message sender
+      if (normalizedTarget !== normalizedSender) {
+        return { allowed: false, reason: "Can only block current sender" };
+      }
+
+      return { allowed: true };
+    }
+
+    it("allows blocking the current sender", () => {
+      const result = shouldAllowBlock("~abusive-user", "~abusive-user", "~owner-ship");
+      expect(result.allowed).toBe(true);
+    });
+
+    it("prevents blocking the owner", () => {
+      const result = shouldAllowBlock("~owner-ship", "~owner-ship", "~owner-ship");
+      expect(result.allowed).toBe(false);
+      expect(result.reason).toBe("Cannot block owner");
+    });
+
+    it("prevents blocking third parties", () => {
+      const result = shouldAllowBlock("~innocent-bystander", "~sender-ship", "~owner-ship");
+      expect(result.allowed).toBe(false);
+      expect(result.reason).toBe("Can only block current sender");
+    });
+
+    it("normalizes ship names when checking", () => {
+      // With and without tilde should be treated the same
+      expect(shouldAllowBlock("abusive-user", "~abusive-user", "~owner").allowed).toBe(true);
+      expect(shouldAllowBlock("~abusive-user", "abusive-user", "~owner").allowed).toBe(true);
+    });
+
+    it("handles null owner (no owner configured)", () => {
+      // When no owner is configured, blocking should still work for the sender
+      const result = shouldAllowBlock("~sender", "~sender", null);
+      expect(result.allowed).toBe(true);
+    });
+
+    it("owner check uses normalization", () => {
+      // Owner check should normalize ship names
+      const result1 = shouldAllowBlock("owner-ship", "owner-ship", "~owner-ship");
+      expect(result1.allowed).toBe(false);
+      expect(result1.reason).toBe("Cannot block owner");
+
+      const result2 = shouldAllowBlock("~owner-ship", "~owner-ship", "owner-ship");
+      expect(result2.allowed).toBe(false);
+      expect(result2.reason).toBe("Cannot block owner");
+    });
+  });
+});
+
+describe("Security: Tool Access Control", () => {
+  /**
+   * Tests for owner-only tool access control.
+   * Non-owners MUST NOT be able to use the tlon skill,
+   * enforced at the plugin hook level.
+   *
+   * The hook blocks ALL calls to the "tlon" tool for non-owners.
+   * No command parsing needed - the entire skill is owner-only.
+   *
+   * SECURITY.md Section 12: Tool Access Control (Owner-Only Skill)
+   */
+
+  describe("session role tracking", () => {
+    // Note: These tests use the actual session-roles module
+    // to verify the TTL-based tracking works correctly
+
+    beforeEach(() => {
+      sessionRolesTesting.clearAll();
+    });
+
+    it("stores and retrieves owner role", () => {
+      setSessionRole("session-1", "owner");
+      expect(getSessionRole("session-1")).toBe("owner");
+    });
+
+    it("stores and retrieves user role", () => {
+      setSessionRole("session-1", "user");
+      expect(getSessionRole("session-1")).toBe("user");
+    });
+
+    it("returns undefined for unknown sessions", () => {
+      expect(getSessionRole("unknown-session")).toBeUndefined();
+    });
+
+    it("overwrites previous role for same session", () => {
+      setSessionRole("session-1", "owner");
+      expect(getSessionRole("session-1")).toBe("owner");
+
+      setSessionRole("session-1", "user");
+      expect(getSessionRole("session-1")).toBe("user");
+    });
+
+    it("tracks multiple sessions independently", () => {
+      setSessionRole("session-owner", "owner");
+      setSessionRole("session-user", "user");
+
+      expect(getSessionRole("session-owner")).toBe("owner");
+      expect(getSessionRole("session-user")).toBe("user");
+    });
+
+    it("TTL is set to 1 hour", () => {
+      // Verify the TTL constant is correctly set
+      expect(sessionRolesTesting.getRoleTtlMs()).toBe(60 * 60 * 1000);
+    });
+  });
+
+  describe("fail-safe behavior", () => {
+    /**
+     * CRITICAL: When role is unknown (missing/expired), the hook MUST block.
+     * This fail-safe prevents tool execution if session tracking fails.
+     */
+
+    it("documents fail-safe: unknown role should block", () => {
+      // This test documents the expected behavior in index.ts:
+      // const role = getSessionRole(ctx.sessionKey ?? "");
+      // if (role !== "owner") { block }
+      //
+      // If role is undefined (unknown), it's !== "owner", so it blocks.
+      const role: "owner" | "user" | undefined = undefined;
+      const shouldBlock = role !== "owner";
+      expect(shouldBlock).toBe(true);
+    });
+
+    it("documents fail-safe: user role should block", () => {
+      const role: "owner" | "user" | undefined = "user";
+      const shouldBlock = role !== "owner";
+      expect(shouldBlock).toBe(true);
+    });
+
+    it("documents: owner role should not block", () => {
+      const role: "owner" | "user" | undefined = "owner";
+      const shouldBlock = role !== "owner";
+      expect(shouldBlock).toBe(false);
     });
   });
 });

@@ -44,7 +44,13 @@ fi
 rm -rf "$(npm root -g)/openclaw/extensions/tlon"
 
 # Plugin is loaded from /workspace/openclaw-tlon via plugins.load.paths in config
-# Skill is loaded from node_modules/@tloncorp/tlon-skill (via plugin's skills path)
+# Install tlon skill to workspace skills directory (most reliable discovery method)
+echo "==> Installing tlon skill to workspace..."
+WORKSPACE_DIR=/root/.openclaw/workspace
+mkdir -p "$WORKSPACE_DIR/skills"
+# Symlink the skill package to workspace skills (recreate if exists)
+rm -rf "$WORKSPACE_DIR/skills/tlon"
+ln -s /workspace/openclaw-tlon/node_modules/@tloncorp/tlon-skill "$WORKSPACE_DIR/skills/tlon"
 
 # Upsert a marked block into a file (preserves content outside the markers)
 # Usage: upsert_block <file> <content>

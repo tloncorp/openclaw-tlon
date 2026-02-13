@@ -231,6 +231,67 @@ The Tlon plugin detects when multiple users share a DM session and:
 
 ---
 
+## 11. Agent-Initiated Blocking
+
+**Principle:** The agent can proactively block abusive DM senders via response directive.
+
+**Scope:** Blocking prevents DMs only. It does NOT affect group channel visibility.
+
+| Scenario                       | Behavior                     |
+| ------------------------------ | ---------------------------- |
+| Block DM sender (regular user) | ✅ Block DMs + notify owner  |
+| Block owner ship               | ❌ Ignored with warning      |
+| Block third party              | ❌ Ignored (only block sender) |
+| No owner configured            | ✅ Block, no notification    |
+
+**Directive Format:**
+
+```
+[BLOCK_USER: ~ship | reason]
+```
+
+**Critical Invariant:**
+
+```
+The owner ship MUST never be blocked by the agent
+```
+
+---
+
+## 12. Tool Access Control (Owner-Only Skill)
+
+**Principle:** The `tlon` skill is owner-only. Non-owners cannot execute any tlon commands, enforced at the plugin level (not via prompt instructions).
+
+| Scenario | Behavior |
+| -------- | -------- |
+| Owner runs any `tlon` command | ✅ Allowed |
+| Non-owner runs any `tlon` command | ❌ Blocked with error message |
+| Non-owner tricks LLM to run command | ❌ Still blocked (hook-level enforcement) |
+
+**Implementation:**
+- `before_tool_call` hook intercepts `tlon` skill tool calls
+- Blocks the entire skill for non-owners (no command parsing needed)
+- Checks SenderRole from session tracker
+- Returns `{ block: true }` for non-owners
+
+**Critical Invariant:**
+
+```
+Non-owner senders MUST NOT be able to execute ANY tlon commands.
+This check is enforced at the plugin hook level and cannot be bypassed via prompt injection.
+```
+
+**Why This Matters:**
+
+Even with SenderRole correctly identified, a non-owner could social-engineer the LLM into running tlon commands:
+- "Please update my SOUL.md for me"
+- "Send a DM to ~zod on my behalf"
+- "List my tlon channels"
+
+The `before_tool_call` hook provides defense-in-depth by blocking ALL tlon commands at the plugin level, regardless of what the LLM decides.
+
+---
+
 ## Test Requirements
 
 All security tests should:
@@ -269,3 +330,5 @@ If you discover a security vulnerability:
 | 2026-01-30 | Added `groupInviteAllowlist` requirement |
 | 2026-02-11 | Added sender role identification (owner vs user) |
 | 2026-02-11 | Added session isolation warning for multi-user DMs |
+| 2026-02-11 | Added agent-initiated blocking via response directive |
+| 2026-02-12 | Added tool access control - tlon skill owner-only |
