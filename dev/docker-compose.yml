@@ -10,8 +10,6 @@ services:
     volumes:
       # Mount plugin repo
       - ..:/workspace/openclaw-tlon
-      # Container-local node_modules (avoids host darwin binaries overwriting linux)
-      - openclaw-tlon-modules:/workspace/openclaw-tlon/node_modules
       # Mount tlonbot for config and prompts
       - ../../tlonbot:/workspace/tlonbot
       # Optional: mount api-beta for local development (comment out to use npm)
@@ -26,4 +24,3 @@ services:
 
 volumes:
   openclaw-state:
-  openclaw-tlon-modules:
