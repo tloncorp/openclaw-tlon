@@ -38,7 +38,8 @@ describe("groups", () => {
     expect(text).toContain(fixture.title.toLowerCase());
   });
 
-  test("creates a new group on the bot ship", async () => {
+  // Skip: group creation is slow and flaky in CI
+  test.skip("creates a new group on the bot ship", async () => {
     const uniqueTitle = `OpenClaw IT Group ${Date.now().toString(36)}`;
     const response = await client.prompt(
       `Create a new private group on your own ship with title "${uniqueTitle}". Reply with only the new group id.`

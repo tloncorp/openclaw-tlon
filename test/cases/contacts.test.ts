@@ -19,6 +19,27 @@ describe("contacts", () => {
     // Wait for any pending messages from previous tests to settle.
     // This prevents the baseline timestamp from racing with message propagation.
     await new Promise((resolve) => setTimeout(resolve, 5000));
+
+    // Initialize bot's contact profile (fresh fakezods don't have one)
+    console.log("[SETUP] Initializing bot contact profile...");
+    try {
+      await botState.poke({
+        app: "contacts",
+        mark: "contact-action",
+        json: {
+          edit: [
+            { nickname: "OpenClaw Bot" },
+            { bio: "Integration test bot" },
+            { status: "online" },
+          ],
+        },
+      });
+      // Give it a moment to propagate
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      console.log("[SETUP] Bot contact profile initialized");
+    } catch (err) {
+      console.log(`[SETUP] Warning: Failed to initialize profile: ${err}`);
+    }
   });
 
   afterAll(async () => {
@@ -71,9 +92,7 @@ describe("contacts", () => {
     expect(response.text?.toLowerCase()).toContain(botShip.toLowerCase());
   });
 
-  // Skip: fresh fakezod ships don't have contact profiles initialized
-  // TODO: Add contact profile initialization to CI setup
-  test.skip("updates the bot profile status", async () => {
+  test("updates the bot profile status", async () => {
     const statusToken = `it-status-${Date.now().toString(36)}`;
     const prompt = `Update your own profile status to exactly "${statusToken}" and confirm when done.`;
     console.log(`\n[TEST] Sending prompt: "${prompt}"`);
@@ -101,9 +120,7 @@ describe("contacts", () => {
     expect(updated).toBe(true);
   });
 
-  // Skip: fresh fakezod ships don't have contact profiles initialized
-  // TODO: Add contact profile initialization to CI setup
-  test.skip("updates the bot profile bio", async () => {
+  test("updates the bot profile bio", async () => {
     const bioToken = `openclaw-integration-bio-${Date.now().toString(36)}`;
     const prompt = `Update your own profile bio to exactly "${bioToken}" and confirm when done.`;
     console.log(`\n[TEST] Sending prompt: "${prompt}"`);
