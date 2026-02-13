@@ -44,10 +44,6 @@ cat > "$CONFIG_DIR/openclaw.json" << EOF
     "mode": "local",
     "auth": {
       "token": "ci-test-token"
-    },
-    "session": {
-      "store": "/root/.openclaw/agents/{agentId}/sessions.json",
-      "resetPolicy": "never"
     }
   },
   "plugins": {
