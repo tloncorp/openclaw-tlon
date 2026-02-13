@@ -130,6 +130,39 @@ describe("connectivity", () => {
       });
       console.log(`✓ Message found in DM channel: ${found}`);
       expect(found).toBe(true);
+
+      // Wait for the bot to process and respond so subsequent tests have a clean baseline.
+      // This prevents the bot's response from bleeding into later tests.
+      console.log(`Waiting for bot to respond (to clear queue for subsequent tests)...`);
+      const maxWaitMs = 30_000;
+      const startTime = Date.now();
+      let botResponded = false;
+      while (Date.now() - startTime < maxWaitMs) {
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+        const laterPosts = await userState.channelPosts(botShip, 30);
+        const botPosts = (laterPosts ?? []).filter((post) => {
+          const p = post as { authorId?: string };
+          return p.authorId === botShip;
+        });
+        // Check if any bot post is newer than our test message
+        const ourMsgPost = (laterPosts ?? []).find((post) => {
+          const p = post as { textContent?: string };
+          return p.textContent?.includes(testMessage);
+        }) as { sentAt?: number } | undefined;
+        const ourMsgTime = ourMsgPost?.sentAt ?? 0;
+        const newerBotPost = botPosts.find((post) => {
+          const p = post as { sentAt?: number };
+          return (p.sentAt ?? 0) > ourMsgTime;
+        });
+        if (newerBotPost) {
+          console.log(`✓ Bot responded - queue cleared for subsequent tests`);
+          botResponded = true;
+          break;
+        }
+      }
+      if (!botResponded) {
+        console.log(`⚠ Bot did not respond within ${maxWaitMs}ms - subsequent tests may be affected`);
+      }
     } catch (err) {
       console.log(`✗ DM send failed:`, err);
       throw err;
