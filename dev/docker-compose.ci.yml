@@ -15,7 +15,7 @@ services:
         curl -sL https://urbit.org/install/linux-x86_64/latest | tar xz
         VERE=$$(ls -1 vere-*-linux-x86_64 | head -1)
         chmod +x $$VERE
-        ./$$VERE --loom 31 --http-port 8080 zod
+        ./$$VERE -t --loom 31 --http-port 8080 zod
     volumes:
       - zod-data:/data
     ports:
@@ -43,7 +43,7 @@ services:
         curl -sL https://urbit.org/install/linux-x86_64/latest | tar xz
         VERE=$$(ls -1 vere-*-linux-x86_64 | head -1)
         chmod +x $$VERE
-        ./$$VERE --loom 31 --http-port 8080 bus
+        ./$$VERE -t --loom 31 --http-port 8080 bus
     volumes:
       - bus-data:/data
     ports:
