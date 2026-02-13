@@ -13,23 +13,9 @@ echo "==> Installing plugin dependencies..."
 cd /workspace/openclaw-tlon
 npm install
 
-echo "==> Installing tlon-skill into plugin's node_modules..."
-cd /workspace/openclaw-tlon
-npm install @tloncorp/tlon-skill
-echo "==> tlon-skill installed:"
-ls -la node_modules/@tloncorp/tlon-skill/ 2>/dev/null || echo "  (will be in container node_modules)"
-
-# Also install globally for CLI access
-npm install -g @tloncorp/tlon-skill
-
-# Link tlon-skill into OpenClaw's skills directory so it can find SKILL.md
-OPENCLAW_SKILLS="$(npm root -g)/openclaw/skills"
-TLON_SKILL_PKG="$(npm root -g)/@tloncorp/tlon-skill"
-if [ -d "$OPENCLAW_SKILLS" ] && [ -d "$TLON_SKILL_PKG" ]; then
-  echo "==> Linking tlon-skill into OpenClaw skills directory..."
-  ln -sf "$TLON_SKILL_PKG" "$OPENCLAW_SKILLS/tlon"
-  ls -la "$OPENCLAW_SKILLS/"
-fi
+# tlon-skill is installed as plugin dependency (see package.json)
+echo "==> Checking tlon-skill from plugin dependencies..."
+ls -la /workspace/openclaw-tlon/node_modules/@tloncorp/tlon-skill/ 2>/dev/null || echo "  (will be in container node_modules volume)"
 
 # Fetch tlon-run extension from tlonbot repo
 echo "==> Fetching tlon-run extension..."
