@@ -16,6 +16,10 @@ describe("groups", () => {
     const config = getTestConfig();
     client = createTestClient(config);
     botState = createStateClient(config.bot);
+
+    // Wait for any pending messages from previous tests to settle
+    await new Promise((resolve) => setTimeout(resolve, 5000));
+
     fixture = await ensureFixtureGroup(client, botState);
   });
 
