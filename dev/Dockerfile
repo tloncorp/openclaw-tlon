@@ -2,6 +2,8 @@ FROM node:24-bookworm-slim
 
 RUN apt-get update && apt-get install -y git curl gettext-base && rm -rf /var/lib/apt/lists/*
 
+RUN npm install -g pnpm
+
 # Install OpenClaw globally
 RUN npm install -g openclaw@latest
 
