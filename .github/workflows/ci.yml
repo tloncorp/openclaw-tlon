@@ -50,6 +50,7 @@ jobs:
       - name: Start services (ships + gateway)
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          TLONBOT_TOKEN: ${{ secrets.TLONBOT_TOKEN }}
         run: |
           # Start ships container (runs both zod and bus)
           docker compose -f dev/docker-compose.ci.yml up -d ships

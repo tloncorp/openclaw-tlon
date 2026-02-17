@@ -111,12 +111,20 @@ cat "$CONFIG_DIR/openclaw.json"
 WORKSPACE_DIR=/root/.openclaw/workspace
 mkdir -p "$WORKSPACE_DIR"
 
-# Fetch tlonbot prompts (repo is private, so this may fail - that's ok)
+# Fetch tlonbot prompts (requires TLONBOT_TOKEN for private repo)
 echo "==> Fetching tlonbot prompts..."
 TLONBOT_RAW="https://raw.githubusercontent.com/tloncorp/tlonbot/master/prompts"
-for f in SOUL.md TOOLS.md BOOTSTRAP.md USER.md; do
-  curl -fsSL "$TLONBOT_RAW/$f" -o "$WORKSPACE_DIR/$f" 2>/dev/null && echo "  - $f" || true
-done
+if [ -n "$TLONBOT_TOKEN" ]; then
+  echo "  (using TLONBOT_TOKEN for private repo access)"
+  for f in SOUL.md TOOLS.md BOOTSTRAP.md USER.md AGENTS.md; do
+    curl -fsSL -H "Authorization: token $TLONBOT_TOKEN" "$TLONBOT_RAW/$f" -o "$WORKSPACE_DIR/$f" 2>/dev/null && echo "  - $f" || echo "  - $f (failed)"
+  done
+else
+  echo "  (no TLONBOT_TOKEN, trying public access)"
+  for f in SOUL.md TOOLS.md BOOTSTRAP.md USER.md AGENTS.md; do
+    curl -fsSL "$TLONBOT_RAW/$f" -o "$WORKSPACE_DIR/$f" 2>/dev/null && echo "  - $f" || true
+  done
+fi
 
 # Fallback SOUL.md if prompts weren't fetched
 if [ ! -f "$WORKSPACE_DIR/SOUL.md" ]; then
