@@ -17,7 +17,7 @@ echo "==> Installing plugin dependencies..."
 
 # Install openclaw-tlon plugin dependencies (includes @tloncorp/tlon-skill from npm)
 cd /workspace/openclaw-tlon
-npm install
+pnpm install
 
 # Link api-beta if mounted (for local development)
 if [ -f "/workspace/api-beta/package.json" ]; then
