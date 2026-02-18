@@ -147,10 +147,10 @@ cd openclaw-tlon
 #    - TLON_SHIP, TLON_CODE
 #    - TLON_DM_ALLOWLIST, TLON_OWNER_SHIP
 
-# 4. Start dev environment
-docker compose -f dev/docker-compose.yml up --build
+# 4. Start dev environment (loads OPENCLAW_GATEWAY_PORT from root .env)
+docker compose --env-file .env -f dev/docker-compose.yml up --build
 
-# 5. Access OpenClaw at http://localhost:18789
+# 5. Access OpenClaw at http://localhost:${OPENCLAW_GATEWAY_PORT:-18789}
 ```
 
 ### Directory Structure
@@ -166,7 +166,7 @@ The tlon-skill is installed via npm and doesn't need to be cloned separately.
 ### Making Changes
 
 1. Edit code in either repo
-2. Restart container: `docker compose -f dev/docker-compose.yml up --build`
+2. Restart container: `docker compose --env-file .env -f dev/docker-compose.yml up --build`
 3. For faster iteration, run OpenClaw directly on host with npm link
 
 ## License
