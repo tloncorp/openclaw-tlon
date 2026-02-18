@@ -111,6 +111,15 @@ export function isBotMentioned(
   return false;
 }
 
+/**
+ * Strip bot ship mention from message text for command detection.
+ * "~bot-ship /status" → "/status"
+ */
+export function stripBotMention(messageText: string, botShipName: string): string {
+  if (!messageText || !botShipName) return messageText;
+  return messageText.replace(normalizeShip(botShipName), "").trim();
+}
+
 export function isDmAllowed(senderShip: string, allowlist: string[] | undefined): boolean {
   if (!allowlist || allowlist.length === 0) {return false;}
   const normalizedSender = normalizeShip(senderShip);
