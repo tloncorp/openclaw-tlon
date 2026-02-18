@@ -888,7 +888,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       channel: "tlon",
       accountId: opts.accountId ?? undefined,
       peer: {
-        kind: isGroup ? "group" : "dm",
+        kind: isGroup ? "group" : "direct",
         id: isGroup ? (groupChannel ?? senderShip) : senderShip,
       },
     });
