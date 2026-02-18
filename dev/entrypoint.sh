@@ -46,6 +46,14 @@ rm -rf "$(npm root -g)/openclaw/extensions/tlon"
 # Plugin is loaded from /workspace/openclaw-tlon via plugins.load.paths in config
 # Skill is loaded from node_modules/@tloncorp/tlon-skill (via plugin's skills path)
 
+# Ensure default OpenClaw config path exists to avoid ENOENT in gateway health refresh.
+CONFIG_DIR=/root/.openclaw
+CONFIG_PATH="$CONFIG_DIR/openclaw.json"
+mkdir -p "$CONFIG_DIR"
+if [ ! -f "$CONFIG_PATH" ] && [ -f "/workspace/openclaw-tlon/dev/openclaw.dev.json" ]; then
+  cp "/workspace/openclaw-tlon/dev/openclaw.dev.json" "$CONFIG_PATH"
+fi
+
 # Upsert a marked block into a file (preserves content outside the markers)
 # Usage: upsert_block <file> <content>
 # Content must include <!-- idempotency-marker:...:v1 --> and <!-- /idempotency-marker --> markers

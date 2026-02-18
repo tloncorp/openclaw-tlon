@@ -9,9 +9,13 @@
     "format:fix": "oxfmt --write",
     "lint": "oxlint --type-aware",
     "lint:fix": "pnpm format:fix && oxlint --type-aware --fix",
-    "test": "vitest run",
+    "test": "vitest run src/",
     "test:security": "vitest run src/security.test.ts",
-    "test:watch": "vitest"
+    "test:watch": "vitest src/",
+    "test:integration": "./test/run.sh",
+    "test:integration:watch": "./test/run.sh --watch",
+    "test:all": "vitest run",
+    "test:ci": "docker compose --env-file .env -f dev/docker-compose.yml up -d && ./test/run.sh; docker compose --env-file .env -f dev/docker-compose.yml down"
   },
   "dependencies": {
     "@tloncorp/api": "github:tloncorp/api-beta#main",
@@ -20,6 +24,7 @@
     "@urbit/http-api": "^3.0.0"
   },
   "devDependencies": {
+    "dotenv": "^17.2.4",
     "openclaw": "^2026.1.30",
     "oxfmt": "0.27.0",
     "oxlint": "^1.42.0",
