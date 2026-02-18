@@ -31,7 +31,10 @@ function applyAccountConfig(params: {
 }): OpenClawConfig {
   const { cfg, accountId, input } = params;
   const useDefault = accountId === DEFAULT_ACCOUNT_ID;
-  const base = cfg.channels?.tlon ?? {};
+  const base = (cfg.channels?.tlon ?? {}) as {
+    enabled?: boolean;
+    accounts?: Record<string, Record<string, unknown>>;
+  };
 
   if (useDefault) {
     return {

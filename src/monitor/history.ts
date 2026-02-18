@@ -117,11 +117,12 @@ export async function fetchThreadHistory(
   count = 50,
   runtime?: RuntimeEnv,
 ): Promise<TlonHistoryEntry[]> {
+  // parentId needs @ud formatting (dots every 3 digits)
+  const formattedParentId = formatUd(parentId);
+
   try {
     // Tlon API: fetch replies to a specific post
     // Format: /channels/v4/{nest}/posts/post/{parentId}/replies/newest/{count}.json
-    // parentId needs @ud formatting (dots every 3 digits)
-    const formattedParentId = formatUd(parentId);
     runtime?.log?.(
       `[tlon] Thread history - parentId: ${parentId} -> formatted: ${formattedParentId}`,
     );

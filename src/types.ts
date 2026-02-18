@@ -60,6 +60,7 @@ export function resolveTlonAccount(
       showModelSignature: null,
       autoAcceptDmInvites: null,
       autoAcceptGroupInvites: null,
+      defaultAuthorizedShips: [],
       ownerShip: null,
     };
   }
@@ -88,6 +89,9 @@ export function resolveTlonAccount(
     base.autoAcceptGroupInvites ??
     null) as boolean | null;
   const ownerShip = (account?.ownerShip ?? base.ownerShip ?? null) as string | null;
+  const defaultAuthorizedShips = ((account as any)?.defaultAuthorizedShips ??
+    (base as any).defaultAuthorizedShips ??
+    []) as string[];
   const configured = Boolean(ship && url && code);
 
   return {
@@ -105,6 +109,7 @@ export function resolveTlonAccount(
     showModelSignature,
     autoAcceptDmInvites,
     autoAcceptGroupInvites,
+    defaultAuthorizedShips,
     ownerShip,
   };
 }

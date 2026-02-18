@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { MoltbotPluginApi } from "openclaw/plugin-sdk";
+import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 import { emptyPluginConfigSchema } from "openclaw/plugin-sdk";
 import { tlonPlugin } from "./src/channel.js";
 import { setTlonRuntime } from "./src/runtime.js";
@@ -90,12 +90,18 @@ function runTlonCommand(binary: string, args: string[]): Promise<string> {
   });
 }
 
-const plugin = {
+const plugin: {
+  id: string;
+  name: string;
+  description: string;
+  configSchema: ReturnType<typeof emptyPluginConfigSchema>;
+  register: (api: OpenClawPluginApi) => void;
+} = {
   id: "tlon",
   name: "Tlon",
   description: "Tlon/Urbit channel plugin",
   configSchema: emptyPluginConfigSchema(),
-  register(api: MoltbotPluginApi) {
+  register(api: OpenClawPluginApi) {
     setTlonRuntime(api.runtime);
     api.registerChannel({ plugin: tlonPlugin });
 
@@ -104,6 +110,7 @@ const plugin = {
     api.logger.info(`[tlon] Registering tlon tool, binary: ${tlonBinary}`);
     api.registerTool({
       name: "tlon",
+      label: "Tlon CLI",
       description:
         "Tlon/Urbit API operations: activity, channels, contacts, groups, messages, dms, posts, notebook, settings. " +
         "Examples: 'activity mentions --limit 10', 'channels groups', 'contacts self', 'groups list'",
@@ -124,12 +131,14 @@ const plugin = {
           const args = shellSplit(params.command);
           const output = await runTlonCommand(tlonBinary, args);
           return {
-            content: [{ type: "text", text: output }],
+            content: [{ type: "text" as const, text: output }],
+            details: undefined,
           };
-        } catch (error: any) {
+        } catch (error: unknown) {
+          const message = error instanceof Error ? error.message : String(error);
           return {
-            content: [{ type: "text", text: `Error: ${error.message}` }],
-            isError: true,
+            content: [{ type: "text" as const, text: `Error: ${message}` }],
+            details: undefined,
           };
         }
       },

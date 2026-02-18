@@ -4,7 +4,6 @@ import type {
   ChannelSetupInput,
   OpenClawConfig,
 } from "openclaw/plugin-sdk";
-import { configureClient } from "@tloncorp/api";
 import {
   applyAccountNameToChannelSection,
   DEFAULT_ACCOUNT_ID,
@@ -25,6 +24,45 @@ import {
   sendGroupMessageWithStory,
 } from "./urbit/send.js";
 import { uploadImageFromUrl } from "./urbit/upload.js";
+
+// Type for Tlon channel config section
+type TlonChannelConfig = {
+  name?: string;
+  enabled?: boolean;
+  ship?: string;
+  url?: string;
+  code?: string;
+  accounts?: Record<string, TlonAccountConfig>;
+};
+
+type TlonAccountConfig = {
+  name?: string;
+  enabled?: boolean;
+  ship?: string;
+  url?: string;
+  code?: string;
+};
+
+// Extended account snapshot with Tlon-specific fields
+type TlonAccountSnapshot = {
+  accountId: string;
+  name?: string | null;
+  enabled?: boolean;
+  configured?: boolean;
+  ship?: string | null;
+  url?: string | null;
+  code?: string | null;
+  running?: boolean;
+  lastStartAt?: number | null;
+  lastStopAt?: number | null;
+  lastError?: string | null;
+  probe?: { ok: boolean; error?: string };
+};
+
+// Helper to get typed tlon config from OpenClawConfig
+function getTlonConfig(cfg: OpenClawConfig): TlonChannelConfig | undefined {
+  return cfg.channels?.tlon as TlonChannelConfig | undefined;
+}
 
 // Simple HTTP-only poke that doesn't open an EventSource (avoids conflict with monitor's SSE)
 async function createHttpPokeApi(params: { url: string; code: string; ship: string }) {
@@ -91,7 +129,7 @@ function applyTlonSetupConfig(params: {
     accountId,
     name: input.name,
   });
-  const base = namedConfig.channels?.tlon ?? {};
+  const base = (namedConfig.channels?.tlon ?? {}) as TlonChannelConfig;
 
   const payload = {
     ...(input.ship ? { ship: input.ship } : {}),
@@ -212,7 +250,9 @@ const tlonOutbound: ChannelOutboundAdapter = {
       throw new Error(`Invalid Tlon target. Use ${formatTargetHint()}`);
     }
 
-    configureClient({
+    // Configure the @tloncorp/api client for uploads
+    const { configureClient } = (await import("@tloncorp/api")) as any;
+    await configureClient({
       shipUrl: account.url,
       shipName: account.ship.replace(/^~/, ""),
       verbose: false,
@@ -286,13 +326,14 @@ export const tlonPlugin: ChannelPlugin = {
     defaultAccountId: () => "default",
     setAccountEnabled: ({ cfg, accountId, enabled }) => {
       const useDefault = !accountId || accountId === "default";
+      const tlon = getTlonConfig(cfg);
       if (useDefault) {
         return {
           ...cfg,
           channels: {
             ...cfg.channels,
             tlon: {
-              ...cfg.channels?.tlon,
+              ...tlon,
               enabled,
             },
           },
@@ -303,11 +344,11 @@ export const tlonPlugin: ChannelPlugin = {
         channels: {
           ...cfg.channels,
           tlon: {
-            ...cfg.channels?.tlon,
+            ...tlon,
             accounts: {
-              ...cfg.channels?.tlon?.accounts,
+              ...tlon?.accounts,
               [accountId]: {
-                ...cfg.channels?.tlon?.accounts?.[accountId],
+                ...tlon?.accounts?.[accountId],
                 enabled,
               },
             },
@@ -318,7 +359,8 @@ export const tlonPlugin: ChannelPlugin = {
     deleteAccount: ({ cfg, accountId }) => {
       const useDefault = !accountId || accountId === "default";
       if (useDefault) {
-        const { ship: _ship, code: _code, url: _url, name: _name, ...rest } = cfg.channels?.tlon ?? {};
+        const tlon = getTlonConfig(cfg) ?? {};
+        const { ship: _ship, code: _code, url: _url, name: _name, ...rest } = tlon;
         return {
           ...cfg,
           channels: {
@@ -327,13 +369,14 @@ export const tlonPlugin: ChannelPlugin = {
           },
         } as OpenClawConfig;
       }
-      const { [accountId]: _removed, ...remainingAccounts } = cfg.channels?.tlon?.accounts ?? {};
+      const tlon = getTlonConfig(cfg);
+      const { [accountId]: _removed, ...remainingAccounts } = tlon?.accounts ?? {};
       return {
         ...cfg,
         channels: {
           ...cfg.channels,
           tlon: {
-            ...cfg.channels?.tlon,
+            ...tlon,
             accounts: remainingAccounts,
           },
         },
@@ -412,11 +455,14 @@ export const tlonPlugin: ChannelPlugin = {
         return [];
       });
     },
-    buildChannelSummary: ({ snapshot }) => ({
-      configured: snapshot.configured ?? false,
-      ship: snapshot.ship ?? null,
-      url: snapshot.url ?? null,
-    }),
+    buildChannelSummary: ({ snapshot }) => {
+      const s = snapshot as TlonAccountSnapshot;
+      return {
+        configured: s.configured ?? false,
+        ship: s.ship ?? null,
+        url: s.url ?? null,
+      };
+    },
     probeAccount: async ({ account }) => {
       if (!account.configured || !account.ship || !account.url || !account.code) {
         return { ok: false, error: "Not configured" };
@@ -451,16 +497,17 @@ export const tlonPlugin: ChannelPlugin = {
       lastStopAt: runtime?.lastStopAt ?? null,
       lastError: runtime?.lastError ?? null,
       probe,
-    }),
+    }) as any,  // Extended with Tlon-specific fields
   },
   gateway: {
     startAccount: async (ctx) => {
       const account = ctx.account;
       ctx.setStatus({
         accountId: account.accountId,
-        ship: account.ship,
-        url: account.url,
-      });
+        // Extended Tlon status fields
+        ...(account.ship ? { ship: account.ship } : {}),
+        ...(account.url ? { url: account.url } : {}),
+      } as any);
       ctx.log?.info(`[${account.accountId}] starting Tlon provider for ${account.ship ?? "tlon"}`);
       return monitorTlonProvider({
         runtime: ctx.runtime,
