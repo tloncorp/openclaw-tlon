@@ -5,11 +5,16 @@ services:
       dockerfile: Dockerfile
     env_file:
       - ../.env
+    environment:
+      # Default to MiniMax 2.1 via OpenRouter if MODEL not set in .env
+      - MODEL=${MODEL:-openrouter/minimax/minimax-m2.1}
     ports:
-      - "18789:18789"
+      - "${OPENCLAW_GATEWAY_PORT:-18789}:18789"
     volumes:
       # Mount plugin repo
       - ..:/workspace/openclaw-tlon
+      # Container-local node_modules (avoids host darwin binaries overwriting linux)
+      - openclaw-tlon-modules:/workspace/openclaw-tlon/node_modules
       # Mount tlonbot for config and prompts
       - ../../tlonbot:/workspace/tlonbot
       # Optional: mount api-beta for local development (comment out to use npm)
@@ -24,3 +29,4 @@ services:
 
 volumes:
   openclaw-state:
+  openclaw-tlon-modules:
