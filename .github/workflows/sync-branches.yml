@@ -1,0 +1,30 @@
+name: Sync stable to master
+
+on:
+  push:
+    branches:
+      - stable
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    # Only run if the push was not from this action (prevent loops)
+    if: github.actor != 'github-actions[bot]'
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Sync stable → master
+        run: |
+          git checkout master
+          git merge stable --no-edit -m "chore: sync stable → master"
+          git push origin master
