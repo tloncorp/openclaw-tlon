@@ -24,3 +24,10 @@ export {
 } from "./client.js";
 
 export { getTestConfig, type TestEnvConfig } from "./config.js";
+
+export {
+  ensureFixtureGroup,
+  pickAnyGroup,
+  waitFor,
+  type FixtureGroup,
+} from "./fixtures.js";

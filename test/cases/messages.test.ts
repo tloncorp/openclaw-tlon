@@ -1,12 +1,14 @@
 import { describe, test, expect, beforeAll } from "vitest";
 import { getTextContent } from "@tloncorp/api";
-import { createTestClient, createStateClient, getTestConfig, type TestClient, type StateClient } from "../lib/index.js";
-
-type FixtureGroup = {
-  id: string;
-  title: string;
-  channelId: string;
-};
+import {
+  createTestClient,
+  createStateClient,
+  getTestConfig,
+  ensureFixtureGroup,
+  type TestClient,
+  type StateClient,
+  type FixtureGroup,
+} from "../lib/index.js";
 
 describe("messages", () => {
   let client: TestClient;
@@ -82,85 +84,3 @@ describe("messages", () => {
     expect((response.text ?? "").trim().length).toBeGreaterThan(0);
   });
 });
-
-async function ensureFixtureGroup(client: TestClient, botState: StateClient): Promise<FixtureGroup> {
-  const existing = await botState.groups();
-  const firstExisting = pickAnyGroup(existing);
-  const existingFixture = (existing ?? []).find((group) => {
-    const g = group as { id?: string | null; title?: string | null };
-    return (g.title ?? "").startsWith("OpenClaw Fixture Group");
-  }) as { id?: string | null; title?: string | null; channels?: unknown[] } | undefined;
-
-  if (existingFixture?.id) {
-    const channels = (existingFixture.channels ?? []) as Array<{ id?: string | null }>;
-    const firstChannel = channels.find((c) => c.id)?.id;
-    return {
-      id: existingFixture.id,
-      title: existingFixture.title ?? "OpenClaw Fixture Group",
-      channelId: firstChannel ?? `chat/${existingFixture.id}/general`,
-    };
-  }
-
-  const suffix = Date.now().toString(36);
-  const groupTitle = `OpenClaw Fixture Group ${suffix}`;
-  const createResponse = await client.prompt(
-    `Create a private group on your own ship with title "${groupTitle}". Reply with only the new group id.`
-  );
-  if (!createResponse.success) {
-    if (firstExisting) {
-      return firstExisting;
-    }
-    throw new Error(`Failed to create fixture group: ${createResponse.error ?? "unknown error"}`);
-  }
-
-  const created = await waitFor(async () => {
-    const groups = await botState.groups();
-    return (groups ?? []).find((group) => {
-      const g = group as { id?: string | null; title?: string | null; channels?: unknown[] };
-      return (g.title ?? "").trim() === groupTitle;
-    }) as { id?: string | null; title?: string | null; channels?: unknown[] } | undefined;
-  }, 45_000);
-
-  const createdId = created?.id;
-  if (!createdId) {
-    if (firstExisting) {
-      return firstExisting;
-    }
-    throw new Error("Fixture group was created but no group id was returned by state");
-  }
-  const channels = (created?.channels ?? []) as Array<{ id?: string | null }>;
-  const firstChannel = channels.find((c) => c.id)?.id ?? `chat/${createdId}/general`;
-  return { id: createdId, title: groupTitle, channelId: firstChannel };
-}
-
-function pickAnyGroup(groups: unknown[] | undefined): FixtureGroup | null {
-  for (const group of groups ?? []) {
-    const g = group as { id?: string | null; title?: string | null; channels?: unknown[] };
-    if (!g.id) {
-      continue;
-    }
-    const channels = (g.channels ?? []) as Array<{ id?: string | null }>;
-    const channelId = channels.find((c) => c.id)?.id ?? `chat/${g.id}/general`;
-    return {
-      id: g.id,
-      title: g.title ?? g.id,
-      channelId,
-    };
-  }
-  return null;
-}
-
-async function waitFor(fn: () => Promise<boolean>, timeoutMs: number, intervalMs = 1500): Promise<boolean> {
-  const started = Date.now();
-  // eslint-disable-next-line no-constant-condition
-  while (true) {
-    const result = await fn();
-    if (result) {
-      return true;
-    }
-    if (Date.now() - started >= timeoutMs) {
-      throw new Error(`Timed out after ${timeoutMs}ms`);
-    }
-    await new Promise((resolve) => setTimeout(resolve, intervalMs));
-  }
-}
