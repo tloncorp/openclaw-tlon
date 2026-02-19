@@ -98,7 +98,8 @@ cat > "$CONFIG_DIR/openclaw.json" << EOF
       "url": "http://ships:8080",
       "ship": "~zod",
       "code": "lidlut-tabwed-pillex-ridrup",
-      "dmAllowlist": ["~ten"]
+      "dmAllowlist": ["~ten"],
+      "allowPrivateNetwork": true
     }
   }
 }
