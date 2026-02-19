@@ -14,8 +14,11 @@ import { createTestClient, getTestConfig, type TestClient } from "../lib/index.j
 describe("slash commands (owner-only)", () => {
   let client: TestClient;
 
-  beforeAll(() => {
+  beforeAll(async () => {
     client = createTestClient(getTestConfig());
+    // Wait for bot's SSE connection to be fully established
+    // (commands.test.ts runs first alphabetically, so no warmup from other tests)
+    await new Promise((resolve) => setTimeout(resolve, 5000));
   });
 
   test("/status command returns status info", async () => {
