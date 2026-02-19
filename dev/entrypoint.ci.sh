@@ -9,6 +9,9 @@ echo "==> OPENCLAW_STATE_DIR=$OPENCLAW_STATE_DIR"
 echo "==> User: $(whoami)"
 echo "==> Working directory: $(pwd)"
 
+echo "==> Fixing plugin directory ownership..."
+chown -R root:root /workspace/openclaw-tlon
+
 echo "==> Installing plugin dependencies..."
 cd /workspace/openclaw-tlon
 npm install
