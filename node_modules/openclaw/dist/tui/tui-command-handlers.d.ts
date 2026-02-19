@@ -1,0 +1,31 @@
+import type { Component, TUI } from "@mariozechner/pi-tui";
+import type { ChatLog } from "./components/chat-log.js";
+import type { GatewayChatClient } from "./gateway-chat.js";
+import type { TuiOptions, TuiStateAccess } from "./tui-types.js";
+type CommandHandlerContext = {
+    client: GatewayChatClient;
+    chatLog: ChatLog;
+    tui: TUI;
+    opts: TuiOptions;
+    state: TuiStateAccess;
+    deliverDefault: boolean;
+    openOverlay: (component: Component) => void;
+    closeOverlay: () => void;
+    refreshSessionInfo: () => Promise<void>;
+    loadHistory: () => Promise<void>;
+    setSession: (key: string) => Promise<void>;
+    refreshAgents: () => Promise<void>;
+    abortActive: () => Promise<void>;
+    setActivityStatus: (text: string) => void;
+    formatSessionKey: (key: string) => string;
+};
+export declare function createCommandHandlers(context: CommandHandlerContext): {
+    handleCommand: (raw: string) => Promise<void>;
+    sendMessage: (text: string) => Promise<void>;
+    openModelSelector: () => Promise<void>;
+    openAgentSelector: () => Promise<void>;
+    openSessionSelector: () => Promise<void>;
+    openSettings: () => void;
+    setAgent: (id: string) => Promise<void>;
+};
+export {};

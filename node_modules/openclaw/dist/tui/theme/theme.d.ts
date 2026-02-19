@@ -1,0 +1,35 @@
+import type { EditorTheme, MarkdownTheme, SelectListTheme, SettingsListTheme } from "@mariozechner/pi-tui";
+import type { SearchableSelectListTheme } from "../components/searchable-select-list.js";
+export declare const theme: {
+    fg: (text: string) => string;
+    dim: (text: string) => string;
+    accent: (text: string) => string;
+    accentSoft: (text: string) => string;
+    success: (text: string) => string;
+    error: (text: string) => string;
+    header: (text: string) => string;
+    system: (text: string) => string;
+    userBg: (text: string) => string;
+    userText: (text: string) => string;
+    toolTitle: (text: string) => string;
+    toolOutput: (text: string) => string;
+    toolPendingBg: (text: string) => string;
+    toolSuccessBg: (text: string) => string;
+    toolErrorBg: (text: string) => string;
+    border: (text: string) => string;
+    bold: (text: string) => string;
+    italic: (text: string) => string;
+};
+export declare const markdownTheme: MarkdownTheme;
+export declare const selectListTheme: SelectListTheme;
+export declare const filterableSelectListTheme: {
+    filterLabel: (text: string) => string;
+    selectedPrefix: (text: string) => string;
+    selectedText: (text: string) => string;
+    description: (text: string) => string;
+    scrollInfo: (text: string) => string;
+    noMatch: (text: string) => string;
+};
+export declare const settingsListTheme: SettingsListTheme;
+export declare const editorTheme: EditorTheme;
+export declare const searchableSelectListTheme: SearchableSelectListTheme;

@@ -1,0 +1,18 @@
+import type { OAuthCredentials } from "@mariozechner/pi-ai";
+export declare function writeOAuthCredentials(provider: string, creds: OAuthCredentials, agentDir?: string): Promise<void>;
+export declare function setAnthropicApiKey(key: string, agentDir?: string): Promise<void>;
+export declare function setGeminiApiKey(key: string, agentDir?: string): Promise<void>;
+export declare function setMinimaxApiKey(key: string, agentDir?: string): Promise<void>;
+export declare function setMoonshotApiKey(key: string, agentDir?: string): Promise<void>;
+export declare function setKimiCodingApiKey(key: string, agentDir?: string): Promise<void>;
+export declare function setSyntheticApiKey(key: string, agentDir?: string): Promise<void>;
+export declare function setVeniceApiKey(key: string, agentDir?: string): Promise<void>;
+export declare const ZAI_DEFAULT_MODEL_REF = "zai/glm-4.7";
+export declare const XIAOMI_DEFAULT_MODEL_REF = "xiaomi/mimo-v2-flash";
+export declare const OPENROUTER_DEFAULT_MODEL_REF = "openrouter/auto";
+export declare const VERCEL_AI_GATEWAY_DEFAULT_MODEL_REF = "vercel-ai-gateway/anthropic/claude-opus-4.5";
+export declare function setZaiApiKey(key: string, agentDir?: string): Promise<void>;
+export declare function setXiaomiApiKey(key: string, agentDir?: string): Promise<void>;
+export declare function setOpenrouterApiKey(key: string, agentDir?: string): Promise<void>;
+export declare function setVercelAiGatewayApiKey(key: string, agentDir?: string): Promise<void>;
+export declare function setOpencodeZenApiKey(key: string, agentDir?: string): Promise<void>;

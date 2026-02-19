@@ -1,22 +1,9 @@
 {
   "name": "@openclaw/tlon",
-  "version": "2026.1.30",
+  "version": "2026.2.18",
+  "private": true,
   "description": "OpenClaw Tlon/Urbit channel plugin",
   "type": "module",
-  "scripts": {
-    "dev": "./dev/run.sh",
-    "format": "oxfmt --check",
-    "format:fix": "oxfmt --write",
-    "lint": "oxlint --type-aware",
-    "lint:fix": "pnpm format:fix && oxlint --type-aware --fix",
-    "test": "vitest run src/",
-    "test:security": "vitest run src/security.test.ts",
-    "test:watch": "vitest src/",
-    "test:integration": "./test/run.sh",
-    "test:integration:watch": "./test/run.sh --watch",
-    "test:all": "vitest run",
-    "test:ci": "docker compose --env-file .env -f dev/docker-compose.yml up -d && ./test/run.sh; docker compose --env-file .env -f dev/docker-compose.yml down"
-  },
   "dependencies": {
     "@tloncorp/api": "github:tloncorp/api-beta#main",
     "@tloncorp/tlon-skill": "0.1.9",
@@ -24,13 +11,7 @@
     "@urbit/http-api": "^3.0.0"
   },
   "devDependencies": {
-    "dotenv": "^17.2.4",
-    "openclaw": "^2026.1.30",
-    "oxfmt": "0.27.0",
-    "oxlint": "^1.42.0",
-    "oxlint-tsgolint": "^0.12.2",
-    "vitest": "^4.0.0",
-    "zod": "^4.3.6"
+    "openclaw": "workspace:*"
   },
   "openclaw": {
     "extensions": [
@@ -47,7 +28,7 @@
       "quickstartAllowFrom": true
     },
     "install": {
-      "npmSpec": "@moltbot/tlon",
+      "npmSpec": "@openclaw/tlon",
       "localPath": "extensions/tlon",
       "defaultChoice": "npm"
     }

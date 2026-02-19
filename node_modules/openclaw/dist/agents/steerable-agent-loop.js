@@ -1,0 +1,338 @@
+import { streamSimple, validateToolArguments } from "@mariozechner/pi-ai";
+class EventStream {
+    isComplete;
+    extractResult;
+    queue = [];
+    waiting = [];
+    done = false;
+    finalResultPromise;
+    resolveFinalResult;
+    constructor(isComplete, extractResult) {
+        this.isComplete = isComplete;
+        this.extractResult = extractResult;
+        this.finalResultPromise = new Promise((resolve) => {
+            this.resolveFinalResult = resolve;
+        });
+    }
+    push(event) {
+        if (this.done)
+            return;
+        if (this.isComplete(event)) {
+            this.done = true;
+            this.resolveFinalResult(this.extractResult(event));
+        }
+        const waiter = this.waiting.shift();
+        if (waiter) {
+            waiter({ value: event, done: false });
+        }
+        else {
+            this.queue.push(event);
+        }
+    }
+    end(result) {
+        this.done = true;
+        if (result !== undefined) {
+            this.resolveFinalResult(result);
+        }
+        while (this.waiting.length > 0) {
+            const waiter = this.waiting.shift();
+            if (waiter) {
+                waiter({ value: undefined, done: true });
+            }
+        }
+    }
+    async *[Symbol.asyncIterator]() {
+        while (true) {
+            if (this.queue.length > 0) {
+                const next = this.queue.shift();
+                if (next !== undefined) {
+                    yield next;
+                }
+            }
+            else if (this.done) {
+                return;
+            }
+            else {
+                const result = await new Promise((resolve) => this.waiting.push(resolve));
+                if (result.done)
+                    return;
+                yield result.value;
+            }
+        }
+    }
+    result() {
+        return this.finalResultPromise;
+    }
+}
+function createAgentStream() {
+    return new EventStream((event) => event.type === "agent_end", (event) => (event.type === "agent_end" ? event.messages : []));
+}
+export function agentLoop(prompt, context, config, signal, streamFn) {
+    const stream = createAgentStream();
+    void (async () => {
+        const newMessages = [prompt];
+        const currentContext = {
+            ...context,
+            messages: [...context.messages, prompt],
+        };
+        stream.push({ type: "agent_start" });
+        stream.push({ type: "turn_start" });
+        stream.push({ type: "message_start", message: prompt });
+        stream.push({ type: "message_end", message: prompt });
+        await runLoop(currentContext, newMessages, config, signal, stream, streamFn);
+    })();
+    return stream;
+}
+export function agentLoopContinue(context, config, signal, streamFn) {
+    const lastMessage = context.messages[context.messages.length - 1];
+    if (!lastMessage) {
+        throw new Error("Cannot continue: no messages in context");
+    }
+    if (lastMessage.role !== "user" && lastMessage.role !== "toolResult") {
+        throw new Error(`Cannot continue from message role: ${lastMessage.role}. Expected 'user' or 'toolResult'.`);
+    }
+    const stream = createAgentStream();
+    void (async () => {
+        const newMessages = [];
+        const currentContext = { ...context };
+        stream.push({ type: "agent_start" });
+        stream.push({ type: "turn_start" });
+        await runLoop(currentContext, newMessages, config, signal, stream, streamFn);
+    })();
+    return stream;
+}
+async function runLoop(currentContext, newMessages, config, signal, stream, streamFn) {
+    let hasMoreToolCalls = true;
+    let firstTurn = true;
+    const getQueuedMessages = config.getQueuedMessages;
+    let queuedMessages = getQueuedMessages
+        ? await getQueuedMessages()
+        : [];
+    let queuedAfterTools = null;
+    while (hasMoreToolCalls || queuedMessages.length > 0) {
+        if (!firstTurn) {
+            stream.push({ type: "turn_start" });
+        }
+        else {
+            firstTurn = false;
+        }
+        if (queuedMessages.length > 0) {
+            for (const { original, llm } of queuedMessages) {
+                stream.push({ type: "message_start", message: original });
+                stream.push({ type: "message_end", message: original });
+                if (llm) {
+                    currentContext.messages.push(llm);
+                    newMessages.push(llm);
+                }
+            }
+            queuedMessages = [];
+        }
+        const message = await streamAssistantResponse(currentContext, config, signal, stream, streamFn);
+        newMessages.push(message);
+        if (message.stopReason === "error" || message.stopReason === "aborted") {
+            stream.push({ type: "turn_end", message, toolResults: [] });
+            stream.push({ type: "agent_end", messages: newMessages });
+            stream.end(newMessages);
+            return;
+        }
+        const toolCalls = message.content.filter((c) => c.type === "toolCall");
+        hasMoreToolCalls = toolCalls.length > 0;
+        const toolResults = [];
+        if (hasMoreToolCalls) {
+            const toolExecution = await executeToolCalls(currentContext.tools, message, signal, stream, config.getQueuedMessages);
+            toolResults.push(...toolExecution.toolResults);
+            queuedAfterTools = toolExecution.queuedMessages ?? null;
+            currentContext.messages.push(...toolResults);
+            newMessages.push(...toolResults);
+        }
+        stream.push({ type: "turn_end", message, toolResults: toolResults });
+        if (queuedAfterTools && queuedAfterTools.length > 0) {
+            queuedMessages = queuedAfterTools;
+            queuedAfterTools = null;
+        }
+        else {
+            queuedMessages = getQueuedMessages
+                ? await getQueuedMessages()
+                : [];
+        }
+    }
+    stream.push({ type: "agent_end", messages: newMessages });
+    stream.end(newMessages);
+}
+async function streamAssistantResponse(context, config, signal, stream, streamFn) {
+    const processedMessages = config.preprocessor
+        ? await config.preprocessor(context.messages, signal)
+        : [...context.messages];
+    const processedContext = {
+        systemPrompt: context.systemPrompt,
+        messages: [...processedMessages].map((m) => {
+            if (m.role === "toolResult") {
+                const { details: _details, ...rest } = m;
+                return rest;
+            }
+            return m;
+        }),
+        tools: context.tools,
+    };
+    const streamFunction = streamFn || streamSimple;
+    const resolvedApiKey = (config.getApiKey
+        ? await config.getApiKey(config.model.provider)
+        : undefined) || config.apiKey;
+    const response = await streamFunction(config.model, processedContext, {
+        ...config,
+        apiKey: resolvedApiKey,
+        signal,
+    });
+    let partialMessage = null;
+    let addedPartial = false;
+    for await (const event of response) {
+        switch (event.type) {
+            case "start":
+                partialMessage = event.partial;
+                context.messages.push(partialMessage);
+                addedPartial = true;
+                stream.push({ type: "message_start", message: { ...partialMessage } });
+                break;
+            case "text_start":
+            case "text_delta":
+            case "text_end":
+            case "thinking_start":
+            case "thinking_delta":
+            case "thinking_end":
+            case "toolcall_start":
+            case "toolcall_delta":
+            case "toolcall_end":
+                if (partialMessage) {
+                    partialMessage = event.partial;
+                    context.messages[context.messages.length - 1] = partialMessage;
+                    stream.push({
+                        type: "message_update",
+                        assistantMessageEvent: event,
+                        message: { ...partialMessage },
+                    });
+                }
+                break;
+            case "done":
+            case "error": {
+                const finalMessage = await response.result();
+                if (addedPartial) {
+                    context.messages[context.messages.length - 1] = finalMessage;
+                }
+                else {
+                    context.messages.push(finalMessage);
+                }
+                if (!addedPartial) {
+                    stream.push({ type: "message_start", message: { ...finalMessage } });
+                }
+                stream.push({ type: "message_end", message: finalMessage });
+                return finalMessage;
+            }
+        }
+    }
+    return await response.result();
+}
+async function executeToolCalls(tools, assistantMessage, signal, stream, getQueuedMessages) {
+    const toolCalls = assistantMessage.content.filter((c) => c.type === "toolCall");
+    const results = [];
+    let queuedMessages;
+    for (let index = 0; index < toolCalls.length; index++) {
+        const toolCall = toolCalls[index];
+        const tool = tools?.find((t) => t.name === toolCall.name);
+        stream.push({
+            type: "tool_execution_start",
+            toolCallId: toolCall.id,
+            toolName: toolCall.name,
+            args: toolCall.arguments,
+        });
+        let result;
+        let isError = false;
+        try {
+            if (!tool)
+                throw new Error(`Tool ${toolCall.name} not found`);
+            const validatedArgs = validateToolArguments(tool, toolCall);
+            result = await tool.execute(toolCall.id, validatedArgs, signal, (partialResult) => {
+                stream.push({
+                    type: "tool_execution_update",
+                    toolCallId: toolCall.id,
+                    toolName: toolCall.name,
+                    args: toolCall.arguments,
+                    partialResult,
+                });
+            });
+        }
+        catch (err) {
+            result = {
+                content: [
+                    {
+                        type: "text",
+                        text: err instanceof Error ? err.message : String(err),
+                    },
+                ],
+                details: {},
+            };
+            isError = true;
+        }
+        stream.push({
+            type: "tool_execution_end",
+            toolCallId: toolCall.id,
+            toolName: toolCall.name,
+            result,
+            isError,
+        });
+        const toolResultMessage = {
+            role: "toolResult",
+            toolCallId: toolCall.id,
+            toolName: toolCall.name,
+            content: result.content,
+            details: result.details,
+            isError,
+            timestamp: Date.now(),
+        };
+        results.push(toolResultMessage);
+        stream.push({ type: "message_start", message: toolResultMessage });
+        stream.push({ type: "message_end", message: toolResultMessage });
+        if (getQueuedMessages) {
+            const queued = await getQueuedMessages();
+            if (queued.length > 0) {
+                queuedMessages = queued;
+                const remainingCalls = toolCalls.slice(index + 1);
+                for (const skipped of remainingCalls) {
+                    results.push(skipToolCall(skipped, stream));
+                }
+                break;
+            }
+        }
+    }
+    return { toolResults: results, queuedMessages };
+}
+function skipToolCall(toolCall, stream) {
+    const result = {
+        content: [{ type: "text", text: "Skipped due to queued user message." }],
+        details: {},
+    };
+    stream.push({
+        type: "tool_execution_start",
+        toolCallId: toolCall.id,
+        toolName: toolCall.name,
+        args: toolCall.arguments,
+    });
+    stream.push({
+        type: "tool_execution_end",
+        toolCallId: toolCall.id,
+        toolName: toolCall.name,
+        result,
+        isError: true,
+    });
+    const toolResultMessage = {
+        role: "toolResult",
+        toolCallId: toolCall.id,
+        toolName: toolCall.name,
+        content: result.content,
+        details: result.details,
+        isError: true,
+        timestamp: Date.now(),
+    };
+    stream.push({ type: "message_start", message: toolResultMessage });
+    stream.push({ type: "message_end", message: toolResultMessage });
+    return toolResultMessage;
+}

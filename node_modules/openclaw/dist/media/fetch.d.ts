@@ -1,0 +1,19 @@
+type FetchMediaResult = {
+    buffer: Buffer;
+    contentType?: string;
+    fileName?: string;
+};
+export type MediaFetchErrorCode = "max_bytes" | "http_error" | "fetch_failed";
+export declare class MediaFetchError extends Error {
+    readonly code: MediaFetchErrorCode;
+    constructor(code: MediaFetchErrorCode, message: string);
+}
+export type FetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+type FetchMediaOptions = {
+    url: string;
+    fetchImpl?: FetchLike;
+    filePathHint?: string;
+    maxBytes?: number;
+};
+export declare function fetchRemoteMedia(options: FetchMediaOptions): Promise<FetchMediaResult>;
+export {};

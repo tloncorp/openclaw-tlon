@@ -1,0 +1,62 @@
+import type { HookMessageChannel } from "./hooks.js";
+import { type HooksConfig } from "../config/config.js";
+export type HookMappingResolved = {
+    id: string;
+    matchPath?: string;
+    matchSource?: string;
+    action: "wake" | "agent";
+    wakeMode?: "now" | "next-heartbeat";
+    name?: string;
+    sessionKey?: string;
+    messageTemplate?: string;
+    textTemplate?: string;
+    deliver?: boolean;
+    allowUnsafeExternalContent?: boolean;
+    channel?: HookMessageChannel;
+    to?: string;
+    model?: string;
+    thinking?: string;
+    timeoutSeconds?: number;
+    transform?: HookMappingTransformResolved;
+};
+export type HookMappingTransformResolved = {
+    modulePath: string;
+    exportName?: string;
+};
+export type HookMappingContext = {
+    payload: Record<string, unknown>;
+    headers: Record<string, string>;
+    url: URL;
+    path: string;
+};
+export type HookAction = {
+    kind: "wake";
+    text: string;
+    mode: "now" | "next-heartbeat";
+} | {
+    kind: "agent";
+    message: string;
+    name?: string;
+    wakeMode: "now" | "next-heartbeat";
+    sessionKey?: string;
+    deliver?: boolean;
+    allowUnsafeExternalContent?: boolean;
+    channel?: HookMessageChannel;
+    to?: string;
+    model?: string;
+    thinking?: string;
+    timeoutSeconds?: number;
+};
+export type HookMappingResult = {
+    ok: true;
+    action: HookAction;
+} | {
+    ok: true;
+    action: null;
+    skipped: true;
+} | {
+    ok: false;
+    error: string;
+};
+export declare function resolveHookMappings(hooks?: HooksConfig): HookMappingResolved[];
+export declare function applyHookMappings(mappings: HookMappingResolved[], ctx: HookMappingContext): Promise<HookMappingResult | null>;

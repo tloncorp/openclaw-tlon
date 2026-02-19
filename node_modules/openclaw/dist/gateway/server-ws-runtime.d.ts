@@ -1,0 +1,28 @@
+import type { WebSocketServer } from "ws";
+import type { createSubsystemLogger } from "../logging/subsystem.js";
+import type { ResolvedGatewayAuth } from "./auth.js";
+import type { GatewayRequestContext, GatewayRequestHandlers } from "./server-methods/types.js";
+import type { GatewayWsClient } from "./server/ws-types.js";
+export declare function attachGatewayWsHandlers(params: {
+    wss: WebSocketServer;
+    clients: Set<GatewayWsClient>;
+    port: number;
+    gatewayHost?: string;
+    canvasHostEnabled: boolean;
+    canvasHostServerPort?: number;
+    resolvedAuth: ResolvedGatewayAuth;
+    gatewayMethods: string[];
+    events: string[];
+    logGateway: ReturnType<typeof createSubsystemLogger>;
+    logHealth: ReturnType<typeof createSubsystemLogger>;
+    logWsControl: ReturnType<typeof createSubsystemLogger>;
+    extraHandlers: GatewayRequestHandlers;
+    broadcast: (event: string, payload: unknown, opts?: {
+        dropIfSlow?: boolean;
+        stateVersion?: {
+            presence?: number;
+            health?: number;
+        };
+    }) => void;
+    context: GatewayRequestContext;
+}): void;

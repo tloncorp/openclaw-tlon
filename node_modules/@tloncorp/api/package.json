@@ -1,0 +1,58 @@
+{
+  "name": "@tloncorp/api",
+  "version": "0.0.2",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs",
+      "types": "./dist/index.d.ts"
+    },
+    "./api": {
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs",
+      "types": "./dist/api/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "vite build",
+    "prepare": "npm run build",
+    "dev": "vite build --watch",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.983.0",
+    "@aws-sdk/s3-request-presigner": "^3.983.0",
+    "@urbit/aura": "^3.0.0",
+    "@urbit/nockjs": "^1.6.0",
+    "any-ascii": "^0.3.2",
+    "big-integer": "^1.6.52",
+    "browser-or-node": "^3.0.0",
+    "buffer": "^6.0.3",
+    "date-fns": "^3.6.0",
+    "emoji-regex": "^10.3.0",
+    "exponential-backoff": "^3.1.1",
+    "libphonenumber-js": "^1.10.51",
+    "lodash": "^4.17.21",
+    "sorted-btree": "^1.8.1",
+    "validator": "^13.7.0"
+  },
+  "devDependencies": {
+    "@types/lodash": "^4.14.202",
+    "@types/validator": "^13.7.0",
+    "typescript": "5.1.3",
+    "vite": "^5.0.0",
+    "vite-plugin-dts": "^3.7.0",
+    "vitest": "^1.4.0"
+  },
+  "files": [
+    "dist",
+    "src"
+  ]
+}
