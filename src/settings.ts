@@ -178,7 +178,9 @@ function parsePendingApprovals(value: unknown): PendingApproval[] | undefined {
 
   // Filter to valid PendingApproval objects
   return parsed.filter((item): item is PendingApproval => {
-    if (!item || typeof item !== "object") {return false;}
+    if (!item || typeof item !== "object") {
+      return false;
+    }
     const obj = item as Record<string, unknown>;
     return (
       typeof obj.id === "string" &&
