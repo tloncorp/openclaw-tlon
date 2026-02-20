@@ -113,15 +113,17 @@ done
 echo "==> Starting OpenClaw gateway..."
 docker compose $COMPOSE_FILES up -d openclaw
 
+# Gateway timeout needs to account for npm install inside container (can take 60+ seconds on slow machines)
+GATEWAY_TIMEOUT=90
 echo "==> Waiting for gateway (port $GATEWAY_PORT)..."
-for i in $(seq 1 60); do
+for i in $(seq 1 $GATEWAY_TIMEOUT); do
   if curl -s "http://localhost:$GATEWAY_PORT/" | grep -qi openclaw; then
     echo "Gateway ready"
     break
   fi
-  if [ $i -eq 60 ]; then
-    echo "Timeout waiting for gateway"
-    docker compose $COMPOSE_FILES logs openclaw
+  if [ $i -eq $GATEWAY_TIMEOUT ]; then
+    echo "Timeout waiting for gateway after $((GATEWAY_TIMEOUT * 2))s"
+    docker compose $COMPOSE_FILES logs openclaw | tail -100
     exit 1
   fi
   sleep 2
