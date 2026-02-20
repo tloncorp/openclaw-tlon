@@ -10,6 +10,7 @@ type SendTextParams = {
   fromShip: string;
   toShip: string;
   text: string;
+  replyToId?: string | null;
 };
 
 type SendStoryParams = {
@@ -17,42 +18,68 @@ type SendStoryParams = {
   fromShip: string;
   toShip: string;
   story: Story;
+  replyToId?: string | null;
 };
 
-export async function sendDm({ api, fromShip, toShip, text }: SendTextParams) {
+export async function sendDm({ api, fromShip, toShip, text, replyToId }: SendTextParams) {
   const story: Story = markdownToStory(text);
-  return sendDmWithStory({ api, fromShip, toShip, story });
+  return sendDmWithStory({ api, fromShip, toShip, story, replyToId });
 }
 
-export async function sendDmWithStory({ api, fromShip, toShip, story }: SendStoryParams) {
+export async function sendDmWithStory({ api, fromShip, toShip, story, replyToId }: SendStoryParams) {
   const sentAt = Date.now();
   const idUd = scot("ud", da.fromUnix(sentAt));
-  const id = `${fromShip}/${idUd}`;
+  const newReplyId = `${fromShip}/${idUd}`;  // ID for the NEW message we're sending
 
-  const delta = {
-    add: {
-      memo: {
-        content: story,
-        author: fromShip,
-        sent: sentAt,
-      },
-      kind: null,
-      time: null,
-    },
-  };
+  const delta = replyToId
+    ? {
+        // Thread reply structure for DMs
+        // Based on tlon-apps sendReply: delta.reply.id is the NEW reply's ID
+        reply: {
+          id: newReplyId,
+          meta: null,
+          delta: {
+            add: {
+              memo: {
+                content: story,
+                author: fromShip,
+                sent: sentAt,
+              },
+              time: null,
+            },
+          },
+        },
+      }
+    : {
+        // Regular DM structure
+        add: {
+          memo: {
+            content: story,
+            author: fromShip,
+            sent: sentAt,
+          },
+          kind: null,
+          time: null,
+        },
+      };
 
+  // For thread replies: diff.id is the PARENT post ID (replyToId)
+  // For regular DMs: diff.id is the new message ID
   const action = {
     ship: toShip,
-    diff: { id, delta },
+    diff: { 
+      id: replyToId || newReplyId,
+      delta 
+    },
   };
 
   await api.poke({
     app: "chat",
-    mark: "chat-dm-action",
+    mark: "chat-dm-action-1",  // Use the newer mark like tlon-apps does
     json: action,
   });
 
-  return { channel: "tlon", messageId: id };
+  return { channel: "tlon", messageId: newReplyId };
 }
 
 type SendGroupParams = {
@@ -139,6 +166,59 @@ export async function sendGroupMessageWithStory({
               },
             },
           },
+    },
+  };
+
+  await api.poke({
+    app: "channels",
+    mark: "channel-action-1",
+    json: action,
+  });
+
+  return { channel: "tlon", messageId: `${fromShip}/${sentAt}` };
+}
+
+type SendDiaryParams = {
+  api: TlonPokeApi;
+  fromShip: string;
+  hostShip: string;
+  channelName: string;
+  title: string;
+  text: string;
+  image?: string | null;
+};
+
+export async function sendDiaryPost({
+  api,
+  fromShip,
+  hostShip,
+  channelName,
+  title,
+  text,
+  image,
+}: SendDiaryParams) {
+  const story: Story = markdownToStory(text);
+  const sentAt = Date.now();
+
+  const action = {
+    channel: {
+      nest: `diary/${hostShip}/${channelName}`,
+      action: {
+        post: {
+          add: {
+            content: story,
+            author: fromShip,
+            sent: sentAt,
+            kind: "/diary",
+            blob: null,
+            meta: {
+              title: title,
+              image: image ?? "",
+              description: "",
+            },
+          },
+        },
+      },
     },
   };
 

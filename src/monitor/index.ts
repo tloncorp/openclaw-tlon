@@ -147,6 +147,9 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
   // Track threads we've participated in (by parentId) - respond without mention requirement
   const participatedThreads = new Set<string>();
 
+  // Owner direct channels - channels where owner can chat without mentioning the bot
+  let effectiveOwnerDirectChannels: string[] = (account as any).ownerDirectChannels ?? [];
+
   // Track DM senders per session to detect shared sessions (security warning)
   const dmSendersBySession = new Map<string, Set<string>>();
   let sharedSessionWarningSent = false;
@@ -296,6 +299,12 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     if (currentSettings.pendingApprovals?.length) {
       pendingApprovals = currentSettings.pendingApprovals;
       runtime.log?.(`[tlon] Loaded ${pendingApprovals.length} pending approval(s) from settings`);
+    }
+    if (currentSettings.ownerDirectChannels?.length) {
+      effectiveOwnerDirectChannels = currentSettings.ownerDirectChannels;
+      runtime.log?.(
+        `[tlon] Using ownerDirectChannels from settings store: ${effectiveOwnerDirectChannels.join(", ")}`,
+      );
     }
   } catch (err) {
     runtime.log?.(`[tlon] Settings store not available, using file config: ${String(err)}`);
@@ -1005,7 +1014,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
               runtime.log?.(`[tlon] Now tracking thread for future replies: ${parentId}`);
             }
           } else {
-            await sendDm({ api: api, fromShip: botShipName, toShip: senderShip, text: replyText });
+            await sendDm({ api: api, fromShip: botShipName, toShip: senderShip, text: replyText, replyToId: parentId ?? undefined });
           }
         },
         onError: (err, info) => {
@@ -1021,6 +1030,14 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
   // Track which channels we're interested in for filtering firehose events
   const watchedChannels = new Set<string>(groupChannels);
   const _watchedDMs = new Set<string>();
+
+  // Also watch ownerDirectChannels (channels where owner can chat without mentioning)
+  for (const ch of effectiveOwnerDirectChannels) {
+    if (!watchedChannels.has(ch)) {
+      watchedChannels.add(ch);
+      runtime.log?.(`[tlon] Watching owner direct channel: ${ch}`);
+    }
+  }
 
   // Firehose handler for all channel messages (/v2)
   const handleChannelsFirehose = async (event: any) => {
@@ -1070,17 +1087,23 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       // Check if we should respond:
       // 1. Direct mention always triggers response
       // 2. Thread replies where we've participated - respond if relevant (let agent decide)
+      // 3. Owner messages in owner direct channels (no mention required)
       const mentioned = isBotMentioned(messageText, botShipName, botNickname ?? undefined);
       const inParticipatedThread =
         isThreadReply && parentId && participatedThreads.has(String(parentId));
+      const isOwnerInDirectChannel =
+        isOwner(senderShip) && effectiveOwnerDirectChannels.includes(nest);
 
-      if (!mentioned && !inParticipatedThread) {
+      if (!mentioned && !inParticipatedThread && !isOwnerInDirectChannel) {
         return;
       }
 
       // Log why we're responding
       if (inParticipatedThread && !mentioned) {
         runtime.log?.(`[tlon] Responding to thread we participated in (no mention): ${parentId}`);
+      }
+      if (isOwnerInDirectChannel && !mentioned) {
+        runtime.log?.(`[tlon] Responding to owner in direct channel (no mention): ${nest}`);
       }
 
       // Owner is always allowed
@@ -1198,14 +1221,56 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       }
       if (!("whom" in event) || !("response" in event)) {return;}
 
-      const _whom = event.whom; // DM partner ship or club ID
-      const messageId = event.id;
+      const whom = event.whom; // DM partner ship or club ID
+      const parentPostId = event.id;
       const response = event.response;
 
-      // Handle add events (new messages)
+      // Handle thread replies (response.reply.delta.add.memo)
+      if (response?.reply) {
+        const replyDelta = response.reply.delta;
+        if (replyDelta?.add) {
+          const memo = replyDelta.add.memo;
+          if (!memo) {return;}
+
+          const replyId = response.reply.id;
+          if (!processedTracker.mark(replyId)) {return;}
+
+          const senderShip = normalizeShip(memo.author ?? "");
+          if (!senderShip || senderShip === botShipName) {return;}
+
+          const rawText = extractMessageText(memo.content);
+          const citedContent = await resolveAllCites(memo.content);
+          const messageText = citedContent + rawText;
+          if (!messageText.trim()) {return;}
+
+          // Owner is always allowed
+          if (!isOwner(senderShip) && !isDmAllowed(senderShip, effectiveDmAllowlist)) {
+            runtime.log?.(`[tlon] Blocked DM thread reply from ${senderShip}: not in allowlist`);
+            return;
+          }
+
+          runtime.log?.(`[tlon] DM thread reply from ${senderShip}: "${messageText.slice(0, 50)}..."`);
+
+          await processMessage({
+            messageId: replyId ?? "",
+            senderShip,
+            messageText,
+            messageContent: memo.content,
+            isGroup: false,
+            timestamp: memo.sent || Date.now(),
+            parentId: parentPostId, // For thread reply routing
+          });
+          return;
+        }
+        // Ignore del, add-react, del-react for thread replies
+        return;
+      }
+
+      // Handle add events (new top-level messages)
       const essay = response?.add?.essay;
       if (!essay) {return;}
 
+      const messageId = parentPostId;
       if (!processedTracker.mark(messageId)) {return;}
 
       const senderShip = normalizeShip(essay.author ?? "");
@@ -1424,6 +1489,21 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
             ? normalizeShip(account.ownerShip)
             : null;
         runtime.log?.(`[tlon] Settings: ownerShip = ${effectiveOwnerShip}`);
+      }
+
+      // Update owner direct channels (channels where owner can chat without mentioning)
+      if (newSettings.ownerDirectChannels !== undefined) {
+        effectiveOwnerDirectChannels = newSettings.ownerDirectChannels;
+        // Also add to watchedChannels so we receive events
+        for (const ch of effectiveOwnerDirectChannels) {
+          if (!watchedChannels.has(ch)) {
+            watchedChannels.add(ch);
+            runtime.log?.(`[tlon] Settings: now watching owner direct channel ${ch}`);
+          }
+        }
+        runtime.log?.(
+          `[tlon] Settings: ownerDirectChannels = ${effectiveOwnerDirectChannels.join(", ")}`,
+        );
       }
 
       // Update pending approvals
