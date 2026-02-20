@@ -41,7 +41,7 @@ services:
   openclaw:
     build:
       context: .
-      dockerfile: Dockerfile.ci
+      dockerfile: Dockerfile.test
     environment:
       - TLON_URL=http://ships:8080
       - TLON_SHIP=~zod

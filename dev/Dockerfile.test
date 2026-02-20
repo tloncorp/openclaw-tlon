@@ -8,7 +8,7 @@ RUN npm install -g openclaw@2026.2.19
 # Create workspace
 WORKDIR /workspace
 
-COPY entrypoint.ci.sh /usr/local/bin/entrypoint.sh
+COPY entrypoint.test.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
 EXPOSE 18789

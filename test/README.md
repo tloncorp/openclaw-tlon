@@ -9,68 +9,58 @@ Integration tests for the Tlon plugin. These tests prompt the bot and verify shi
 - Seed deterministic fixtures on the bot ship when needed (group/channel/profile fields), rather than depending on pre-existing test user data.
 - Avoid prompts that require visibility into the test user ship's private data.
 
-## Setup
+## Running Tests
 
-Tests use the root `.env` file - the same one used by `docker-compose`. Just make sure your `.env` is configured for the dev environment.
+There are two ways to run integration tests:
+
+### Self-contained (recommended)
+
+Starts ephemeral fakezod ships (~zod and ~ten), runs tests, then cleans up:
+
+```bash
+pnpm test:integration
+```
+
+This is what CI uses. Requires:
+- `OPENROUTER_API_KEY` in `.env` (or as environment variable)
+- Optional: `../tlonbot` repo cloned for local prompt files (otherwise fetches from GitHub using `TLONBOT_TOKEN`)
+
+### Against dev environment
+
+Run tests against an already-running dev environment:
+
+```bash
+# Start dev environment first
+pnpm dev
+
+# In another terminal
+pnpm test:integration:dev
+
+# Watch mode
+pnpm test:integration:watch
+```
+
+Requires `.env` configured with ship credentials (see below).
 
 ## Environment Variables
 
-Tests reuse the standard env vars from `.env`:
+For `test:integration:dev`, tests use the root `.env` file:
 
 ```bash
 # Bot ship (receives DMs, used for state checks)
 TLON_URL=http://host.docker.internal:8080   # Ship URL (auto-converted for tests)
 TLON_SHIP=~bot-moon                         # Bot ship name
 TLON_CODE=lidlut-tabwed-pillex-ridrup       # Bot access code
-```
 
-### Tlon Mode (full stack testing)
-
-For tlon mode, you need a **test user** to send DMs to the bot:
-
-```bash
-TEST_USER_URL=https://your-planet.tlon.network  # Test user's ship URL (if different from bot)
-TEST_USER_SHIP=~your-planet                     # Your ship (sends DMs to bot)
-TEST_USER_CODE=your-access-code                 # Your ship's access code
+# Test user (sends DMs to bot)
+TEST_USER_URL=https://your-planet.tlon.network
+TEST_USER_SHIP=~your-planet
+TEST_USER_CODE=your-access-code
 ```
 
 The test user must be on the bot's DM allowlist (`TLON_DM_ALLOWLIST`).
 
-If `TEST_USER_*` vars are not set, tests fall back to bot credentials (useful for state-only tests).
-
-### Test-specific options
-
-```bash
-TEST_MODE=tlon                      # "tlon" (default) or "direct"
-OPENCLAW_GATEWAY_PORT=18789               # Host port mapped to container 18789
-TEST_GATEWAY_URL=http://localhost:18789   # Optional override (default derives from OPENCLAW_GATEWAY_PORT)
-OPENCLAW_GATEWAY_TOKEN=...          # If gateway auth is enabled
-```
-
-## Running Tests
-
-```bash
-# Start the dev container first
-pnpm dev
-
-# In another terminal, run integration tests (waits for gateway)
-pnpm test:integration
-
-# Watch mode
-pnpm test:integration:watch
-
-# Run all tests (unit + integration)
-pnpm test:all
-
-# CI mode: starts container, runs tests, stops container
-pnpm test:ci
-```
-
-The test runner automatically waits up to 60s for the gateway to be ready.
-
-**Note:** Tests run from your host machine and hit:
-- The dockerized OpenClaw gateway at `localhost:${OPENCLAW_GATEWAY_PORT:-18789}` (direct mode)
-- Your local Urbit ship for state verification (URL from `.env`, converted from `host.docker.internal` to `localhost`)
+For `test:integration` (ephemeral mode), ship credentials are hardcoded - only `OPENROUTER_API_KEY` is needed from `.env`.
 
 ## Test Structure
 
