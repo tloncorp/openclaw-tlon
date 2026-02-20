@@ -20,7 +20,6 @@ ZOD_URL="http://localhost:8080"
 ZOD_CODE="lidlut-tabwed-pillex-ridrup"
 TEN_URL="http://localhost:8081"
 TEN_CODE="lapseg-nolmel-riswen-hopryc"
-GATEWAY_PORT=18789
 
 cd "$(dirname "$0")/.."
 
@@ -32,10 +31,18 @@ if [ -f .env ]; then
   set +a
 fi
 
+# Gateway port can be overridden via env var (matches docker-compose.test.yml)
+GATEWAY_PORT="${OPENCLAW_GATEWAY_PORT:-18789}"
+
 # Check for port conflicts before starting
 for port in 8080 8081 $GATEWAY_PORT; do
   if lsof -Pi ":$port" -sTCP:LISTEN -t >/dev/null 2>&1; then
     echo "Error: Port $port is already in use"
+    if [ "$port" = "$GATEWAY_PORT" ]; then
+      echo "  Hint: You may have another OpenClaw gateway running."
+      echo "  Either stop it, or use a different port:"
+      echo "    OPENCLAW_GATEWAY_PORT=18790 pnpm test:integration"
+    fi
     exit 1
   fi
 done
