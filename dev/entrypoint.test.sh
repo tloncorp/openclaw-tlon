@@ -10,7 +10,8 @@ echo "==> User: $(whoami)"
 echo "==> Working directory: $(pwd)"
 
 echo "==> Fixing plugin directory ownership..."
-chown -R root:root /workspace/openclaw-tlon
+# Exclude .git - on Linux, host-owned git objects can't be chowned by container root
+find /workspace/openclaw-tlon -not -path '*/.git/*' -exec chown root:root {} \; 2>/dev/null || true
 
 echo "==> Installing plugin dependencies..."
 cd /workspace/openclaw-tlon
@@ -33,7 +34,7 @@ cat > "$CONFIG_DIR/openclaw.json" << EOF
     "defaults": {
       "workspace": "/root/.openclaw/workspace",
       "model": {
-        "primary": "openrouter/minimax/minimax-m2.1"
+        "primary": "${MODEL:-openrouter/minimax/minimax-m2.1}"
       }
     },
     "list": [
@@ -116,22 +117,30 @@ cat "$CONFIG_DIR/openclaw.json"
 WORKSPACE_DIR=/root/.openclaw/workspace
 mkdir -p "$WORKSPACE_DIR"
 
-# Fetch tlonbot prompts (requires TLONBOT_TOKEN for private repo)
-echo "==> Fetching tlonbot prompts..."
-TLONBOT_RAW="https://raw.githubusercontent.com/tloncorp/tlonbot/master/prompts"
-if [ -n "$TLONBOT_TOKEN" ]; then
-  echo "  (using TLONBOT_TOKEN for private repo access)"
+# Load tlonbot prompts - prefer mounted volume, fallback to GitHub fetch
+echo "==> Loading tlonbot prompts..."
+if [ -d "/workspace/tlonbot/prompts" ]; then
+  echo "  (using mounted tlonbot volume)"
+  for f in SOUL.md TOOLS.md BOOTSTRAP.md USER.md AGENTS.md; do
+    if [ -f "/workspace/tlonbot/prompts/$f" ]; then
+      cp "/workspace/tlonbot/prompts/$f" "$WORKSPACE_DIR/$f" && echo "  - $f" || echo "  - $f (failed)"
+    fi
+  done
+elif [ -n "$TLONBOT_TOKEN" ]; then
+  echo "  (fetching from GitHub with TLONBOT_TOKEN)"
+  TLONBOT_RAW="https://raw.githubusercontent.com/tloncorp/tlonbot/master/prompts"
   for f in SOUL.md TOOLS.md BOOTSTRAP.md USER.md AGENTS.md; do
     curl -fsSL -H "Authorization: token $TLONBOT_TOKEN" "$TLONBOT_RAW/$f" -o "$WORKSPACE_DIR/$f" 2>/dev/null && echo "  - $f" || echo "  - $f (failed)"
   done
 else
-  echo "  (no TLONBOT_TOKEN, trying public access)"
+  echo "  (no tlonbot mount or token, trying public GitHub access)"
+  TLONBOT_RAW="https://raw.githubusercontent.com/tloncorp/tlonbot/master/prompts"
   for f in SOUL.md TOOLS.md BOOTSTRAP.md USER.md AGENTS.md; do
     curl -fsSL "$TLONBOT_RAW/$f" -o "$WORKSPACE_DIR/$f" 2>/dev/null && echo "  - $f" || true
   done
 fi
 
-# Fallback SOUL.md if prompts weren't fetched
+# Fallback SOUL.md if prompts weren't loaded
 if [ ! -f "$WORKSPACE_DIR/SOUL.md" ]; then
   cat > "$WORKSPACE_DIR/SOUL.md" << 'EOFPROMPT'
 You are a test bot running integration tests.

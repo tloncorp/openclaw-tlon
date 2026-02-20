@@ -14,9 +14,12 @@ pnpm dev                    # Run dev environment (uses Docker)
 docker compose -f dev/docker-compose.yml up --build  # Full dev with hot-reload
 
 # Testing
-pnpm test                   # Run all tests with vitest
+pnpm test                   # Run unit tests (src/)
 pnpm test:watch             # Watch mode
 pnpm test:security          # Security tests only (src/security.test.ts)
+pnpm test:integration       # Run integration tests (starts ephemeral fakezod ships)
+pnpm test:integration:dev   # Run integration tests against running dev environment
+pnpm test:integration:watch # Watch mode for dev environment
 
 # Linting & Formatting
 pnpm lint                   # Type-aware lint with oxlint
