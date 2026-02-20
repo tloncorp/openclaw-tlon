@@ -6,6 +6,7 @@ import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 import { emptyPluginConfigSchema } from "openclaw/plugin-sdk";
 import { tlonPlugin } from "./src/channel.js";
 import { setTlonRuntime } from "./src/runtime.js";
+import { resolveTlonAccount } from "./src/types.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -92,11 +93,21 @@ function shellSplit(str: string): string[] {
 /**
  * Run the tlon command and return the result
  */
-function runTlonCommand(binary: string, args: string[]): Promise<string> {
+function runTlonCommand(
+  binary: string,
+  args: string[],
+  credentials?: { url: string; ship: string; code: string },
+): Promise<string> {
   return new Promise((resolve, reject) => {
-    const child = spawn(binary, args, {
-      env: process.env,
-    });
+    // Build environment with Tlon credentials if provided
+    const env = { ...process.env };
+    if (credentials) {
+      env.URBIT_URL = credentials.url;
+      env.URBIT_SHIP = credentials.ship;
+      env.URBIT_CODE = credentials.code;
+    }
+
+    const child = spawn(binary, args, { env });
 
     let stdout = "";
     let stderr = "";
@@ -135,6 +146,20 @@ const plugin = {
     // Register the tlon tool
     const tlonBinary = findTlonBinary();
     api.logger.info(`[tlon] Registering tlon tool, binary: ${tlonBinary}`);
+
+    // Capture credentials from config at registration time
+    const account = resolveTlonAccount(api.config);
+    const credentials =
+      account.configured && account.url && account.ship && account.code
+        ? { url: account.url, ship: account.ship, code: account.code }
+        : undefined;
+
+    if (credentials) {
+      api.logger.info(`[tlon] Credentials available for ${account.ship}`);
+    } else {
+      api.logger.warn(`[tlon] No credentials configured - tlon tool will rely on env vars`);
+    }
+
     api.registerTool({
       name: "tlon",
       label: "Tlon CLI",
@@ -171,7 +196,7 @@ const plugin = {
             };
           }
 
-          const output = await runTlonCommand(tlonBinary, args);
+          const output = await runTlonCommand(tlonBinary, args, credentials);
           return {
             content: [{ type: "text" as const, text: output }],
             details: undefined,
