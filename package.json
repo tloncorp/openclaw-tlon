@@ -19,7 +19,7 @@
   },
   "dependencies": {
     "@tloncorp/api": "github:tloncorp/api-beta#main",
-    "@tloncorp/tlon-skill": "0.1.10",
+    "@tloncorp/tlon-skill": "0.1.11",
     "@urbit/aura": "^3.0.0",
     "@urbit/http-api": "^3.0.0"
   },
