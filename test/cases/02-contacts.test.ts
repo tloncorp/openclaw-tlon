@@ -48,7 +48,7 @@ describe("contacts", () => {
     try {
       const dmPosts = await userState.channelPosts(botShip, 50);
       console.log(`Total posts in DM channel: ${(dmPosts ?? []).length}`);
-      
+
       const messages = (dmPosts ?? []).map((post) => {
         const p = post as {
           authorId?: string;
@@ -63,10 +63,10 @@ describe("contacts", () => {
           text: (textContent ?? "").slice(0, 500),
         };
       });
-      
+
       // Sort by time
       messages.sort((a, b) => (a.time > b.time ? 1 : -1));
-      
+
       console.log("\nMessage flow:");
       for (const msg of messages) {
         console.log(`[${msg.time}] ${msg.from}: ${msg.text}`);
@@ -78,9 +78,9 @@ describe("contacts", () => {
   });
 
   test("reads the bot ship profile", async () => {
-    const prompt = "Show your own profile details, including your ship.";
+    const prompt = "Show your own profile details, including your ship name.";
     console.log(`\n[TEST] Sending prompt: "${prompt}"`);
-    
+
     const response = await client.prompt(prompt);
     console.log(`[TEST] Response success: ${response.success}`);
     console.log(`[TEST] Response text: ${response.text?.slice(0, 300)}`);
@@ -90,13 +90,14 @@ describe("contacts", () => {
     }
     expect(response.text).toBeDefined();
     expect(response.text?.toLowerCase()).toContain(botShip.toLowerCase());
+    expect(response.text?.toLowerCase()).toContain("OpenClaw Bot".toLowerCase());
   });
 
   test("updates the bot profile status", async () => {
     const statusToken = `it-status-${Date.now().toString(36)}`;
     const prompt = `Update your own profile status to exactly "${statusToken}" and confirm when done.`;
     console.log(`\n[TEST] Sending prompt: "${prompt}"`);
-    
+
     const response = await client.prompt(prompt);
     console.log(`[TEST] Response success: ${response.success}`);
     console.log(`[TEST] Response text: ${response.text?.slice(0, 500)}`);
@@ -124,7 +125,7 @@ describe("contacts", () => {
     const bioToken = `openclaw-integration-bio-${Date.now().toString(36)}`;
     const prompt = `Update your own profile bio to exactly "${bioToken}" and confirm when done.`;
     console.log(`\n[TEST] Sending prompt: "${prompt}"`);
-    
+
     const response = await client.prompt(prompt);
     console.log(`[TEST] Response success: ${response.success}`);
     console.log(`[TEST] Response text: ${response.text?.slice(0, 500)}`);
