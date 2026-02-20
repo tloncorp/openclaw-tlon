@@ -10,7 +10,8 @@ echo "==> User: $(whoami)"
 echo "==> Working directory: $(pwd)"
 
 echo "==> Fixing plugin directory ownership..."
-chown -R root:root /workspace/openclaw-tlon
+# Exclude .git - on Linux, host-owned git objects can't be chowned by container root
+find /workspace/openclaw-tlon -not -path '*/.git/*' -exec chown root:root {} \; 2>/dev/null || true
 
 echo "==> Installing plugin dependencies..."
 cd /workspace/openclaw-tlon
