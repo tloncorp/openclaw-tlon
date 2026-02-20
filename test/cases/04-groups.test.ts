@@ -62,8 +62,7 @@ describe("groups", () => {
     expect(created).toBeTruthy();
   });
 
-  // Skip: adding a channel is broken because it uses trackedPokes
-  test.skip("adds a channel to an existing bot-owned group", async () => {
+  test("adds a channel to an existing bot-owned group", async () => {
     const channelName = `it-${Date.now().toString(36)}`;
     const channelTitle = `IT ${channelName}`;
     const prompt = `In group ${fixture.id}, add a new chat channel named "${channelName}" with title "${channelTitle}".`;
