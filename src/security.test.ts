@@ -241,6 +241,21 @@ describe("Security: Message Text Extraction", () => {
       expect(extractMessageText(content)).toContain("~zod");
     });
 
+    it("extracts ship mentions wrapped in bold", () => {
+      // Bold wrapping a ship name: **~sidwyn-nimnev-nocsyx-lassul/d4parq4f**
+      const content = [{ inline: [{ bold: [{ ship: "~sidwyn-nimnev-nocsyx-lassul" }, { ship: "/d4parq4f" }] }] }];
+      const result = extractMessageText(content);
+      expect(result).toContain("~sidwyn-nimnev-nocsyx-lassul");
+      expect(result).toContain("/d4parq4f");
+    });
+
+    it("extracts ship mentions wrapped in italics", () => {
+      // Italics wrapping a ship name: *~zod*
+      const content = [{ inline: [{ italics: [{ ship: "~zod" }] }] }];
+      const result = extractMessageText(content);
+      expect(result).toContain("~zod");
+    });
+
     it("handles malformed input safely", () => {
       expect(extractMessageText(null)).toBe("");
       expect(extractMessageText(undefined)).toBe("");

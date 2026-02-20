@@ -10,7 +10,7 @@ if [ -f .env ]; then
   set +a
 fi
 
-if [ -n "$TEST_GATEWAY_URL" ]; then
+if [ -n "${TEST_GATEWAY_URL:-}" ]; then
   GATEWAY_URL="$TEST_GATEWAY_URL"
 else
   GATEWAY_PORT="${OPENCLAW_GATEWAY_PORT:-18789}"
