@@ -146,6 +146,20 @@ const plugin = {
     // Register the tlon tool
     const tlonBinary = findTlonBinary();
     api.logger.info(`[tlon] Registering tlon tool, binary: ${tlonBinary}`);
+
+    // Capture credentials from config at registration time
+    const account = resolveTlonAccount(api.config);
+    const credentials =
+      account.configured && account.url && account.ship && account.code
+        ? { url: account.url, ship: account.ship, code: account.code }
+        : undefined;
+
+    if (credentials) {
+      api.logger.info(`[tlon] Credentials available for ${account.ship}`);
+    } else {
+      api.logger.warn(`[tlon] No credentials configured - tlon tool will rely on env vars`);
+    }
+
     api.registerTool({
       name: "tlon",
       label: "Tlon CLI",
@@ -164,7 +178,7 @@ const plugin = {
         },
         required: ["command"],
       },
-      async execute(_id: string, params: { command: string }, context) {
+      async execute(_id: string, params: { command: string }) {
         try {
           const args = shellSplit(params.command);
 
@@ -180,19 +194,6 @@ const plugin = {
               ],
               details: { error: true },
             };
-          }
-
-          // Get Tlon credentials from OpenClaw config
-          let credentials: { url: string; ship: string; code: string } | undefined;
-          if (context?.config) {
-            const account = resolveTlonAccount(context.config);
-            if (account.configured && account.url && account.ship && account.code) {
-              credentials = {
-                url: account.url,
-                ship: account.ship,
-                code: account.code,
-              };
-            }
           }
 
           const output = await runTlonCommand(tlonBinary, args, credentials);
