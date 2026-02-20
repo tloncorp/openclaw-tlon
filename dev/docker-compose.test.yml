@@ -48,7 +48,7 @@ services:
       - TLON_CODE=lidlut-tabwed-pillex-ridrup
       - TLON_DM_ALLOWLIST=~ten
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
-      - OPENCLAW_MODEL=openrouter/minimax/minimax-m2.1
+      - MODEL=${MODEL:-openrouter/minimax/minimax-m2.1}
       - TLONBOT_TOKEN=${TLONBOT_TOKEN}
     ports:
       - "${OPENCLAW_GATEWAY_PORT:-18789}:18789"

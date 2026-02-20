@@ -33,7 +33,7 @@ cat > "$CONFIG_DIR/openclaw.json" << EOF
     "defaults": {
       "workspace": "/root/.openclaw/workspace",
       "model": {
-        "primary": "openrouter/minimax/minimax-m2.1"
+        "primary": "${MODEL:-openrouter/minimax/minimax-m2.1}"
       }
     },
     "list": [
