@@ -283,10 +283,10 @@ interface ParsedWrit {
 
 function parseWrits(data: unknown): ParsedWrit[] {
   if (!data) return [];
-  
+
   // Handle various response formats
   let writs: unknown[] = [];
-  
+
   if (Array.isArray(data)) {
     writs = data;
   } else if (typeof data === "object" && data !== null) {
@@ -305,7 +305,7 @@ function parseWrits(data: unknown): ParsedWrit[] {
       const w = item as Record<string, unknown>;
       const memo = (w.memo ?? w) as Record<string, unknown>;
       const seal = w.seal as Record<string, unknown> | undefined;
-      
+
       return {
         author: String(memo?.author ?? "unknown"),
         content: extractPostText(memo?.content) ?? "",
