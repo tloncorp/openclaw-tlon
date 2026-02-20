@@ -6,6 +6,7 @@ import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 import { emptyPluginConfigSchema } from "openclaw/plugin-sdk";
 import { tlonPlugin } from "./src/channel.js";
 import { setTlonRuntime } from "./src/runtime.js";
+import { resolveTlonAccount } from "./src/types.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -92,11 +93,21 @@ function shellSplit(str: string): string[] {
 /**
  * Run the tlon command and return the result
  */
-function runTlonCommand(binary: string, args: string[]): Promise<string> {
+function runTlonCommand(
+  binary: string,
+  args: string[],
+  credentials?: { url: string; ship: string; code: string },
+): Promise<string> {
   return new Promise((resolve, reject) => {
-    const child = spawn(binary, args, {
-      env: process.env,
-    });
+    // Build environment with Tlon credentials if provided
+    const env = { ...process.env };
+    if (credentials) {
+      env.URBIT_URL = credentials.url;
+      env.URBIT_SHIP = credentials.ship;
+      env.URBIT_CODE = credentials.code;
+    }
+
+    const child = spawn(binary, args, { env });
 
     let stdout = "";
     let stderr = "";
@@ -153,7 +164,7 @@ const plugin = {
         },
         required: ["command"],
       },
-      async execute(_id: string, params: { command: string }) {
+      async execute(_id: string, params: { command: string }, context) {
         try {
           const args = shellSplit(params.command);
 
@@ -171,7 +182,20 @@ const plugin = {
             };
           }
 
-          const output = await runTlonCommand(tlonBinary, args);
+          // Get Tlon credentials from OpenClaw config
+          let credentials: { url: string; ship: string; code: string } | undefined;
+          if (context?.config) {
+            const account = resolveTlonAccount(context.config);
+            if (account.configured && account.url && account.ship && account.code) {
+              credentials = {
+                url: account.url,
+                ship: account.ship,
+                code: account.code,
+              };
+            }
+          }
+
+          const output = await runTlonCommand(tlonBinary, args, credentials);
           return {
             content: [{ type: "text" as const, text: output }],
             details: undefined,
