@@ -25,9 +25,4 @@ export {
 
 export { getTestConfig, type TestEnvConfig } from "./config.js";
 
-export {
-  ensureFixtureGroup,
-  pickAnyGroup,
-  waitFor,
-  type FixtureGroup,
-} from "./fixtures.js";
+export { waitFor, getFixtures, type TestFixtures } from "./fixtures.js";

@@ -799,11 +799,14 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     return normalizeShip(ship) === effectiveOwnerShip;
   }
 
+<<<<<<< HEAD
+=======
   /**
    * Extract the DM partner ship from the 'whom' field.
    * This is the canonical source for DM routing (more reliable than essay.author).
    * Returns empty string if whom doesn't contain a valid patp-like value.
    */
+>>>>>>> master
   function extractDmPartnerShip(whom: unknown): string {
     const raw =
       typeof whom === "string"
@@ -1115,6 +1118,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
               runtime.log?.(`[tlon] Now tracking thread for future replies: ${parentId}`);
             }
           } else {
+            runtime.log?.(`[tlon] Sending DM reply from ${botShipName} to ${senderShip}`);
             await sendDm({ api: api, fromShip: botShipName, toShip: senderShip, text: replyText });
           }
         },
@@ -1345,6 +1349,10 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       const senderShip = partnerShip || authorShip;
 
       // Ignore the bot's own outbound DM events.
+<<<<<<< HEAD
+      if (authorShip === botShipName) {return;}
+      if (!senderShip || senderShip === botShipName) {return;}
+=======
       if (authorShip === botShipName) {
         return;
       }
@@ -1353,6 +1361,13 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       }
 
       // Log mismatch between author and partner for debugging
+      if (authorShip && partnerShip && authorShip !== partnerShip) {
+        runtime.log?.(
+          `[tlon] DM ship mismatch (author=${authorShip}, partner=${partnerShip}) - routing to partner`,
+        );
+      }
+>>>>>>> master
+
       if (authorShip && partnerShip && authorShip !== partnerShip) {
         runtime.log?.(
           `[tlon] DM ship mismatch (author=${authorShip}, partner=${partnerShip}) - routing to partner`,
