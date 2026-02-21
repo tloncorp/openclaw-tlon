@@ -869,7 +869,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
 
           // Prepend thread context to the message
           // Include note about ongoing conversation for agent judgment
-          const contextNote = `[Thread conversation - ${threadHistory.length} previous replies. You are participating in this thread. Only respond if relevant or helpful - you don't need to reply to every message.]`;
+          const contextNote = `[Thread conversation - ${threadHistory.length} previous replies shown below for context. You MUST reply to the current message.]`;
           messageText = `${contextNote}\n\n[Previous messages]\n${threadContext}\n\n[Current message]\n${messageText}`;
           runtime?.log?.(
             `[tlon] Added thread context (${threadHistory.length} replies) to message`,
@@ -1066,6 +1066,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     });
 
     const dispatchStartTime = Date.now();
+    runtime.log?.(`[tlon] DISPATCH_START: sessionKey=${route.sessionKey} agentId=${route.agentId} parentId=${parentId} isThreadReply=${isThreadReply} ThreadId=${ctxPayload.ThreadId ?? "none"} ReplyToId=${ctxPayload.ReplyToId ?? "none"}`);
 
     const responsePrefix = core.channel.reply.resolveEffectiveMessagesConfig(
       cfg,
@@ -1081,6 +1082,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         humanDelay,
         deliver: async (payload: ReplyPayload) => {
           let replyText = payload.text;
+          runtime.log?.(`[tlon] DELIVER_CALLBACK: hasText=${Boolean(replyText)} parentId=${parentId ?? "none"} isGroup=${isGroup} channel=${groupChannel ?? "dm"}`);
           if (!replyText) {
             return;
           }
@@ -1101,6 +1103,8 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
             if (!parsed) {
               return;
             }
+            // Only reply in a thread if the incoming message was already in a thread
+            runtime.log?.(`[tlon] REPLY_THREAD: parentId=${parentId ?? "none"} messageId=${messageId} isThreadReply=${isThreadReply}`);
             await sendGroupMessage({
               api: api,
               fromShip: botShipName,
@@ -1115,7 +1119,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
               runtime.log?.(`[tlon] Now tracking thread for future replies: ${parentId}`);
             }
           } else {
-            await sendDm({ api: api, fromShip: botShipName, toShip: senderShip, text: replyText });
+            await sendDm({ api: api, fromShip: botShipName, toShip: senderShip, text: replyText, replyToId: parentId ?? undefined });
           }
         },
         onError: (err, info) => {
@@ -1126,6 +1130,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         },
       },
     });
+    runtime.log?.(`[tlon] DISPATCH_COMPLETE: duration=${Date.now() - dispatchStartTime}ms parentId=${parentId ?? "none"} isThreadReply=${isThreadReply}`);
   };
 
   // Track which channels we're interested in for filtering firehose events
@@ -1161,6 +1166,8 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       const isThreadReply = Boolean(memo);
       const messageId = isThreadReply ? response?.post?.["r-post"]?.reply?.id : response?.post?.id;
 
+      runtime.log?.(`[tlon] INCOMING: nest=${nest} messageId=${messageId} isThreadReply=${isThreadReply} essay=${Boolean(essay)} memo=${Boolean(memo)}`);
+
       if (!processedTracker.mark(messageId)) {
         return;
       }
@@ -1190,6 +1197,8 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         ? response?.post?.["r-post"]?.reply?.["r-reply"]?.set?.seal
         : response?.post?.["r-post"]?.set?.seal;
       const parentId = seal?.["parent-id"] || seal?.parent || null;
+
+      runtime.log?.(`[tlon] THREAD_INFO: parentId=${parentId} seal=${JSON.stringify(seal ?? null)}`);
 
       // Check if we should respond:
       // 1. Direct mention always triggers response
@@ -1243,6 +1252,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       }
 
       const parsed = parseChannelNest(nest);
+      runtime.log?.(`[tlon] PROCESS_MESSAGE: sender=${senderShip} nest=${nest} parentId=${parentId} isThreadReply=${isThreadReply} messageId=${messageId}`);
       await processMessage({
         messageId: messageId ?? "",
         senderShip,
@@ -1327,25 +1337,45 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       }
 
       const whom = event.whom; // DM partner ship or club ID
-      const messageId = event.id;
       const response = event.response;
+      // For DM thread replies, the event id is the parent — use the reply id for dedup
+      const dmReplyId = response?.reply?.id;
+      const messageId = dmReplyId ?? event.id;
 
-      // Handle add events (new messages)
+      // Handle add events (new messages) and reply events (DM thread replies)
       const essay = response?.add?.essay;
-      if (!essay) {
+      const dmReply = response?.reply;
+      runtime.log?.(`[tlon] DM_INCOMING: whom=${whom} messageId=${messageId} hasEssay=${Boolean(essay)} hasReply=${Boolean(dmReply)} responseKeys=${JSON.stringify(Object.keys(response ?? {}))}`);
+      runtime.log?.(`[tlon] DM_RAW_EVENT: ${JSON.stringify(event).substring(0, 500)}`);
+
+      // Extract memo from DM thread reply
+      // Structure: response.reply.delta.add.memo, parent is event.id (not the reply id)
+      const dmReplyMemo = dmReply?.delta?.add?.memo;
+      const dmReplyParentId = dmReply ? event.id : undefined;
+      const isDmThreadReply = Boolean(dmReplyMemo);
+      const dmContent = essay || dmReplyMemo;
+
+      if (isDmThreadReply) {
+        runtime.log?.(`[tlon] DM_THREAD_REPLY: parentId=${dmReplyParentId} replyKeys=${JSON.stringify(Object.keys(dmReply ?? {}))}`);
+      }
+
+      if (!dmContent) {
         return;
       }
 
       if (!processedTracker.mark(messageId)) {
+        runtime.log?.(`[tlon] DM_DUPLICATE: messageId=${messageId} already processed`);
         return;
       }
 
-      const authorShip = normalizeShip(essay.author ?? "");
+      const authorShip = normalizeShip(dmContent.author ?? "");
       const partnerShip = extractDmPartnerShip(whom);
       const senderShip = partnerShip || authorShip;
+      runtime.log?.(`[tlon] DM_SENDER: author=${authorShip} partner=${partnerShip} sender=${senderShip} bot=${botShipName} isDmThreadReply=${isDmThreadReply}`);
 
       // Ignore the bot's own outbound DM events.
       if (authorShip === botShipName) {
+        runtime.log?.(`[tlon] DM_SKIP: own message`);
         return;
       }
       if (!senderShip || senderShip === botShipName) {
@@ -1360,8 +1390,8 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       }
 
       // Resolve any cited/quoted messages first
-      const citedContent = await resolveAllCites(essay.content);
-      const rawText = extractMessageText(essay.content);
+      const citedContent = await resolveAllCites(dmContent.content);
+      const rawText = extractMessageText(dmContent.content);
       const messageText = citedContent + rawText;
       if (!messageText.trim()) {
         return;
@@ -1387,14 +1417,16 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
 
       // Owner is always allowed to DM (bypass allowlist)
       if (isOwner(senderShip)) {
-        runtime.log?.(`[tlon] Processing DM from owner ${senderShip}`);
+        runtime.log?.(`[tlon] Processing DM from owner ${senderShip} isDmThreadReply=${isDmThreadReply} parentId=${dmReplyParentId ?? "none"}`);
         await processMessage({
           messageId: messageId ?? "",
           senderShip,
           messageText,
-          messageContent: essay.content,
+          messageContent: dmContent.content,
           isGroup: false,
-          timestamp: essay.sent || Date.now(),
+          timestamp: dmContent.sent || Date.now(),
+          parentId: isDmThreadReply ? dmReplyParentId : undefined,
+          isThreadReply: isDmThreadReply,
         });
         return;
       }
@@ -1410,8 +1442,8 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
             originalMessage: {
               messageId: messageId ?? "",
               messageText,
-              messageContent: essay.content,
-              timestamp: essay.sent || Date.now(),
+              messageContent: dmContent.content,
+              timestamp: dmContent.sent || Date.now(),
             },
           });
           await queueApprovalRequest(approval);
@@ -1425,9 +1457,11 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         messageId: messageId ?? "",
         senderShip,
         messageText,
-        messageContent: essay.content, // Pass raw content for media extraction
+        messageContent: dmContent.content, // Pass raw content for media extraction
         isGroup: false,
-        timestamp: essay.sent || Date.now(),
+        timestamp: dmContent.sent || Date.now(),
+        parentId: isDmThreadReply ? dmReplyParentId : undefined,
+        isThreadReply: isDmThreadReply,
       });
     } catch (error: any) {
       runtime.error?.(

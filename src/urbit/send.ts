@@ -10,6 +10,7 @@ type SendTextParams = {
   fromShip: string;
   toShip: string;
   text: string;
+  replyToId?: string | null;
 };
 
 type SendStoryParams = {
@@ -17,18 +18,63 @@ type SendStoryParams = {
   fromShip: string;
   toShip: string;
   story: Story;
+  replyToId?: string | null;
 };
 
-export async function sendDm({ api, fromShip, toShip, text }: SendTextParams) {
+export async function sendDm({ api, fromShip, toShip, text, replyToId }: SendTextParams) {
   const story: Story = markdownToStory(text);
-  return sendDmWithStory({ api, fromShip, toShip, story });
+  return sendDmWithStory({ api, fromShip, toShip, story, replyToId });
 }
 
-export async function sendDmWithStory({ api, fromShip, toShip, story }: SendStoryParams) {
+export async function sendDmWithStory({ api, fromShip, toShip, story, replyToId }: SendStoryParams) {
   const sentAt = Date.now();
   const idUd = scot("ud", da.fromUnix(sentAt));
   const id = `${fromShip}/${idUd}`;
 
+  if (replyToId) {
+    // DM thread reply — based on @tloncorp/api sendReply implementation
+    // Mark: chat-dm-action-1 (not chat-dm-action)
+    // reply.id = new unique ID (author/time), diff.id = parent message key
+    const replyIdUd = scot("ud", da.fromUnix(sentAt));
+    const replyId = `${fromShip}/${replyIdUd}`;
+    console.log(`[tlon] DM_SEND_REPLY: parentId=${replyToId} replyId=${replyId} toShip=${toShip}`);
+    const delta = {
+      reply: {
+        id: replyId,
+        meta: null,
+        delta: {
+          add: {
+            memo: {
+              content: story,
+              author: fromShip,
+              sent: sentAt,
+            },
+            time: null,
+          },
+        },
+      },
+    };
+
+    const replyAction = {
+      ship: toShip,
+      diff: { id: replyToId, delta },
+    };
+
+    try {
+      await api.poke({
+        app: "chat",
+        mark: "chat-dm-action-1",
+        json: replyAction,
+      });
+    } catch (err) {
+      console.error(`[tlon] DM_REPLY_POKE_ERROR: ${String(err)}`);
+      throw err;
+    }
+
+    return { channel: "tlon", messageId: replyId };
+  }
+
+  // Regular top-level DM
   const delta = {
     add: {
       memo: {
@@ -46,11 +92,16 @@ export async function sendDmWithStory({ api, fromShip, toShip, story }: SendStor
     diff: { id, delta },
   };
 
-  await api.poke({
-    app: "chat",
-    mark: "chat-dm-action",
-    json: action,
-  });
+  try {
+    await api.poke({
+      app: "chat",
+      mark: "chat-dm-action",
+      json: action,
+    });
+  } catch (err) {
+    console.error(`[tlon] DM_POKE_ERROR: ${String(err)}`);
+    throw err;
+  }
 
   return { channel: "tlon", messageId: id };
 }
@@ -142,6 +193,7 @@ export async function sendGroupMessageWithStory({
     },
   };
 
+  console.log(`[tlon] SEND_POKE: nest=chat/${hostShip}/${channelName} replyToId=${replyToId ?? "none"} formattedReplyId=${formattedReplyId ?? "none"} isThreadReply=${Boolean(formattedReplyId)}`);
   await api.poke({
     app: "channels",
     mark: "channel-action-1",
