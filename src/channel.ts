@@ -407,6 +407,12 @@ export const tlonPlugin: ChannelPlugin = {
   },
   outbound: tlonOutbound,
   actions: tlonMessageActions,
+  threading: {
+    buildToolContext: ({ context }) => ({
+      currentChannelId: context.To?.trim() || undefined,
+      currentThreadTs: context.ReplyToId,
+    }),
+  },
   agentPrompt: {
     messageToolHints: ({ cfg, accountId }) => {
       const account = resolveTlonAccount(cfg, accountId ?? undefined);
@@ -418,6 +424,7 @@ export const tlonPlugin: ChannelPlugin = {
         "Tlon gallery channels (heap/~host/name) are for image posts.",
         "- To post to a gallery: use action=send, to=heap/~host/name, media=<imageUrl>, message=<caption>",
         "- To comment on a gallery post: use action=reply, to=heap/~host/name, messageId=<postId>, message=<comment>",
+        "- To react to a gallery comment: use action=react, to=heap/~host/name, messageId=<commentId>, parentId=<postId>, emoji=<emoji>",
         "- Gallery posts without images may not appear. Always include a media URL when creating new gallery posts.",
         "- IMPORTANT: To reply/comment, you MUST use action=reply (not action=send). The reply action requires messageId and message.",
       );

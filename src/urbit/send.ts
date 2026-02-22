@@ -197,6 +197,7 @@ type ChannelReactParams = {
   postId: string;
   react: string;
   nestPrefix?: string;
+  parentId?: string; // For reacting to a reply/comment (postId is the reply, parentId is the parent post)
 };
 
 function formatPostId(postId: string): string {
@@ -218,9 +219,39 @@ export async function addChannelReaction({
   postId,
   react,
   nestPrefix = "chat",
+  parentId,
 }: ChannelReactParams) {
   const nest = `${nestPrefix}/${hostShip}/${channelName}`;
   const formattedPostId = formatPostId(postId);
+
+  // Reacting to a reply/comment requires wrapping in post.reply structure
+  if (parentId) {
+    const formattedParentId = formatPostId(parentId);
+    await api.poke({
+      app: "channels",
+      mark: "channel-action-1",
+      json: {
+        channel: {
+          nest,
+          action: {
+            post: {
+              reply: {
+                id: formattedParentId,
+                action: {
+                  "add-react": {
+                    id: formattedPostId,
+                    react,
+                    ship: fromShip,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+    return;
+  }
 
   await api.poke({
     app: "channels",
@@ -249,9 +280,38 @@ export async function removeChannelReaction({
   channelName,
   postId,
   nestPrefix = "chat",
+  parentId,
 }: Omit<ChannelReactParams, "react">) {
   const nest = `${nestPrefix}/${hostShip}/${channelName}`;
   const formattedPostId = formatPostId(postId);
+
+  // Removing reaction from a reply/comment
+  if (parentId) {
+    const formattedParentId = formatPostId(parentId);
+    await api.poke({
+      app: "channels",
+      mark: "channel-action-1",
+      json: {
+        channel: {
+          nest,
+          action: {
+            post: {
+              reply: {
+                id: formattedParentId,
+                action: {
+                  "del-react": {
+                    id: formattedPostId,
+                    ship: fromShip,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+    return;
+  }
 
   await api.poke({
     app: "channels",

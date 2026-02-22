@@ -135,6 +135,11 @@ async function handleReact({
 
   // Channel or heap reaction
   const nestPrefix = parsed.kind === "heap" ? "heap" : "chat";
+  // For reply reactions: explicit parentId, or infer from thread context
+  const parentId =
+    readStringParam(params, "parentId") ??
+    (toolContext as { currentThreadTs?: string })?.currentThreadTs ??
+    undefined;
   if (remove) {
     await removeChannelReaction({
       api,
@@ -143,6 +148,7 @@ async function handleReact({
       channelName: parsed.channelName,
       postId: messageId,
       nestPrefix,
+      parentId,
     });
     return jsonResult({ ok: true, removed: true });
   }
@@ -154,6 +160,7 @@ async function handleReact({
     postId: messageId,
     react: emoji,
     nestPrefix,
+    parentId,
   });
   return jsonResult({ ok: true, added: emoji });
 }
