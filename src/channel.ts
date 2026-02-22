@@ -26,6 +26,7 @@ import {
   sendDmWithStory,
   sendGroupMessageWithStory,
   sendHeapPost,
+  commentOnHeapPost,
 } from "./urbit/send.js";
 import { uploadImageFromUrl } from "./urbit/upload.js";
 import { createHttpPokeApi } from "./urbit/http-poke.js";
@@ -146,6 +147,16 @@ const tlonOutbound: ChannelOutboundAdapter = {
       const replyId = (replyToId ?? threadId) ? String(replyToId ?? threadId) : undefined;
       if (parsed.kind === "heap") {
         const story = markdownToStory(text);
+        if (replyId) {
+          return await commentOnHeapPost({
+            api,
+            fromShip,
+            hostShip: parsed.hostShip,
+            channelName: parsed.channelName,
+            curioId: replyId,
+            story,
+          });
+        }
         return await sendHeapPost({
           api,
           fromShip,
@@ -212,6 +223,16 @@ const tlonOutbound: ChannelOutboundAdapter = {
       }
       const replyId = (replyToId ?? threadId) ? String(replyToId ?? threadId) : undefined;
       if (parsed.kind === "heap") {
+        if (replyId) {
+          return await commentOnHeapPost({
+            api,
+            fromShip,
+            hostShip: parsed.hostShip,
+            channelName: parsed.channelName,
+            curioId: replyId,
+            story,
+          });
+        }
         return await sendHeapPost({
           api,
           fromShip,
@@ -389,32 +410,49 @@ export const tlonPlugin: ChannelPlugin = {
   agentPrompt: {
     messageToolHints: ({ cfg, accountId }) => {
       const account = resolveTlonAccount(cfg, accountId ?? undefined);
-      const level = account.reactionLevel ?? "minimal";
-      if (level === "off" || level === "ack") return [];
-      if (level === "extensive") {
-        return [
-          "",
-          "Reactions are enabled for Tlon in EXTENSIVE mode.",
-          "Feel free to react liberally:",
-          "- Acknowledge messages with appropriate emojis",
-          "- Express sentiment and personality through reactions",
-          "- React to interesting content, humor, or notable events",
-          "- Use reactions to confirm understanding or agreement",
-          "- Use action=react with emoji, messageId, and target (channel nest or DM ship)",
-          "Guideline: react whenever it feels natural.",
-        ];
-      }
-      // minimal (default)
-      return [
+      const hints: string[] = [];
+
+      // Gallery/heap channel guidance
+      hints.push(
         "",
-        "Reactions are enabled for Tlon in MINIMAL mode.",
-        "React ONLY when truly relevant:",
-        "- Acknowledge important user requests or confirmations",
-        "- Express genuine sentiment (humor, appreciation) sparingly",
-        "- Avoid reacting to routine messages or your own replies",
-        "- Use action=react with emoji, messageId, and target (channel nest or DM ship)",
-        "Guideline: at most 1 reaction per 5-10 exchanges.",
-      ];
+        "Tlon gallery channels (heap/~host/name) are for image posts.",
+        "- To post to a gallery: use action=send, to=heap/~host/name, media=<imageUrl>, message=<caption>",
+        "- To comment on a gallery post: use action=reply, to=heap/~host/name, messageId=<postId>, message=<comment>",
+        "- Gallery posts without images may not appear. Always include a media URL when creating new gallery posts.",
+        "- IMPORTANT: To reply/comment, you MUST use action=reply (not action=send). The reply action requires messageId and message.",
+      );
+
+      // Reaction guidance
+      const level = account.reactionLevel ?? "minimal";
+      if (level !== "off" && level !== "ack") {
+        if (level === "extensive") {
+          hints.push(
+            "",
+            "Reactions are enabled for Tlon in EXTENSIVE mode.",
+            "Feel free to react liberally:",
+            "- Acknowledge messages with appropriate emojis",
+            "- Express sentiment and personality through reactions",
+            "- React to interesting content, humor, or notable events",
+            "- Use reactions to confirm understanding or agreement",
+            "- Use action=react with emoji, messageId, and target (channel nest or DM ship)",
+            "Guideline: react whenever it feels natural.",
+          );
+        } else {
+          // minimal (default)
+          hints.push(
+            "",
+            "Reactions are enabled for Tlon in MINIMAL mode.",
+            "React ONLY when truly relevant:",
+            "- Acknowledge important user requests or confirmations",
+            "- Express genuine sentiment (humor, appreciation) sparingly",
+            "- Avoid reacting to routine messages or your own replies",
+            "- Use action=react with emoji, messageId, and target (channel nest or DM ship)",
+            "Guideline: at most 1 reaction per 5-10 exchanges.",
+          );
+        }
+      }
+
+      return hints;
     },
   },
   status: {

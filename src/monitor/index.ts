@@ -7,7 +7,8 @@ import { resolveTlonAccount } from "../types.js";
 import { authenticate } from "../urbit/auth.js";
 import { ssrfPolicyFromAllowPrivateNetwork } from "../urbit/context.js";
 import type { Foreigns, DmInvite } from "../urbit/foreigns.js";
-import { sendDm, sendGroupMessage } from "../urbit/send.js";
+import { sendDm, sendGroupMessage, commentOnHeapPost } from "../urbit/send.js";
+import { markdownToStory } from "../urbit/story.js";
 import { UrbitSSEClient } from "../urbit/sse-client.js";
 import {
   type PendingApproval,
@@ -1101,14 +1102,27 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
             if (!parsed) {
               return;
             }
-            await sendGroupMessage({
-              api: api,
-              fromShip: botShipName,
-              hostShip: parsed.hostShip,
-              channelName: parsed.channelName,
-              text: replyText,
-              replyToId: parentId ?? undefined,
-            });
+            // Heap channels: reply as a comment on the parent post
+            if (groupChannel.startsWith("heap/") && parentId) {
+              const story = markdownToStory(replyText);
+              await commentOnHeapPost({
+                api: api,
+                fromShip: botShipName,
+                hostShip: parsed.hostShip,
+                channelName: parsed.channelName,
+                curioId: String(parentId),
+                story,
+              });
+            } else {
+              await sendGroupMessage({
+                api: api,
+                fromShip: botShipName,
+                hostShip: parsed.hostShip,
+                channelName: parsed.channelName,
+                text: replyText,
+                replyToId: parentId ?? undefined,
+              });
+            }
             // Track thread participation for future replies without mention
             if (parentId) {
               participatedThreads.add(String(parentId));
@@ -1192,7 +1206,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         return;
       }
 
-      const senderShip = normalizeShip(content.author ?? "");
+      const senderShip = normalizeShip(content?.author ?? "");
       if (!senderShip || senderShip === botShipName) {
         return;
       }
@@ -1406,7 +1420,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         return;
       }
 
-      const authorShip = normalizeShip(essay.author ?? "");
+      const authorShip = normalizeShip(dmContent?.author ?? "");
       const partnerShip = extractDmPartnerShip(whom);
       const senderShip = partnerShip || authorShip;
 
@@ -1426,8 +1440,8 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       }
 
       // Resolve any cited/quoted messages first
-      const citedContent = await resolveAllCites(essay.content);
-      const rawText = extractMessageText(essay.content);
+      const citedContent = await resolveAllCites(dmContent.content);
+      const rawText = extractMessageText(dmContent.content);
       const messageText = citedContent + rawText;
       if (!messageText.trim()) {
         return;
@@ -1458,9 +1472,9 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
           messageId: messageId ?? "",
           senderShip,
           messageText,
-          messageContent: essay.content,
+          messageContent: dmContent.content,
           isGroup: false,
-          timestamp: essay.sent || Date.now(),
+          timestamp: dmContent.sent || Date.now(),
         });
         return;
       }
@@ -1476,8 +1490,8 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
             originalMessage: {
               messageId: messageId ?? "",
               messageText,
-              messageContent: essay.content,
-              timestamp: essay.sent || Date.now(),
+              messageContent: dmContent.content,
+              timestamp: dmContent.sent || Date.now(),
             },
           });
           await queueApprovalRequest(approval);
@@ -1491,9 +1505,9 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         messageId: messageId ?? "",
         senderShip,
         messageText,
-        messageContent: essay.content, // Pass raw content for media extraction
+        messageContent: dmContent.content, // Pass raw content for media extraction
         isGroup: false,
-        timestamp: essay.sent || Date.now(),
+        timestamp: dmContent.sent || Date.now(),
       });
     } catch (error: any) {
       runtime.error?.(

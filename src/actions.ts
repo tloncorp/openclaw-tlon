@@ -15,9 +15,12 @@ import {
   addDmReaction,
   removeDmReaction,
   deleteHeapPost,
+  commentOnHeapPost,
+  sendGroupMessage,
 } from "./urbit/send.js";
+import { markdownToStory } from "./urbit/story.js";
 
-const SUPPORTED_ACTIONS = new Set<ChannelMessageActionName>(["react", "delete"]);
+const SUPPORTED_ACTIONS = new Set<ChannelMessageActionName>(["react", "delete", "reply"]);
 
 export const tlonMessageActions: ChannelMessageActionAdapter = {
   listActions: ({ cfg }) => {
@@ -31,6 +34,7 @@ export const tlonMessageActions: ChannelMessageActionAdapter = {
     const actions: ChannelMessageActionName[] = [];
     if (gate("reactions")) actions.push("react");
     if (gate("delete")) actions.push("delete");
+    if (gate("reply")) actions.push("reply");
     return actions;
   },
 
@@ -65,6 +69,10 @@ export const tlonMessageActions: ChannelMessageActionAdapter = {
 
       if (action === "delete") {
         return await handleDelete({ params, api, toolContext });
+      }
+
+      if (action === "reply") {
+        return await handleReply({ params, api, fromShip, toolContext });
       }
 
       throw new Error(`Tlon action "${action}" is not supported.`);
@@ -189,4 +197,71 @@ async function handleDelete({
   });
 
   return jsonResult({ ok: true, deleted: messageId });
+}
+
+async function handleReply({
+  params,
+  api,
+  fromShip,
+  toolContext,
+}: {
+  params: Record<string, unknown>;
+  api: { poke: (p: { app: string; mark: string; json: unknown }) => Promise<unknown>; delete: () => Promise<void> };
+  fromShip: string;
+  toolContext?: { currentChannelId?: string };
+}) {
+  const messageId = readStringParam(params, "messageId");
+  if (!messageId) {
+    throw new Error(
+      "Tlon reply requires messageId parameter (the ID of the post to reply to).",
+    );
+  }
+
+  const message = readStringParam(params, "message");
+  if (!message) {
+    throw new Error("Tlon reply requires message parameter (the reply text).");
+  }
+
+  const to =
+    readStringParam(params, "target") ??
+    readStringParam(params, "to") ??
+    toolContext?.currentChannelId;
+  if (!to) {
+    throw new Error("Tlon reply requires 'to' parameter (target channel).");
+  }
+
+  const parsed = parseTlonTarget(to);
+  if (!parsed) {
+    throw new Error(`Invalid Tlon target: ${to}`);
+  }
+
+  const story = markdownToStory(message);
+
+  if (parsed.kind === "heap") {
+    await commentOnHeapPost({
+      api,
+      fromShip,
+      hostShip: parsed.hostShip,
+      channelName: parsed.channelName,
+      curioId: messageId,
+      story,
+    });
+    return jsonResult({ ok: true, replied: messageId, target: to });
+  }
+
+  if (parsed.kind === "channel") {
+    await sendGroupMessage({
+      api,
+      fromShip,
+      hostShip: parsed.hostShip,
+      channelName: parsed.channelName,
+      text: message,
+      replyToId: messageId,
+    });
+    return jsonResult({ ok: true, replied: messageId, target: to });
+  }
+
+  throw new Error(
+    "Tlon reply action is supported for channel and heap targets. For DMs, use action=send with replyTo.",
+  );
 }

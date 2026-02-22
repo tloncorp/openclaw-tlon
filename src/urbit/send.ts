@@ -366,7 +366,6 @@ export async function sendHeapPost({
     },
   };
 
-  console.log(`[tlon] HEAP_SEND: nest=${nest} title=${title ?? "none"}`);
   await api.poke({
     app: "channels",
     mark: "channel-action-1",
@@ -417,7 +416,6 @@ export async function commentOnHeapPost({
     },
   };
 
-  console.log(`[tlon] HEAP_COMMENT: nest=${nest} curioId=${curioId}`);
   await api.poke({
     app: "channels",
     mark: "channel-action-1",
@@ -456,7 +454,6 @@ export async function deleteHeapPost({
     },
   };
 
-  console.log(`[tlon] HEAP_DELETE: nest=${nest} curioId=${curioId}`);
   await api.poke({
     app: "channels",
     mark: "channel-action-1",
