@@ -1,9 +1,10 @@
 export type TlonTarget =
   | { kind: "dm"; ship: string }
-  | { kind: "group"; nest: string; hostShip: string; channelName: string };
+  | { kind: "group"; nest: string; hostShip: string; channelName: string }
+  | { kind: "heap"; nest: string; hostShip: string; channelName: string };
 
 const SHIP_RE = /^~?[a-z-]+$/i;
-const NEST_RE = /^chat\/([^/]+)\/([^/]+)$/i;
+const NEST_RE = /^(chat|heap)\/([^/]+)\/([^/]+)$/i;
 
 export function normalizeShip(raw: string): string {
   const trimmed = raw.trim();
@@ -13,14 +14,26 @@ export function normalizeShip(raw: string): string {
   return trimmed.startsWith("~") ? trimmed : `~${trimmed}`;
 }
 
-export function parseChannelNest(raw: string): { hostShip: string; channelName: string } | null {
+export function parseNest(
+  raw: string,
+): { nestPrefix: string; hostShip: string; channelName: string } | null {
   const match = NEST_RE.exec(raw.trim());
   if (!match) {
     return null;
   }
-  const hostShip = normalizeShip(match[1]);
-  const channelName = match[2];
-  return { hostShip, channelName };
+  return {
+    nestPrefix: match[1].toLowerCase(),
+    hostShip: normalizeShip(match[2]),
+    channelName: match[3],
+  };
+}
+
+export function parseChannelNest(raw: string): { hostShip: string; channelName: string } | null {
+  const result = parseNest(raw);
+  if (!result) {
+    return null;
+  }
+  return { hostShip: result.hostShip, channelName: result.channelName };
 }
 
 export function parseTlonTarget(raw?: string | null): TlonTarget | null {
@@ -38,16 +51,14 @@ export function parseTlonTarget(raw?: string | null): TlonTarget | null {
   const groupPrefix = withoutPrefix.match(/^(group|room)[/:](.+)$/i);
   if (groupPrefix) {
     const groupTarget = groupPrefix[2].trim();
-    if (groupTarget.startsWith("chat/")) {
-      const parsed = parseChannelNest(groupTarget);
-      if (!parsed) {
-        return null;
-      }
+    const parsedNest = parseNest(groupTarget);
+    if (parsedNest) {
+      const kind = parsedNest.nestPrefix === "heap" ? "heap" as const : "group" as const;
       return {
-        kind: "group",
-        nest: `chat/${parsed.hostShip}/${parsed.channelName}`,
-        hostShip: parsed.hostShip,
-        channelName: parsed.channelName,
+        kind,
+        nest: `${parsedNest.nestPrefix}/${parsedNest.hostShip}/${parsedNest.channelName}`,
+        hostShip: parsedNest.hostShip,
+        channelName: parsedNest.channelName,
       };
     }
     const parts = groupTarget.split("/");
@@ -62,6 +73,19 @@ export function parseTlonTarget(raw?: string | null): TlonTarget | null {
       };
     }
     return null;
+  }
+
+  if (withoutPrefix.startsWith("heap/")) {
+    const parsed = parseNest(withoutPrefix);
+    if (!parsed) {
+      return null;
+    }
+    return {
+      kind: "heap",
+      nest: `heap/${parsed.hostShip}/${parsed.channelName}`,
+      hostShip: parsed.hostShip,
+      channelName: parsed.channelName,
+    };
   }
 
   if (withoutPrefix.startsWith("chat/")) {
@@ -85,5 +109,5 @@ export function parseTlonTarget(raw?: string | null): TlonTarget | null {
 }
 
 export function formatTargetHint(): string {
-  return "dm/~sampel-palnet | ~sampel-palnet | chat/~host-ship/channel | group:~host-ship/channel";
+  return "dm/~sampel-palnet | ~sampel-palnet | chat/~host-ship/channel | heap/~host-ship/channel | group:~host-ship/channel";
 }

@@ -1150,6 +1150,33 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         return;
       }
 
+      // Handle reaction events
+      const reacts = response?.post?.["r-post"]?.reacts;
+      if (reacts && typeof reacts === "object") {
+        const postId = response?.post?.id ?? "unknown";
+        for (const [reactShip, reactEmoji] of Object.entries(reacts as Record<string, string>)) {
+          const ship = normalizeShip(reactShip);
+          if (!ship || ship === botShipName) continue;
+          try {
+            const route = core.channel.routing.resolveAgentRoute({
+              cfg,
+              channel: "tlon",
+              accountId: opts.accountId ?? undefined,
+              peer: { kind: "group", id: nest },
+            });
+            const eventText = `Tlon reaction in ${nest}: ${reactEmoji} by ${ship} on post ${postId}`;
+            core.system.enqueueSystemEvent(eventText, {
+              sessionKey: route.sessionKey,
+              contextKey: `tlon:reaction:${nest}:${postId}:${reactEmoji}:${ship}`,
+            });
+            runtime.log?.(`[tlon] REACTION: ${eventText}`);
+          } catch (err: any) {
+            runtime.error?.(`[tlon] Error handling reaction: ${err?.message ?? String(err)}`);
+          }
+        }
+        return;
+      }
+
       // Handle post responses (new posts and replies)
       const essay = response?.post?.["r-post"]?.set?.essay;
       const memo = response?.post?.["r-post"]?.reply?.["r-reply"]?.set?.memo;
@@ -1332,7 +1359,46 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
 
       // Handle add events (new messages)
       const essay = response?.add?.essay;
-      if (!essay) {
+      const dmReply = response?.reply;
+
+      // Handle DM reaction events
+      const dmAddReact = response?.["add-react"];
+      const dmDelReact = response?.["del-react"];
+      if (dmAddReact || dmDelReact) {
+        const isAdd = Boolean(dmAddReact);
+        const reactData = dmAddReact || dmDelReact;
+        const reactAuthor = normalizeShip(reactData?.author ?? reactData?.ship ?? "");
+        const reactEmoji = reactData?.react ?? "";
+        if (reactAuthor && reactAuthor !== botShipName) {
+          try {
+            const partnerShip = extractDmPartnerShip(whom);
+            const route = core.channel.routing.resolveAgentRoute({
+              cfg,
+              channel: "tlon",
+              accountId: opts.accountId ?? undefined,
+              peer: { kind: "direct", id: partnerShip || reactAuthor },
+            });
+            const action = isAdd ? "added" : "removed";
+            const eventText = `Tlon DM reaction ${action}: ${reactEmoji} by ${reactAuthor} on message ${messageId}`;
+            core.system.enqueueSystemEvent(eventText, {
+              sessionKey: route.sessionKey,
+              contextKey: `tlon:dm-reaction:${messageId}:${reactEmoji}:${reactAuthor}:${action}`,
+            });
+            runtime.log?.(`[tlon] DM_REACTION: ${eventText}`);
+          } catch (err: any) {
+            runtime.error?.(`[tlon] Error handling DM reaction: ${err?.message ?? String(err)}`);
+          }
+        }
+        return;
+      }
+
+      // Extract memo from DM thread reply
+      const dmReplyMemo = dmReply?.delta?.add?.memo;
+      const dmReplyParentId = dmReply ? event.id : undefined;
+      const isDmThreadReply = Boolean(dmReplyMemo);
+      const dmContent = essay || dmReplyMemo;
+
+      if (!dmContent) {
         return;
       }
 
@@ -1606,8 +1672,8 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
               if (event.channels && typeof event.channels === "object") {
                 const channels = event.channels as Record<string, any>;
                 for (const [channelNest, _channelData] of Object.entries(channels)) {
-                  // Only monitor chat channels
-                  if (!channelNest.startsWith("chat/")) {
+                  // Only monitor chat and heap channels
+                  if (!channelNest.startsWith("chat/") && !channelNest.startsWith("heap/")) {
                     continue;
                   }
 
@@ -1654,7 +1720,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
                 const join = event.join as { group?: string; channels?: string[] };
                 if (join.channels) {
                   for (const channelNest of join.channels) {
-                    if (!channelNest.startsWith("chat/")) {
+                    if (!channelNest.startsWith("chat/") && !channelNest.startsWith("heap/")) {
                       continue;
                     }
                     if (!watchedChannels.has(channelNest)) {

@@ -186,3 +186,282 @@ export function buildMediaStory(text: string | undefined, mediaUrl: string | und
 
   return story.length > 0 ? story : [{ inline: [""] }];
 }
+
+// --- Reactions ---
+
+type ChannelReactParams = {
+  api: TlonPokeApi;
+  fromShip: string;
+  hostShip: string;
+  channelName: string;
+  postId: string;
+  react: string;
+  nestPrefix?: string;
+};
+
+function formatPostId(postId: string): string {
+  if (/^\d+$/.test(postId)) {
+    try {
+      return scot("ud", BigInt(postId));
+    } catch {
+      // fall through
+    }
+  }
+  return postId;
+}
+
+export async function addChannelReaction({
+  api,
+  fromShip,
+  hostShip,
+  channelName,
+  postId,
+  react,
+  nestPrefix = "chat",
+}: ChannelReactParams) {
+  const nest = `${nestPrefix}/${hostShip}/${channelName}`;
+  const formattedPostId = formatPostId(postId);
+
+  await api.poke({
+    app: "channels",
+    mark: "channel-action-1",
+    json: {
+      channel: {
+        nest,
+        action: {
+          post: {
+            "add-react": {
+              id: formattedPostId,
+              react,
+              ship: fromShip,
+            },
+          },
+        },
+      },
+    },
+  });
+}
+
+export async function removeChannelReaction({
+  api,
+  fromShip,
+  hostShip,
+  channelName,
+  postId,
+  nestPrefix = "chat",
+}: Omit<ChannelReactParams, "react">) {
+  const nest = `${nestPrefix}/${hostShip}/${channelName}`;
+  const formattedPostId = formatPostId(postId);
+
+  await api.poke({
+    app: "channels",
+    mark: "channel-action-1",
+    json: {
+      channel: {
+        nest,
+        action: {
+          post: {
+            "del-react": {
+              id: formattedPostId,
+              ship: fromShip,
+            },
+          },
+        },
+      },
+    },
+  });
+}
+
+type DmReactParams = {
+  api: TlonPokeApi;
+  fromShip: string;
+  toShip: string;
+  messageId: string;
+  react: string;
+};
+
+export async function addDmReaction({
+  api,
+  fromShip,
+  toShip,
+  messageId,
+  react,
+}: DmReactParams) {
+  await api.poke({
+    app: "chat",
+    mark: "chat-dm-action-1",
+    json: {
+      ship: toShip,
+      diff: {
+        id: messageId,
+        delta: {
+          "add-react": {
+            react,
+            author: fromShip,
+          },
+        },
+      },
+    },
+  });
+}
+
+export async function removeDmReaction({
+  api,
+  fromShip,
+  toShip,
+  messageId,
+}: Omit<DmReactParams, "react">) {
+  await api.poke({
+    app: "chat",
+    mark: "chat-dm-action-1",
+    json: {
+      ship: toShip,
+      diff: {
+        id: messageId,
+        delta: {
+          "del-react": fromShip,
+        },
+      },
+    },
+  });
+}
+
+// --- Heap/Gallery ---
+
+type SendHeapPostParams = {
+  api: TlonPokeApi;
+  fromShip: string;
+  hostShip: string;
+  channelName: string;
+  story: Story;
+  title?: string;
+};
+
+export async function sendHeapPost({
+  api,
+  fromShip,
+  hostShip,
+  channelName,
+  story,
+  title,
+}: SendHeapPostParams) {
+  const sentAt = Date.now();
+  const nest = `heap/${hostShip}/${channelName}`;
+
+  const action = {
+    channel: {
+      nest,
+      action: {
+        post: {
+          add: {
+            content: story,
+            author: fromShip,
+            sent: sentAt,
+            kind: "/heap",
+            blob: null,
+            meta: title ? { title } : null,
+          },
+        },
+      },
+    },
+  };
+
+  console.log(`[tlon] HEAP_SEND: nest=${nest} title=${title ?? "none"}`);
+  await api.poke({
+    app: "channels",
+    mark: "channel-action-1",
+    json: action,
+  });
+
+  return { channel: "tlon", messageId: `${fromShip}/${sentAt}` };
+}
+
+type HeapCommentParams = {
+  api: TlonPokeApi;
+  fromShip: string;
+  hostShip: string;
+  channelName: string;
+  curioId: string;
+  story: Story;
+};
+
+export async function commentOnHeapPost({
+  api,
+  fromShip,
+  hostShip,
+  channelName,
+  curioId,
+  story,
+}: HeapCommentParams) {
+  const sentAt = Date.now();
+  const nest = `heap/${hostShip}/${channelName}`;
+  const formattedCurioId = formatPostId(curioId);
+
+  const action = {
+    channel: {
+      nest,
+      action: {
+        post: {
+          reply: {
+            id: formattedCurioId,
+            action: {
+              add: {
+                content: story,
+                author: fromShip,
+                sent: sentAt,
+              },
+            },
+          },
+        },
+      },
+    },
+  };
+
+  console.log(`[tlon] HEAP_COMMENT: nest=${nest} curioId=${curioId}`);
+  await api.poke({
+    app: "channels",
+    mark: "channel-action-1",
+    json: action,
+  });
+
+  return { channel: "tlon", messageId: `${fromShip}/${sentAt}` };
+}
+
+type DeleteHeapPostParams = {
+  api: TlonPokeApi;
+  hostShip: string;
+  channelName: string;
+  curioId: string;
+};
+
+export async function deleteHeapPost({
+  api,
+  hostShip,
+  channelName,
+  curioId,
+}: DeleteHeapPostParams) {
+  const nest = `heap/${hostShip}/${channelName}`;
+  const formattedCurioId = formatPostId(curioId);
+
+  const action = {
+    channel: {
+      nest,
+      action: {
+        post: {
+          del: {
+            id: formattedCurioId,
+          },
+        },
+      },
+    },
+  };
+
+  console.log(`[tlon] HEAP_DELETE: nest=${nest} curioId=${curioId}`);
+  await api.poke({
+    app: "channels",
+    mark: "channel-action-1",
+    json: action,
+  });
+
+  return { ok: true };
+}

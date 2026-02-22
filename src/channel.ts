@@ -25,55 +25,12 @@ import {
   sendGroupMessage,
   sendDmWithStory,
   sendGroupMessageWithStory,
+  sendHeapPost,
 } from "./urbit/send.js";
 import { uploadImageFromUrl } from "./urbit/upload.js";
-
-// Simple HTTP-only poke that doesn't open an EventSource (avoids conflict with monitor's SSE)
-async function createHttpPokeApi(params: {
-  url: string;
-  code: string;
-  ship: string;
-  allowPrivateNetwork?: boolean;
-}) {
-  const ssrfPolicy = ssrfPolicyFromAllowPrivateNetwork(params.allowPrivateNetwork);
-  const cookie = await authenticate(params.url, params.code, { ssrfPolicy });
-  const channelId = `${Math.floor(Date.now() / 1000)}-${Math.random().toString(36).substring(2, 8)}`;
-  const channelUrl = `${params.url}/~/channel/${channelId}`;
-  const shipName = params.ship.replace(/^~/, "");
-
-  return {
-    poke: async (pokeParams: { app: string; mark: string; json: unknown }) => {
-      const pokeId = Date.now();
-      const pokeData = {
-        id: pokeId,
-        action: "poke",
-        ship: shipName,
-        app: pokeParams.app,
-        mark: pokeParams.mark,
-        json: pokeParams.json,
-      };
-
-      const response = await fetch(channelUrl, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-          Cookie: cookie.split(";")[0],
-        },
-        body: JSON.stringify([pokeData]),
-      });
-
-      if (!response.ok && response.status !== 204) {
-        const errorText = await response.text();
-        throw new Error(`Poke failed: ${response.status} - ${errorText}`);
-      }
-
-      return pokeId;
-    },
-    delete: async () => {
-      // No-op for HTTP-only client
-    },
-  };
-}
+import { createHttpPokeApi } from "./urbit/http-poke.js";
+import { tlonMessageActions } from "./actions.js";
+import { markdownToStory } from "./urbit/story.js";
 
 const TLON_CHANNEL_ID = "tlon" as const;
 
@@ -187,6 +144,16 @@ const tlonOutbound: ChannelOutboundAdapter = {
         });
       }
       const replyId = (replyToId ?? threadId) ? String(replyToId ?? threadId) : undefined;
+      if (parsed.kind === "heap") {
+        const story = markdownToStory(text);
+        return await sendHeapPost({
+          api,
+          fromShip,
+          hostShip: parsed.hostShip,
+          channelName: parsed.channelName,
+          story,
+        });
+      }
       return await sendGroupMessage({
         api,
         fromShip,
@@ -244,6 +211,15 @@ const tlonOutbound: ChannelOutboundAdapter = {
         });
       }
       const replyId = (replyToId ?? threadId) ? String(replyToId ?? threadId) : undefined;
+      if (parsed.kind === "heap") {
+        return await sendHeapPost({
+          api,
+          fromShip,
+          hostShip: parsed.hostShip,
+          channelName: parsed.channelName,
+          story,
+        });
+      }
       return await sendGroupMessageWithStory({
         api,
         fromShip,
@@ -279,6 +255,7 @@ export const tlonPlugin: ChannelPlugin = {
     media: true,
     reply: true,
     threads: true,
+    reactions: true,
   },
   onboarding: tlonOnboardingAdapter,
   reload: { configPrefixes: ["channels.tlon"] },
@@ -408,6 +385,38 @@ export const tlonPlugin: ChannelPlugin = {
     },
   },
   outbound: tlonOutbound,
+  actions: tlonMessageActions,
+  agentPrompt: {
+    messageToolHints: ({ cfg, accountId }) => {
+      const account = resolveTlonAccount(cfg, accountId ?? undefined);
+      const level = account.reactionLevel ?? "minimal";
+      if (level === "off" || level === "ack") return [];
+      if (level === "extensive") {
+        return [
+          "",
+          "Reactions are enabled for Tlon in EXTENSIVE mode.",
+          "Feel free to react liberally:",
+          "- Acknowledge messages with appropriate emojis",
+          "- Express sentiment and personality through reactions",
+          "- React to interesting content, humor, or notable events",
+          "- Use reactions to confirm understanding or agreement",
+          "- Use action=react with emoji, messageId, and target (channel nest or DM ship)",
+          "Guideline: react whenever it feels natural.",
+        ];
+      }
+      // minimal (default)
+      return [
+        "",
+        "Reactions are enabled for Tlon in MINIMAL mode.",
+        "React ONLY when truly relevant:",
+        "- Acknowledge important user requests or confirmations",
+        "- Express genuine sentiment (humor, appreciation) sparingly",
+        "- Avoid reacting to routine messages or your own replies",
+        "- Use action=react with emoji, messageId, and target (channel nest or DM ship)",
+        "Guideline: at most 1 reaction per 5-10 exchanges.",
+      ];
+    },
+  },
   status: {
     defaultRuntime: {
       accountId: "default",
