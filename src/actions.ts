@@ -34,7 +34,6 @@ export const tlonMessageActions: ChannelMessageActionAdapter = {
     const actions: ChannelMessageActionName[] = [];
     if (gate("reactions")) actions.push("react");
     if (gate("delete")) actions.push("delete");
-    if (gate("reply")) actions.push("reply");
     return actions;
   },
 
