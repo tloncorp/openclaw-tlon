@@ -844,10 +844,12 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     const groupChannel = channelNest; // For compatibility
     let messageText = params.messageText;
 
-    // Track owner interaction timestamp for heartbeat engagement recovery
+    // Track owner interaction timestamp for heartbeat engagement recovery.
+    // Store both epoch ms (for code) and ISO date (for LLM — models can't reliably convert epoch).
     if (isOwner(senderShip)) {
-      api
-        .poke({
+      const isoDate = new Date(timestamp).toISOString().split("T")[0]; // YYYY-MM-DD
+      Promise.all([
+        api.poke({
           app: "settings",
           mark: "settings-event",
           json: {
@@ -858,9 +860,22 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
               value: timestamp,
             },
           },
-        })
+        }),
+        api.poke({
+          app: "settings",
+          mark: "settings-event",
+          json: {
+            "put-entry": {
+              desk: "moltbot",
+              "bucket-key": "tlon",
+              "entry-key": "lastOwnerMessageDate",
+              value: isoDate,
+            },
+          },
+        }),
+      ])
         .then(() => {
-          runtime.log?.(`[tlon] Updated lastOwnerMessageAt: ${timestamp}`);
+          runtime.log?.(`[tlon] Updated lastOwnerMessageAt: ${timestamp} (${isoDate})`);
         })
         .catch((err) => {
           runtime.error?.(`[tlon] Failed to update lastOwnerMessageAt: ${String(err)}`);

@@ -46,60 +46,87 @@ describe("heartbeat engagement recovery", () => {
 
     // Seed lastOwnerMessageAt to 8 days ago
     const eightDaysAgo = Date.now() - EIGHT_DAYS_MS;
-    await botState.poke({
-      app: "settings",
-      mark: "settings-event",
-      json: {
-        "put-entry": {
-          desk: "moltbot",
-          "bucket-key": "tlon",
-          "entry-key": "lastOwnerMessageAt",
-          value: eightDaysAgo,
+    const eightDaysAgoDate = new Date(eightDaysAgo).toISOString().split("T")[0];
+    await Promise.all([
+      botState.poke({
+        app: "settings",
+        mark: "settings-event",
+        json: {
+          "put-entry": {
+            desk: "moltbot",
+            "bucket-key": "tlon",
+            "entry-key": "lastOwnerMessageAt",
+            value: eightDaysAgo,
+          },
         },
-      },
-    });
-
-    // Clear any previous nudge stage so the heartbeat doesn't skip
-    await botState.poke({
-      app: "settings",
-      mark: "settings-event",
-      json: {
-        "del-entry": {
-          desk: "moltbot",
-          "bucket-key": "tlon",
-          "entry-key": "lastNudgeStage",
+      }),
+      botState.poke({
+        app: "settings",
+        mark: "settings-event",
+        json: {
+          "put-entry": {
+            desk: "moltbot",
+            "bucket-key": "tlon",
+            "entry-key": "lastOwnerMessageDate",
+            value: eightDaysAgoDate,
+          },
         },
-      },
-    });
+      }),
+      // Clear any previous nudge stage so the heartbeat doesn't skip
+      botState.poke({
+        app: "settings",
+        mark: "settings-event",
+        json: {
+          "del-entry": {
+            desk: "moltbot",
+            "bucket-key": "tlon",
+            "entry-key": "lastNudgeStage",
+          },
+        },
+      }),
+    ]);
 
-    console.log(`Seeded lastOwnerMessageAt to ${eightDaysAgo} (8 days ago)`);
+    console.log(`Seeded lastOwnerMessageDate to ${eightDaysAgoDate} (8 days ago)`);
     console.log(`Waiting for heartbeat cycle to send stage 1 nudge...`);
 
     // Wait for the heartbeat to fire and send the stage 1 message.
     // With "every": "1m", this should happen within ~90 seconds.
+    let pollCount = 0;
     const nudgePost = await waitFor(
       async () => {
+        pollCount++;
         const posts = await ownerState.channelPosts(botShip, 30);
-        const newBotPosts = (posts ?? [])
-          .map((post) => {
-            const p = post as {
-              authorId?: string;
-              sentAt?: number;
-              textContent?: string | null;
-              content?: PostContent;
-            };
-            const text = p.textContent ?? (p.content ? getTextContent(p.content) : null);
-            return {
-              authorId: p.authorId,
-              sentAt: p.sentAt ?? 0,
-              text: (text ?? "").trim(),
-            };
-          })
-          .filter((p) => p.authorId === botShip)
-          .filter((p) => p.sentAt > baselineTimestamp)
-          .filter((p) => p.text.includes(STAGE_1_MARKER));
+        const allParsed = (posts ?? []).map((post) => {
+          const p = post as {
+            authorId?: string;
+            sentAt?: number;
+            textContent?: string | null;
+            content?: PostContent;
+          };
+          const text = p.textContent ?? (p.content ? getTextContent(p.content) : null);
+          return {
+            authorId: p.authorId,
+            sentAt: p.sentAt ?? 0,
+            text: (text ?? "").trim(),
+          };
+        });
 
-        return newBotPosts.length > 0 ? newBotPosts[0] : null;
+        const newBotPosts = allParsed
+          .filter((p) => p.authorId === botShip)
+          .filter((p) => p.sentAt > baselineTimestamp);
+
+        // Log diagnostics every 6th poll (~30s)
+        if (pollCount % 6 === 1) {
+          console.log(
+            `[poll ${pollCount}] total=${allParsed.length} newBot=${newBotPosts.length} baseline=${baselineTimestamp}`,
+          );
+          for (const p of newBotPosts) {
+            console.log(`  [new] sentAt=${p.sentAt} text=${JSON.stringify(p.text.slice(0, 120))}`);
+          }
+        }
+
+        const match = newBotPosts.filter((p) => p.text.includes(STAGE_1_MARKER));
+        return match.length > 0 ? match[0] : null;
       },
       180_000, // 3 minutes max (heartbeat fires every 1m)
       5_000, // poll every 5s

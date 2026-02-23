@@ -55,6 +55,8 @@ export type TlonSettingsStore = {
   pendingApprovals?: PendingApproval[];
   /** Epoch ms timestamp of the last message received from the owner ship */
   lastOwnerMessageAt?: number;
+  /** ISO date (YYYY-MM-DD) of the last owner message — human-readable for LLM heartbeat checks */
+  lastOwnerMessageDate?: string;
 };
 
 export type TlonSettingsState = {
@@ -139,6 +141,8 @@ export function parseSettingsResponse(raw: unknown): TlonSettingsStore {
     pendingApprovals: parsePendingApprovals(settings.pendingApprovals),
     lastOwnerMessageAt:
       typeof settings.lastOwnerMessageAt === "number" ? settings.lastOwnerMessageAt : undefined,
+    lastOwnerMessageDate:
+      typeof settings.lastOwnerMessageDate === "string" ? settings.lastOwnerMessageDate : undefined,
   };
 }
 
@@ -286,6 +290,9 @@ export function applySettingsUpdate(
       break;
     case "lastOwnerMessageAt":
       next.lastOwnerMessageAt = typeof value === "number" ? value : undefined;
+      break;
+    case "lastOwnerMessageDate":
+      next.lastOwnerMessageDate = typeof value === "string" ? value : undefined;
       break;
   }
 
