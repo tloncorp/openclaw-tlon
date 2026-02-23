@@ -1159,8 +1159,16 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
   const handleChannelsFirehose = async (event: any) => {
     try {
       const nest = event?.nest;
+
       if (!nest) {
         return;
+      }
+
+      // Auto-watch channels from firehose: if we receive events for a channel,
+      // the bot is a member of the group — add it to watchedChannels automatically.
+      if (!watchedChannels.has(nest) && (nest.startsWith("chat/") || nest.startsWith("heap/"))) {
+        watchedChannels.add(nest);
+        runtime.log?.(`[tlon] Auto-watching channel from firehose: ${nest}`);
       }
 
       // Only process channels we're watching
@@ -1203,6 +1211,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       // Handle post responses (new posts and replies)
       const essay = response?.post?.["r-post"]?.set?.essay;
       const memo = response?.post?.["r-post"]?.reply?.["r-reply"]?.set?.memo;
+
       if (!essay && !memo) {
         return;
       }
