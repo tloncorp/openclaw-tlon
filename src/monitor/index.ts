@@ -1181,11 +1181,16 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         return;
       }
 
-      // Handle reaction events
+      // Handle reaction events (top-level posts)
       const reacts = response?.post?.["r-post"]?.reacts;
-      if (reacts && typeof reacts === "object") {
-        const postId = response?.post?.id ?? "unknown";
-        for (const [reactShip, reactEmoji] of Object.entries(reacts as Record<string, string>)) {
+      // Handle reaction events (replies/comments)
+      const replyReacts = response?.post?.["r-post"]?.reply?.["r-reply"]?.reacts;
+      const effectiveReacts = reacts || replyReacts;
+      if (effectiveReacts && typeof effectiveReacts === "object") {
+        const postId = replyReacts
+          ? (response?.post?.["r-post"]?.reply?.id ?? response?.post?.id ?? "unknown")
+          : (response?.post?.id ?? "unknown");
+        for (const [reactShip, reactEmoji] of Object.entries(effectiveReacts as Record<string, string>)) {
           const ship = normalizeShip(reactShip);
           if (!ship || ship === botShipName) continue;
           try {
