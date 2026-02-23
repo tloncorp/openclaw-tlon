@@ -116,25 +116,21 @@ describe("contacts", () => {
 
     console.log(`[TEST] Waiting for profile nickname to be "${nicknameToken}"...`);
     const updated = await waitFor(async () => {
-      const contacts = await botState.contacts();
-      const self = (contacts ?? []).find((contact) => {
-        const c = contact as { id?: string | null };
-        return c.id === botShip;
-      }) as
-        | {
-            nickname?: string | { value?: string | null } | null;
-            nickName?: string | { value?: string | null } | null;
-          }
-        | undefined;
+      // contacts list can omit nickname; self profile scry is authoritative.
+      const selfProfile = await botState.scry<Record<string, unknown>>("contacts", "/v1/self.json");
+      const profile = (selfProfile ?? {}) as {
+        nickname?: string | { value?: string | null } | null;
+        nickName?: string | { value?: string | null } | null;
+      };
 
       const nicknameFromField =
-        typeof self?.nickname === "string"
-          ? self.nickname
-          : (self?.nickname as { value?: string | null } | null | undefined)?.value;
+        typeof profile.nickname === "string"
+          ? profile.nickname
+          : (profile.nickname as { value?: string | null } | null | undefined)?.value;
       const nicknameFromAltField =
-        typeof self?.nickName === "string"
-          ? self.nickName
-          : (self?.nickName as { value?: string | null } | null | undefined)?.value;
+        typeof profile.nickName === "string"
+          ? profile.nickName
+          : (profile.nickName as { value?: string | null } | null | undefined)?.value;
 
       const currentNickname = nicknameFromField ?? nicknameFromAltField ?? "";
       console.log(`[TEST] Current nickname: "${currentNickname}"`);
