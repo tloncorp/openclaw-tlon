@@ -844,6 +844,14 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     } = params;
     const groupChannel = channelNest; // For compatibility
     let messageText = params.messageText;
+    const rawMessageText = messageText; // Preserve original before any modifications
+
+    // Strip bot mention EARLY, before thread context is prepended.
+    // This ensures [Current message] in thread context won't contain the bot ship name,
+    // which was causing the agent to mistake it for its own message and return NO_REPLY.
+    if (isGroup) {
+      messageText = stripBotMention(messageText, botShipName);
+    }
 
     // Download any images from the message content
     let attachments: Array<{ path: string; contentType: string }> = [];
@@ -1019,6 +1027,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       }
     }
 
+    // Bot mention was already stripped early (before thread context), so use messageText directly
     // Prepend attachment annotations to message body (similar to Signal format)
     let bodyWithAttachments = messageText;
     if (attachments.length > 0) {
@@ -1035,10 +1044,10 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       body: bodyWithAttachments,
     });
 
-    // Strip bot ship mention for CommandBody so "/status" is recognized as command-only
+    // Use raw text (no thread context) for command detection so "/status" is recognized
     const commandBody = isGroup
-      ? stripBotMention(messageText, botShipName)
-      : messageText;
+      ? stripBotMention(rawMessageText, botShipName)
+      : rawMessageText;
 
     const ctxPayload = core.channel.reply.finalizeInboundContext({
       Body: body,
@@ -1063,7 +1072,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       OriginatingChannel: "tlon",
       OriginatingTo: `tlon:${isGroup ? groupChannel : botShipName}`,
       // Include thread context for automatic reply routing
-      ...(parentId && { ThreadId: String(parentId), ReplyToId: String(parentId) }),
+      ...(parentId && { MessageThreadId: String(parentId), ReplyToId: String(parentId) }),
     });
 
     const dispatchStartTime = Date.now();
@@ -1081,8 +1090,10 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         responsePrefix,
         humanDelay,
         deliver: async (payload: ReplyPayload) => {
+          runtime.log?.(`[tlon] DELIVER_CALLBACK: isGroup=${isGroup} groupChannel=${groupChannel} parentId=${parentId} textLen=${payload.text?.length ?? 0}`);
           let replyText = payload.text;
           if (!replyText) {
+            runtime.log?.("[tlon] DELIVER_CALLBACK: empty text, skipping");
             return;
           }
 
@@ -1114,6 +1125,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
                 story,
               });
             } else {
+              runtime.log?.(`[tlon] DELIVER: sendGroupMessage to=${parsed.hostShip}/${parsed.channelName} replyToId=${parentId ?? "none"}`);
               await sendGroupMessage({
                 api: api,
                 fromShip: botShipName,
@@ -1122,6 +1134,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
                 text: replyText,
                 replyToId: parentId ?? undefined,
               });
+              runtime.log?.("[tlon] DELIVER: sendGroupMessage completed");
             }
             // Track thread participation for future replies without mention
             if (parentId) {
@@ -1129,7 +1142,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
               runtime.log?.(`[tlon] Now tracking thread for future replies: ${parentId}`);
             }
           } else {
-            await sendDm({ api: api, fromShip: botShipName, toShip: senderShip, text: replyText });
+            await sendDm({ api: api, fromShip: botShipName, toShip: senderShip, text: replyText, replyToId: parentId ? String(parentId) : undefined });
           }
         },
         onError: (err, info) => {
@@ -1467,7 +1480,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
 
       // Owner is always allowed to DM (bypass allowlist)
       if (isOwner(senderShip)) {
-        runtime.log?.(`[tlon] Processing DM from owner ${senderShip}`);
+        runtime.log?.(`[tlon] Processing DM from owner ${senderShip}${isDmThreadReply ? ` (thread reply, parent=${dmReplyParentId})` : ""}`);
         await processMessage({
           messageId: messageId ?? "",
           senderShip,
@@ -1475,6 +1488,8 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
           messageContent: dmContent.content,
           isGroup: false,
           timestamp: dmContent.sent || Date.now(),
+          parentId: dmReplyParentId,
+          isThreadReply: isDmThreadReply,
         });
         return;
       }
@@ -1508,6 +1523,8 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         messageContent: dmContent.content, // Pass raw content for media extraction
         isGroup: false,
         timestamp: dmContent.sent || Date.now(),
+        parentId: dmReplyParentId,
+        isThreadReply: isDmThreadReply,
       });
     } catch (error: any) {
       runtime.error?.(

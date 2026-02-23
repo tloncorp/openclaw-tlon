@@ -136,15 +136,16 @@ const tlonOutbound: ChannelOutboundAdapter = {
 
     try {
       const fromShip = normalizeShip(account.ship);
+      const replyId = (replyToId ?? threadId) ? String(replyToId ?? threadId) : undefined;
       if (parsed.kind === "dm") {
         return await sendDm({
           api,
           fromShip,
           toShip: parsed.ship,
           text,
+          replyToId: replyId,
         });
       }
-      const replyId = (replyToId ?? threadId) ? String(replyToId ?? threadId) : undefined;
       if (parsed.kind === "heap") {
         const story = markdownToStory(text);
         if (replyId) {
@@ -213,15 +214,16 @@ const tlonOutbound: ChannelOutboundAdapter = {
       const fromShip = normalizeShip(account.ship);
       const story = buildMediaStory(text, uploadedUrl);
 
+      const replyId = (replyToId ?? threadId) ? String(replyToId ?? threadId) : undefined;
       if (parsed.kind === "dm") {
         return await sendDmWithStory({
           api,
           fromShip,
           toShip: parsed.ship,
           story,
+          replyToId: replyId,
         });
       }
-      const replyId = (replyToId ?? threadId) ? String(replyToId ?? threadId) : undefined;
       if (parsed.kind === "heap") {
         if (replyId) {
           return await commentOnHeapPost({

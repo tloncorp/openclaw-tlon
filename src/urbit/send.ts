@@ -10,6 +10,7 @@ type SendTextParams = {
   fromShip: string;
   toShip: string;
   text: string;
+  replyToId?: string | null;
 };
 
 type SendStoryParams = {
@@ -17,18 +18,52 @@ type SendStoryParams = {
   fromShip: string;
   toShip: string;
   story: Story;
+  replyToId?: string | null;
 };
 
-export async function sendDm({ api, fromShip, toShip, text }: SendTextParams) {
+export async function sendDm({ api, fromShip, toShip, text, replyToId }: SendTextParams) {
   const story: Story = markdownToStory(text);
-  return sendDmWithStory({ api, fromShip, toShip, story });
+  return sendDmWithStory({ api, fromShip, toShip, story, replyToId });
 }
 
-export async function sendDmWithStory({ api, fromShip, toShip, story }: SendStoryParams) {
+export async function sendDmWithStory({ api, fromShip, toShip, story, replyToId }: SendStoryParams) {
   const sentAt = Date.now();
   const idUd = scot("ud", da.fromUnix(sentAt));
-  const id = `${fromShip}/${idUd}`;
+  const replyId = `${fromShip}/${idUd}`;
 
+  // DM thread reply
+  if (replyToId) {
+    const formattedParentId = formatPostId(replyToId);
+    const delta = {
+      reply: {
+        id: replyId,
+        meta: null,
+        delta: {
+          add: {
+            memo: {
+              content: story,
+              author: fromShip,
+              sent: sentAt,
+            },
+            time: null,
+          },
+        },
+      },
+    };
+
+    await api.poke({
+      app: "chat",
+      mark: "chat-dm-action-1",
+      json: {
+        ship: toShip,
+        diff: { id: formattedParentId, delta },
+      },
+    });
+
+    return { channel: "tlon", messageId: replyId };
+  }
+
+  // Regular DM (top-level)
   const delta = {
     add: {
       memo: {
@@ -43,7 +78,7 @@ export async function sendDmWithStory({ api, fromShip, toShip, story }: SendStor
 
   const action = {
     ship: toShip,
-    diff: { id, delta },
+    diff: { id: replyId, delta },
   };
 
   await api.poke({
@@ -52,7 +87,7 @@ export async function sendDmWithStory({ api, fromShip, toShip, story }: SendStor
     json: action,
   });
 
-  return { channel: "tlon", messageId: id };
+  return { channel: "tlon", messageId: replyId };
 }
 
 type SendGroupParams = {
