@@ -158,6 +158,7 @@ const tlonOutbound: ChannelOutboundAdapter = {
     return { ok: true, to: parsed.nest };
   },
   sendText: async ({ cfg, to, text, accountId, replyToId, threadId }) => {
+    console.log(`[tlon:sendText] to=${to}, text=${text.slice(0, 50)}..., replyToId=${replyToId}, threadId=${threadId}`);
     const account = resolveTlonAccount(cfg, accountId ?? undefined);
     if (!account.configured || !account.ship || !account.url || !account.code) {
       throw new Error("Tlon account not configured");
@@ -167,6 +168,7 @@ const tlonOutbound: ChannelOutboundAdapter = {
     if (!parsed) {
       throw new Error(`Invalid Tlon target. Use ${formatTargetHint()}`);
     }
+    console.log(`[tlon:sendText] parsed target: kind=${parsed.kind}`);
 
     // Use HTTP-only poke (no EventSource) to avoid conflicts with monitor's SSE connection
     const api = await createHttpPokeApi({
@@ -179,15 +181,19 @@ const tlonOutbound: ChannelOutboundAdapter = {
     try {
       const fromShip = normalizeShip(account.ship);
       if (parsed.kind === "dm") {
-        return await sendDm({
+        console.log(`[tlon:sendText] sending DM from ${fromShip} to ${parsed.ship}`);
+        const result = await sendDm({
           api,
           fromShip,
           toShip: parsed.ship,
           text,
         });
+        console.log(`[tlon:sendText] DM sent, result:`, result);
+        return result;
       }
       const replyId = (replyToId ?? threadId) ? String(replyToId ?? threadId) : undefined;
-      return await sendGroupMessage({
+      console.log(`[tlon:sendText] sending group message to ${parsed.hostShip}/${parsed.channelName}`);
+      const result = await sendGroupMessage({
         api,
         fromShip,
         hostShip: parsed.hostShip,
@@ -195,6 +201,8 @@ const tlonOutbound: ChannelOutboundAdapter = {
         text,
         replyToId: replyId,
       });
+      console.log(`[tlon:sendText] group message sent, result:`, result);
+      return result;
     } finally {
       try {
         await api.delete();
