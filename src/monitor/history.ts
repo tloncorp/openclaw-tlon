@@ -30,6 +30,13 @@ export type TlonHistoryEntry = {
 const messageCache = new Map<string, TlonHistoryEntry[]>();
 const MAX_CACHED_MESSAGES = 100;
 
+export function lookupCachedMessage(channelNest: string, messageId: string): TlonHistoryEntry | undefined {
+  const cache = messageCache.get(channelNest);
+  if (!cache) return undefined;
+  const normalizedId = String(messageId).replace(/\./g, "");
+  return cache.find((m) => m.id && String(m.id).replace(/\./g, "") === normalizedId);
+}
+
 export function cacheMessage(channelNest: string, message: TlonHistoryEntry) {
   if (!messageCache.has(channelNest)) {
     messageCache.set(channelNest, []);

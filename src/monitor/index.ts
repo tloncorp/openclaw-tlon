@@ -26,7 +26,7 @@ import {
   formatPendingList,
 } from "./approval.js";
 import { fetchAllChannels, fetchInitData } from "./discovery.js";
-import { cacheMessage, getChannelHistory, fetchThreadHistory } from "./history.js";
+import { cacheMessage, lookupCachedMessage, getChannelHistory, fetchThreadHistory } from "./history.js";
 import { downloadMessageImages } from "./media.js";
 import { createProcessedMessageTracker } from "./processed-messages.js";
 import {
@@ -1200,7 +1200,13 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
               accountId: opts.accountId ?? undefined,
               peer: { kind: "group", id: nest },
             });
-            const eventText = `Tlon reaction in ${nest}: ${reactEmoji} by ${ship} on post ${postId}`;
+            // Look up the reacted-to message content for context
+            const cached = lookupCachedMessage(nest, postId);
+            const contentSnippet = cached?.content
+              ? ` (message: "${cached.content.substring(0, 200)}${cached.content.length > 200 ? "..." : ""}")`
+              : "";
+            const authorInfo = cached?.author ? ` (by ${cached.author})` : "";
+            const eventText = `Tlon reaction in ${nest}: ${reactEmoji} by ${ship} on post ${postId}${authorInfo}${contentSnippet}`;
             core.system.enqueueSystemEvent(eventText, {
               sessionKey: route.sessionKey,
               contextKey: `tlon:reaction:${nest}:${postId}:${reactEmoji}:${ship}`,
@@ -1230,7 +1236,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       }
 
       const senderShip = normalizeShip(content?.author ?? "");
-      if (!senderShip || senderShip === botShipName) {
+      if (!senderShip) {
         return;
       }
 
@@ -1242,12 +1248,18 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         return;
       }
 
+      // Cache ALL messages (including bot's own) so reaction lookups have context
       cacheMessage(nest, {
         author: senderShip,
         content: messageText,
         timestamp: content.sent || Date.now(),
         id: messageId,
       });
+
+      // Skip processing bot's own messages (but they're already cached above)
+      if (senderShip === botShipName) {
+        return;
+      }
 
       // Get thread info early for participation check
       const seal = isThreadReply
