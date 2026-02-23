@@ -829,6 +829,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     timestamp: number;
     parentId?: string | null;
     isThreadReply?: boolean;
+    replyParentId?: string | null; // Override parentId for delivery only (not in ctx payload)
   }) => {
     const {
       messageId,
@@ -842,6 +843,11 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       isThreadReply,
       messageContent,
     } = params;
+    // replyParentId overrides parentId for the deliver callback (thread reply routing)
+    // but doesn't affect the ctx payload (MessageThreadId/ReplyToId).
+    // Used for reactions: agent sees no thread context (so it responds), but
+    // the reply is still delivered as a thread reply.
+    const deliverParentId = params.replyParentId ?? parentId;
     const groupChannel = channelNest; // For compatibility
     let messageText = params.messageText;
     const rawMessageText = messageText; // Preserve original before any modifications
@@ -1112,14 +1118,14 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
               return;
             }
             // Heap channels: reply as a comment on the parent post
-            if (groupChannel.startsWith("heap/") && parentId) {
+            if (groupChannel.startsWith("heap/") && deliverParentId) {
               const story = markdownToStory(replyText);
               await commentOnHeapPost({
                 api: api,
                 fromShip: botShipName,
                 hostShip: parsed.hostShip,
                 channelName: parsed.channelName,
-                curioId: String(parentId),
+                curioId: String(deliverParentId),
                 story,
               });
             } else {
@@ -1129,16 +1135,16 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
                 hostShip: parsed.hostShip,
                 channelName: parsed.channelName,
                 text: replyText,
-                replyToId: parentId ?? undefined,
+                replyToId: deliverParentId ?? undefined,
               });
             }
             // Track thread participation for future replies without mention
-            if (parentId) {
-              participatedThreads.add(String(parentId));
-              runtime.log?.(`[tlon] Now tracking thread for future replies: ${parentId}`);
+            if (deliverParentId) {
+              participatedThreads.add(String(deliverParentId));
+              runtime.log?.(`[tlon] Now tracking thread for future replies: ${deliverParentId}`);
             }
           } else {
-            await sendDm({ api: api, fromShip: botShipName, toShip: senderShip, text: replyText, replyToId: parentId ? String(parentId) : undefined });
+            await sendDm({ api: api, fromShip: botShipName, toShip: senderShip, text: replyText, replyToId: deliverParentId ? String(deliverParentId) : undefined });
           }
         },
         onError: (err, info) => {
@@ -1212,11 +1218,16 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
             // If reacting to the bot's own message, dispatch as a real message
             // so the agent runs immediately (e.g. thumbs-up as "yes")
             if (cached?.author === botShipName) {
-              const parentPostId = replyReacts
-                ? (response?.post?.id ?? undefined)
-                : undefined;
-              const reactText = `[${ship} reacted ${reactEmoji} to your message: "${cached.content.substring(0, 300)}${cached.content.length > 300 ? "..." : ""}"]`;
-              runtime.log?.(`[tlon] Dispatching reaction as message: ${reactText.substring(0, 100)}`);
+              // Send just the emoji as the message — the agent has session context
+              // from its own question and will interpret the reaction naturally.
+              // NOTE: parentId is deliberately omitted from processMessage to avoid
+              // MessageThreadId/ReplyToId in ctx which can cause the agent to suppress
+              // responses. The deliver callback uses reactionParentId directly instead.
+              const reactionParentId = replyReacts
+                ? (response?.post?.id ?? postId)
+                : postId;
+              const reactText = reactEmoji;
+              runtime.log?.(`[tlon] Dispatching channel reaction as message: ${reactText} from ${ship}`);
               const parsed = parseChannelNest(nest);
               await processMessage({
                 messageId: `react-${postId}-${ship}-${Date.now()}`,
@@ -1227,8 +1238,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
                 hostShip: parsed?.hostShip,
                 channelName: parsed?.channelName,
                 timestamp: Date.now(),
-                parentId: parentPostId ?? postId,
-                isThreadReply: true,
+                replyParentId: reactionParentId, // Thread reply for delivery only
               });
             } else {
               // For reactions on other people's messages, just enqueue as system event
@@ -1452,13 +1462,39 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
               accountId: opts.accountId ?? undefined,
               peer: { kind: "direct", id: partnerShip || reactAuthor },
             });
+
+            // Look up cached DM message for context
+            const dmCacheKey = `dm/${whom}`;
+            const cached = lookupCachedMessage(dmCacheKey, messageId);
             const action = isAdd ? "added" : "removed";
-            const eventText = `Tlon DM reaction ${action}: ${reactEmoji} by ${reactAuthor} on message ${messageId}`;
-            core.system.enqueueSystemEvent(eventText, {
-              sessionKey: route.sessionKey,
-              contextKey: `tlon:dm-reaction:${messageId}:${reactEmoji}:${reactAuthor}:${action}`,
-            });
-            runtime.log?.(`[tlon] DM_REACTION: ${eventText}`);
+
+            // If reacting to the bot's own message, dispatch as a real message
+            // so the agent runs immediately (e.g. thumbs-up as "yes")
+            if (isAdd && cached?.author === botShipName) {
+              // Send just the emoji as the message — the agent has session context
+              // from its own question and will interpret the reaction naturally
+              const reactText = reactEmoji;
+              runtime.log?.(`[tlon] Dispatching DM reaction as message: ${reactText} from ${reactAuthor}`);
+              await processMessage({
+                messageId: `react-${messageId}-${reactAuthor}-${Date.now()}`,
+                senderShip: reactAuthor,
+                messageText: reactText,
+                isGroup: false,
+                timestamp: Date.now(),
+                replyParentId: messageId, // Thread reply for delivery only
+              });
+            } else {
+              const contentSnippet = cached?.content
+                ? ` (message: "${cached.content.substring(0, 200)}${cached.content.length > 200 ? "..." : ""}")`
+                : "";
+              const authorInfo = cached?.author ? ` (by ${cached.author})` : "";
+              const eventText = `Tlon DM reaction ${action}: ${reactEmoji} by ${reactAuthor} on message ${messageId}${authorInfo}${contentSnippet}`;
+              core.system.enqueueSystemEvent(eventText, {
+                sessionKey: route.sessionKey,
+                contextKey: `tlon:dm-reaction:${messageId}:${reactEmoji}:${reactAuthor}:${action}`,
+              });
+              runtime.log?.(`[tlon] DM_REACTION: ${eventText}`);
+            }
           } catch (err: any) {
             runtime.error?.(`[tlon] Error handling DM reaction: ${err?.message ?? String(err)}`);
           }
@@ -1498,7 +1534,19 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       const partnerShip = extractDmPartnerShip(whom);
       const senderShip = partnerShip || authorShip;
 
-      // Ignore the bot's own outbound DM events.
+      // Cache DM messages (including bot's own) so reaction lookups have context
+      const dmCacheKey = `dm/${whom}`;
+      const rawCacheText = extractMessageText(dmContent.content);
+      if (rawCacheText.trim()) {
+        cacheMessage(dmCacheKey, {
+          author: authorShip,
+          content: rawCacheText,
+          timestamp: dmContent.sent || Date.now(),
+          id: effectiveMessageId,
+        });
+      }
+
+      // Skip processing bot's own messages (but they're already cached above)
       if (authorShip === botShipName) {
         return;
       }
