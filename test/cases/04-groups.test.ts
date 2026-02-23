@@ -50,7 +50,7 @@ describe("groups", () => {
 
     expect(response.text).toBeDefined();
     expect(response.text!.length).toBeGreaterThan(0);
-    expect(response.text?.toLowerCase()).toContain(fixtures.group.title.toLowerCase());
+    expect(response.text?.toLowerCase()).toContain(fixtures.group.chatChannel.toLowerCase());
   });
 
   test("creates a new group on the bot ship", async () => {
