@@ -280,6 +280,17 @@ export const tlonPlugin: ChannelPlugin = {
     threads: true,
     reactions: true,
   },
+  threading: {
+    resolveReplyToMode: () => "all",
+    buildToolContext: ({ context, hasRepliedRef }) => {
+      const threadId = context.MessageThreadId ?? context.ReplyToId;
+      return {
+        currentChannelId: context.To?.trim() || undefined,
+        currentThreadTs: threadId != null ? String(threadId) : undefined,
+        hasRepliedRef,
+      };
+    },
+  },
   onboarding: tlonOnboardingAdapter,
   reload: { configPrefixes: ["channels.tlon"] },
   configSchema: tlonChannelConfigSchema,
