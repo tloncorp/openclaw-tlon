@@ -120,8 +120,23 @@ describe("contacts", () => {
       const self = (contacts ?? []).find((contact) => {
         const c = contact as { id?: string | null };
         return c.id === botShip;
-      }) as { nickname?: string | null } | undefined;
-      const currentNickname = self?.nickname ?? "";
+      }) as
+        | {
+            nickname?: string | { value?: string | null } | null;
+            nickName?: string | { value?: string | null } | null;
+          }
+        | undefined;
+
+      const nicknameFromField =
+        typeof self?.nickname === "string"
+          ? self.nickname
+          : (self?.nickname as { value?: string | null } | null | undefined)?.value;
+      const nicknameFromAltField =
+        typeof self?.nickName === "string"
+          ? self.nickName
+          : (self?.nickName as { value?: string | null } | null | undefined)?.value;
+
+      const currentNickname = nicknameFromField ?? nicknameFromAltField ?? "";
       console.log(`[TEST] Current nickname: "${currentNickname}"`);
       return currentNickname === nicknameToken;
     }, 30_000);
