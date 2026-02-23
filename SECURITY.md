@@ -231,6 +231,61 @@ The Tlon plugin detects when multiple users share a DM session and:
 
 ---
 
+## 11. Code-Level Security
+
+**Principle:** Prevent common vulnerabilities at the code level.
+
+### Weak Randomness
+
+| Usage | Allowed |
+|-------|---------|
+| `Math.random()` for IDs/tokens | ❌ No — fails upstream security tests |
+| `crypto.randomUUID()` | ✅ Yes |
+| `crypto.randomBytes()` | ✅ Yes |
+
+**Why:** `Math.random()` is not cryptographically secure and is detectable by OpenClaw's security scanners.
+
+### SSRF Protection
+
+| Pattern | Allowed |
+|---------|---------|
+| Raw `fetch()` with user-provided URL | ❌ No |
+| `urbitFetch()` with SSRF policy | ✅ Yes |
+
+**Required Pattern:**
+```typescript
+import { urbitFetch, getDefaultSsrfPolicy } from "openclaw/plugin-sdk";
+
+const ssrfPolicy = getDefaultSsrfPolicy(); // blocks private networks
+const { response, release } = await urbitFetch(userProvidedUrl, { ssrfPolicy });
+try {
+  // use response
+} finally {
+  release(); // always cleanup
+}
+```
+
+**`allowPrivateNetwork`:** Only set to `true` when intentionally accessing local/private network ships (e.g., local fakezod). Default blocks private IPs.
+
+### Resource Cleanup
+
+| Resource | Cleanup Required |
+|----------|------------------|
+| `urbitFetch` response | ✅ Call `release()` in `finally` block |
+| SSE connections | ✅ Close on abort signal |
+| Timers | ✅ Clear on cleanup |
+
+### Command Injection
+
+| Pattern | Allowed |
+|---------|---------|
+| `spawn(userInput)` | ❌ No |
+| `spawn(allowlistedCommand, validatedArgs)` | ✅ Yes |
+
+**Why:** User input passed directly to shell execution enables arbitrary command execution.
+
+---
+
 ## Test Requirements
 
 All security tests should:

@@ -4,6 +4,32 @@ Guidelines for agents (and humans) working on this plugin.
 
 ---
 
+## Commands
+
+```bash
+# Development
+pnpm dev                    # Run dev environment (uses Docker)
+
+# Testing
+pnpm test                   # Run unit tests
+pnpm test:watch             # Watch mode
+pnpm test:security          # Security tests only
+pnpm test:integration       # Integration tests (ephemeral fakezods)
+pnpm test:integration:dev   # Integration tests against running dev
+pnpm test:integration:watch # Watch mode for dev environment
+
+# Linting & Formatting
+pnpm lint                   # Type-aware lint with oxlint
+pnpm lint:fix               # Auto-fix lint issues
+pnpm format                 # Check formatting
+pnpm format:fix             # Auto-fix formatting
+
+# Type checking
+pnpm tsc --noEmit           # Full type check
+```
+
+---
+
 ## Goals / Purpose
 
 - Bridge OpenClaw ↔ Tlon/Urbit messaging
@@ -24,22 +50,54 @@ Guidelines for agents (and humans) working on this plugin.
 
 ```
 src/
-  channel.ts        # ChannelPlugin implementation
-  monitor/          # Inbound message handling
+  channel.ts        # ChannelPlugin implementation (outbound, setup, status)
+  monitor/          # Inbound message handling (SSE event loop)
+    index.ts        # Main monitor loop
+    approval.ts     # DM/channel approval workflow
+    discovery.ts    # Auto-discover channels in joined groups
+    history.ts      # Message history and caching
+    utils.ts        # Bot mention detection, allowlist checks
   urbit/            # Low-level Urbit communication
-  settings.ts       # Runtime settings store
+    sse-client.ts   # SSE subscription client
+    auth.ts         # +code authentication
+    send.ts         # Send DMs and group messages
+    story.ts        # Build Urbit story format
+  settings.ts       # Runtime settings store (hot-reload via settings-store)
   types.ts          # Shared types
+  config-schema.ts  # Zod schema for config validation
+  targets.ts        # Target parsing (DM ship or channel nest)
 ```
+
+### Key Patterns
+
+- **Plugin SDK**: Implements `ChannelPlugin` interface from `openclaw/plugin-sdk`
+- **Dual message paths**: Monitor uses SSE for inbound; outbound uses HTTP-only pokes
+- **Settings hot-reload**: Config can be updated via Urbit's settings-store without restart
+- **Authorization cascade**: Settings store overrides file config; default to "restricted" mode
+
+### Dependencies
+
+- `@tloncorp/api` — Tlon API library (use this first!)
+- `openclaw/plugin-sdk` — Plugin interfaces and utilities
+- `@urbit/http-api` / `@urbit/aura` — Urbit primitives
+
+### Dev Environment Setup
+
+1. Clone repo and run `./dev/setup.sh`
+2. Configure `.env` with ship credentials
+3. Run `pnpm dev` (uses Docker)
 
 ---
 
-## Security Must-Haves
+## Security
 
-- `crypto.randomUUID()` not `Math.random()` — weak randomness fails upstream security tests
-- Always use `urbitFetch` for URLs from user input (SSRF protection)
-- Validate input before `spawn()` calls (command injection)
-- Call `release()` on urbitFetch responses (or use `finally`)
-- `getDefaultSsrfPolicy()` blocks private networks by default — only enable with `allowPrivateNetwork: true` when intentional
+See [SECURITY.md](SECURITY.md) for the full security model (authorization, credentials, invariants).
+
+Quick reminders:
+- ❌ `Math.random()` → ✅ `crypto.randomUUID()`
+- ❌ Raw `fetch()` with user URLs → ✅ `urbitFetch` with SSRF policy
+- ❌ Unsanitized input to `spawn()` → ✅ Validate/allowlist first
+- ❌ Forgetting `release()` → ✅ Always cleanup in `finally` blocks
 
 ---
 
