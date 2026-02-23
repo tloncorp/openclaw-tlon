@@ -127,16 +127,36 @@ function parseInlineMarkdown(text: string): StoryInline[] {
     //   continue;
     // }
 
-    // Plain text: consume until next special character or URL start
-    // Exclude : and / to allow URL detection to work (stops before https://)
-    const plainMatch = remaining.match(/^[^*_`~[#~\n:/]+/);
-    if (plainMatch) {
-      result.push(plainMatch[0]);
-      remaining = remaining.slice(plainMatch[0].length);
+    // Plain text: consume until next markdown token or URL start.
+    // This prevents swallowing the "https" prefix before "://".
+    const specialTokenIndices = [
+      remaining.indexOf("**"),
+      remaining.indexOf("__"),
+      remaining.indexOf("~~"),
+      remaining.indexOf("`"),
+      remaining.indexOf("["),
+      remaining.indexOf("!"),
+      remaining.indexOf("~"),
+      remaining.indexOf("\n"),
+      remaining.indexOf("*"),
+      remaining.indexOf("_"),
+    ].filter((idx) => idx >= 0);
+
+    const urlIndex = remaining.search(/https?:\/\//);
+    if (urlIndex >= 0) {
+      specialTokenIndices.push(urlIndex);
+    }
+
+    const nextTokenIndex =
+      specialTokenIndices.length > 0 ? Math.min(...specialTokenIndices) : -1;
+
+    if (nextTokenIndex > 0) {
+      result.push(remaining.slice(0, nextTokenIndex));
+      remaining = remaining.slice(nextTokenIndex);
       continue;
     }
 
-    // Single special char that didn't match a pattern
+    // Single character fallback
     result.push(remaining[0]);
     remaining = remaining.slice(1);
   }
