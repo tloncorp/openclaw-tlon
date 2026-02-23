@@ -8,7 +8,7 @@ import {
 } from "openclaw/plugin-sdk";
 import { resolveTlonAccount } from "./types.js";
 import { normalizeShip, parseTlonTarget } from "./targets.js";
-import { createHttpPokeApi } from "./urbit/http-poke.js";
+import { withAuthenticatedTlonApi } from "./urbit/api-client.js";
 import {
   addChannelReaction,
   removeChannelReaction,
@@ -45,54 +45,42 @@ export const tlonMessageActions: ChannelMessageActionAdapter = {
       throw new Error("Tlon account not configured");
     }
 
-    const api = await createHttpPokeApi({
-      url: account.url,
-      code: account.code,
-      ship: account.ship,
-      allowPrivateNetwork: account.allowPrivateNetwork ?? undefined,
-    });
+    return await withAuthenticatedTlonApi(
+      { url: account.url, code: account.code, ship: account.ship, allowPrivateNetwork: account.allowPrivateNetwork ?? undefined },
+      async () => {
+        const fromShip = normalizeShip(account.ship!);
 
-    try {
-      const fromShip = normalizeShip(account.ship);
-
-      if (action === "react") {
-        const level = account.reactionLevel ?? "minimal";
-        if (level === "off" || level === "ack") {
-          throw new Error(
-            `Tlon agent reactions disabled (reactionLevel="${level}"). ` +
-              `Set channels.tlon.reactionLevel to "minimal" or "extensive" to enable.`,
-          );
+        if (action === "react") {
+          const level = account.reactionLevel ?? "minimal";
+          if (level === "off" || level === "ack") {
+            throw new Error(
+              `Tlon agent reactions disabled (reactionLevel="${level}"). ` +
+                `Set channels.tlon.reactionLevel to "minimal" or "extensive" to enable.`,
+            );
+          }
+          return await handleReact({ params, fromShip, toolContext });
         }
-        return await handleReact({ params, api, fromShip, toolContext });
-      }
 
-      if (action === "delete") {
-        return await handleDelete({ params, api, toolContext });
-      }
+        if (action === "delete") {
+          return await handleDelete({ params, toolContext });
+        }
 
-      if (action === "reply") {
-        return await handleReply({ params, api, fromShip, toolContext });
-      }
+        if (action === "reply") {
+          return await handleReply({ params, fromShip, toolContext });
+        }
 
-      throw new Error(`Tlon action "${action}" is not supported.`);
-    } finally {
-      try {
-        await api.delete();
-      } catch {
-        // ignore cleanup errors
-      }
-    }
+        throw new Error(`Tlon action "${action}" is not supported.`);
+      },
+    );
   },
 };
 
 async function handleReact({
   params,
-  api,
   fromShip,
   toolContext,
 }: {
   params: Record<string, unknown>;
-  api: { poke: (p: { app: string; mark: string; json: unknown }) => Promise<unknown>; delete: () => Promise<void> };
   fromShip: string;
   toolContext?: { currentChannelId?: string };
 }) {
@@ -131,10 +119,10 @@ async function handleReact({
 
   if (parsed.kind === "dm") {
     if (remove) {
-      await removeDmReaction({ api, fromShip, toShip: parsed.ship, messageId, parentId });
+      await removeDmReaction({ fromShip, toShip: parsed.ship, messageId, parentId });
       return jsonResult({ ok: true, removed: true });
     }
-    await addDmReaction({ api, fromShip, toShip: parsed.ship, messageId, react: emoji, parentId });
+    await addDmReaction({ fromShip, toShip: parsed.ship, messageId, react: emoji, parentId });
     return jsonResult({ ok: true, added: emoji });
   }
 
@@ -142,7 +130,6 @@ async function handleReact({
   const nestPrefix = parsed.kind === "heap" ? "heap" : "chat";
   if (remove) {
     await removeChannelReaction({
-      api,
       fromShip,
       hostShip: parsed.hostShip,
       channelName: parsed.channelName,
@@ -153,7 +140,6 @@ async function handleReact({
     return jsonResult({ ok: true, removed: true });
   }
   await addChannelReaction({
-    api,
     fromShip,
     hostShip: parsed.hostShip,
     channelName: parsed.channelName,
@@ -167,11 +153,9 @@ async function handleReact({
 
 async function handleDelete({
   params,
-  api,
   toolContext,
 }: {
   params: Record<string, unknown>;
-  api: { poke: (p: { app: string; mark: string; json: unknown }) => Promise<unknown>; delete: () => Promise<void> };
   toolContext?: { currentChannelId?: string };
 }) {
   const messageId = readStringParam(params, "messageId");
@@ -197,7 +181,6 @@ async function handleDelete({
   }
 
   await deleteHeapPost({
-    api,
     hostShip: parsed.hostShip,
     channelName: parsed.channelName,
     curioId: messageId,
@@ -208,12 +191,10 @@ async function handleDelete({
 
 async function handleReply({
   params,
-  api,
   fromShip,
   toolContext,
 }: {
   params: Record<string, unknown>;
-  api: { poke: (p: { app: string; mark: string; json: unknown }) => Promise<unknown>; delete: () => Promise<void> };
   fromShip: string;
   toolContext?: { currentChannelId?: string };
 }) {
@@ -246,7 +227,6 @@ async function handleReply({
 
   if (parsed.kind === "heap") {
     await commentOnHeapPost({
-      api,
       fromShip,
       hostShip: parsed.hostShip,
       channelName: parsed.channelName,
@@ -258,7 +238,6 @@ async function handleReply({
 
   if (parsed.kind === "channel") {
     await sendGroupMessage({
-      api,
       fromShip,
       hostShip: parsed.hostShip,
       channelName: parsed.channelName,

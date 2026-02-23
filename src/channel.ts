@@ -1,4 +1,3 @@
-import { configureClient } from "@tloncorp/api";
 import type {
   ChannelOutboundAdapter,
   ChannelPlugin,
@@ -17,6 +16,7 @@ import { tlonOnboardingAdapter } from "./onboarding.js";
 import { formatTargetHint, normalizeShip, parseTlonTarget } from "./targets.js";
 import { resolveTlonAccount, listTlonAccountIds } from "./types.js";
 import { authenticate } from "./urbit/auth.js";
+import { withAuthenticatedTlonApi } from "./urbit/api-client.js";
 import { ssrfPolicyFromAllowPrivateNetwork } from "./urbit/context.js";
 import { urbitFetch } from "./urbit/fetch.js";
 import {
@@ -29,7 +29,6 @@ import {
   commentOnHeapPost,
 } from "./urbit/send.js";
 import { uploadImageFromUrl } from "./urbit/upload.js";
-import { createHttpPokeApi } from "./urbit/http-poke.js";
 import { tlonMessageActions } from "./actions.js";
 import { markdownToStory } from "./urbit/story.js";
 
@@ -126,61 +125,41 @@ const tlonOutbound: ChannelOutboundAdapter = {
       throw new Error(`Invalid Tlon target. Use ${formatTargetHint()}`);
     }
 
-    // Use HTTP-only poke (no EventSource) to avoid conflicts with monitor's SSE connection
-    const api = await createHttpPokeApi({
-      url: account.url,
-      ship: account.ship,
-      code: account.code,
-      allowPrivateNetwork: account.allowPrivateNetwork ?? undefined,
-    });
-
-    try {
-      const fromShip = normalizeShip(account.ship);
-      const replyId = (replyToId ?? threadId) ? String(replyToId ?? threadId) : undefined;
-      if (parsed.kind === "dm") {
-        return await sendDm({
-          api,
-          fromShip,
-          toShip: parsed.ship,
-          text,
-          replyToId: replyId,
-        });
-      }
-      if (parsed.kind === "heap") {
-        const story = markdownToStory(text);
-        if (replyId) {
-          return await commentOnHeapPost({
-            api,
+    return await withAuthenticatedTlonApi(
+      { url: account.url, code: account.code, ship: account.ship, allowPrivateNetwork: account.allowPrivateNetwork ?? undefined },
+      async () => {
+        const fromShip = normalizeShip(account.ship!);
+        const replyId = (replyToId ?? threadId) ? String(replyToId ?? threadId) : undefined;
+        if (parsed.kind === "dm") {
+          return await sendDm({ fromShip, toShip: parsed.ship, text, replyToId: replyId });
+        }
+        if (parsed.kind === "heap") {
+          const story = markdownToStory(text);
+          if (replyId) {
+            return await commentOnHeapPost({
+              fromShip,
+              hostShip: parsed.hostShip,
+              channelName: parsed.channelName,
+              curioId: replyId,
+              story,
+            });
+          }
+          return await sendHeapPost({
             fromShip,
             hostShip: parsed.hostShip,
             channelName: parsed.channelName,
-            curioId: replyId,
             story,
           });
         }
-        return await sendHeapPost({
-          api,
+        return await sendGroupMessage({
           fromShip,
           hostShip: parsed.hostShip,
           channelName: parsed.channelName,
-          story,
+          text,
+          replyToId: replyId,
         });
-      }
-      return await sendGroupMessage({
-        api,
-        fromShip,
-        hostShip: parsed.hostShip,
-        channelName: parsed.channelName,
-        text,
-        replyToId: replyId,
-      });
-    } finally {
-      try {
-        await api.delete();
-      } catch {
-        // ignore cleanup errors
-      }
-    }
+      },
+    );
   },
   sendMedia: async ({ cfg, to, text, mediaUrl, accountId, replyToId, threadId }) => {
     const account = resolveTlonAccount(cfg, accountId ?? undefined);
@@ -193,71 +172,44 @@ const tlonOutbound: ChannelOutboundAdapter = {
       throw new Error(`Invalid Tlon target. Use ${formatTargetHint()}`);
     }
 
-    // Configure the API client for uploads
-    configureClient({
-      shipUrl: account.url,
-      shipName: account.ship.replace(/^~/, ""),
-      verbose: false,
-      getCode: async () => account.code!,
-    });
+    return await withAuthenticatedTlonApi(
+      { url: account.url, code: account.code, ship: account.ship, allowPrivateNetwork: account.allowPrivateNetwork ?? undefined },
+      async () => {
+        // Upload inside authenticated context — uploadFile needs scry access
+        const uploadedUrl = mediaUrl ? await uploadImageFromUrl(mediaUrl) : undefined;
+        const fromShip = normalizeShip(account.ship!);
+        const story = buildMediaStory(text, uploadedUrl);
 
-    const uploadedUrl = mediaUrl ? await uploadImageFromUrl(mediaUrl) : undefined;
-
-    const api = await createHttpPokeApi({
-      url: account.url,
-      ship: account.ship,
-      code: account.code,
-      allowPrivateNetwork: account.allowPrivateNetwork ?? undefined,
-    });
-
-    try {
-      const fromShip = normalizeShip(account.ship);
-      const story = buildMediaStory(text, uploadedUrl);
-
-      const replyId = (replyToId ?? threadId) ? String(replyToId ?? threadId) : undefined;
-      if (parsed.kind === "dm") {
-        return await sendDmWithStory({
-          api,
-          fromShip,
-          toShip: parsed.ship,
-          story,
-          replyToId: replyId,
-        });
-      }
-      if (parsed.kind === "heap") {
-        if (replyId) {
-          return await commentOnHeapPost({
-            api,
+        const replyId = (replyToId ?? threadId) ? String(replyToId ?? threadId) : undefined;
+        if (parsed.kind === "dm") {
+          return await sendDmWithStory({ fromShip, toShip: parsed.ship, story, replyToId: replyId });
+        }
+        if (parsed.kind === "heap") {
+          if (replyId) {
+            return await commentOnHeapPost({
+              fromShip,
+              hostShip: parsed.hostShip,
+              channelName: parsed.channelName,
+              curioId: replyId,
+              story,
+            });
+          }
+          return await sendHeapPost({
             fromShip,
             hostShip: parsed.hostShip,
             channelName: parsed.channelName,
-            curioId: replyId,
             story,
           });
         }
-        return await sendHeapPost({
-          api,
+        return await sendGroupMessageWithStory({
           fromShip,
           hostShip: parsed.hostShip,
           channelName: parsed.channelName,
           story,
+          replyToId: replyId,
         });
-      }
-      return await sendGroupMessageWithStory({
-        api,
-        fromShip,
-        hostShip: parsed.hostShip,
-        channelName: parsed.channelName,
-        story,
-        replyToId: replyId,
-      });
-    } finally {
-      try {
-        await api.delete();
-      } catch {
-        // ignore cleanup errors
-      }
-    }
+      },
+    );
   },
 };
 

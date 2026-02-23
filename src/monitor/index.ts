@@ -7,6 +7,7 @@ import { resolveTlonAccount } from "../types.js";
 import { authenticate } from "../urbit/auth.js";
 import { ssrfPolicyFromAllowPrivateNetwork } from "../urbit/context.js";
 import type { Foreigns, DmInvite } from "../urbit/foreigns.js";
+import { configureTlonApiWithPoke } from "../urbit/api-client.js";
 import { sendDm, sendGroupMessage, commentOnHeapPost } from "../urbit/send.js";
 import { markdownToStory } from "../urbit/story.js";
 import { UrbitSSEClient } from "../urbit/sse-client.js";
@@ -163,6 +164,9 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       runtime.log?.("[tlon] Re-authentication successful");
     },
   });
+
+  // Configure @tloncorp/api's global client to use the SSE client's poke for all send operations
+  configureTlonApiWithPoke(api.poke.bind(api), botShipName, account.url);
 
   const processedTracker = createProcessedMessageTracker(2000);
   let groupChannels: string[] = [];
@@ -577,7 +581,6 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     }
     try {
       await sendDm({
-        api: api!,
         fromShip: botShipName,
         toShip: effectiveOwnerShip,
         text: message,
@@ -906,7 +909,6 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
             const parsed = parseChannelNest(groupChannel);
             if (parsed) {
               await sendGroupMessage({
-                api: api,
                 fromShip: botShipName,
                 hostShip: parsed.hostShip,
                 channelName: parsed.channelName,
@@ -915,7 +917,6 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
             }
           } else {
             await sendDm({
-              api: api,
               fromShip: botShipName,
               toShip: senderShip,
               text: noHistoryMsg,
@@ -943,7 +944,6 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
           const parsed = parseChannelNest(groupChannel);
           if (parsed) {
             await sendGroupMessage({
-              api: api,
               fromShip: botShipName,
               hostShip: parsed.hostShip,
               channelName: parsed.channelName,
@@ -951,7 +951,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
             });
           }
         } else {
-          await sendDm({ api: api, fromShip: botShipName, toShip: senderShip, text: errorMsg });
+          await sendDm({ fromShip: botShipName, toShip: senderShip, text: errorMsg });
         }
         return;
       }
@@ -993,7 +993,6 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
 
           // Send async, don't block message processing
           sendDm({
-            api,
             fromShip: botShipName,
             toShip: effectiveOwnerShip,
             text: warningMsg,
@@ -1121,7 +1120,6 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
             if (groupChannel.startsWith("heap/") && deliverParentId) {
               const story = markdownToStory(replyText);
               await commentOnHeapPost({
-                api: api,
                 fromShip: botShipName,
                 hostShip: parsed.hostShip,
                 channelName: parsed.channelName,
@@ -1130,7 +1128,6 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
               });
             } else {
               await sendGroupMessage({
-                api: api,
                 fromShip: botShipName,
                 hostShip: parsed.hostShip,
                 channelName: parsed.channelName,
@@ -1144,7 +1141,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
               runtime.log?.(`[tlon] Now tracking thread for future replies: ${deliverParentId}`);
             }
           } else {
-            await sendDm({ api: api, fromShip: botShipName, toShip: senderShip, text: replyText, replyToId: deliverParentId ? String(deliverParentId) : undefined });
+            await sendDm({ fromShip: botShipName, toShip: senderShip, text: replyText, replyToId: deliverParentId ? String(deliverParentId) : undefined });
           }
         },
         onError: (err, info) => {
