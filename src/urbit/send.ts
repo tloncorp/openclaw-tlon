@@ -373,6 +373,7 @@ type DmReactParams = {
   toShip: string;
   messageId: string;
   react: string;
+  parentId?: string; // For reacting to a DM thread reply
 };
 
 export async function addDmReaction({
@@ -381,14 +382,44 @@ export async function addDmReaction({
   toShip,
   messageId,
   react,
+  parentId,
 }: DmReactParams) {
+  const formattedMessageId = formatPostId(messageId);
+
+  // Reacting to a DM thread reply: wrap in reply delta
+  if (parentId) {
+    const formattedParentId = formatPostId(parentId);
+    await api.poke({
+      app: "chat",
+      mark: "chat-dm-action-1",
+      json: {
+        ship: toShip,
+        diff: {
+          id: formattedParentId,
+          delta: {
+            reply: {
+              id: formattedMessageId,
+              delta: {
+                "add-react": {
+                  react,
+                  author: fromShip,
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+    return;
+  }
+
   await api.poke({
     app: "chat",
     mark: "chat-dm-action-1",
     json: {
       ship: toShip,
       diff: {
-        id: messageId,
+        id: formattedMessageId,
         delta: {
           "add-react": {
             react,
@@ -405,14 +436,41 @@ export async function removeDmReaction({
   fromShip,
   toShip,
   messageId,
+  parentId,
 }: Omit<DmReactParams, "react">) {
+  const formattedMessageId = formatPostId(messageId);
+
+  // Removing reaction from a DM thread reply
+  if (parentId) {
+    const formattedParentId = formatPostId(parentId);
+    await api.poke({
+      app: "chat",
+      mark: "chat-dm-action-1",
+      json: {
+        ship: toShip,
+        diff: {
+          id: formattedParentId,
+          delta: {
+            reply: {
+              id: formattedMessageId,
+              delta: {
+                "del-react": fromShip,
+              },
+            },
+          },
+        },
+      },
+    });
+    return;
+  }
+
   await api.poke({
     app: "chat",
     mark: "chat-dm-action-1",
     json: {
       ship: toShip,
       diff: {
-        id: messageId,
+        id: formattedMessageId,
         delta: {
           "del-react": fromShip,
         },

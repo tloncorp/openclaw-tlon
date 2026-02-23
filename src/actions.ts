@@ -123,22 +123,23 @@ async function handleReact({
     throw new Error(`Invalid Tlon target: ${to}`);
   }
 
+  // For reply/thread reactions: explicit parentId, or infer from thread context
+  const parentId =
+    readStringParam(params, "parentId") ??
+    (toolContext as { currentThreadTs?: string })?.currentThreadTs ??
+    undefined;
+
   if (parsed.kind === "dm") {
     if (remove) {
-      await removeDmReaction({ api, fromShip, toShip: parsed.ship, messageId });
+      await removeDmReaction({ api, fromShip, toShip: parsed.ship, messageId, parentId });
       return jsonResult({ ok: true, removed: true });
     }
-    await addDmReaction({ api, fromShip, toShip: parsed.ship, messageId, react: emoji });
+    await addDmReaction({ api, fromShip, toShip: parsed.ship, messageId, react: emoji, parentId });
     return jsonResult({ ok: true, added: emoji });
   }
 
   // Channel or heap reaction
   const nestPrefix = parsed.kind === "heap" ? "heap" : "chat";
-  // For reply reactions: explicit parentId, or infer from thread context
-  const parentId =
-    readStringParam(params, "parentId") ??
-    (toolContext as { currentThreadTs?: string })?.currentThreadTs ??
-    undefined;
   if (remove) {
     await removeChannelReaction({
       api,
