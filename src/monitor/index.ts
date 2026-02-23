@@ -1090,10 +1090,8 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         responsePrefix,
         humanDelay,
         deliver: async (payload: ReplyPayload) => {
-          runtime.log?.(`[tlon] DELIVER_CALLBACK: isGroup=${isGroup} groupChannel=${groupChannel} parentId=${parentId} textLen=${payload.text?.length ?? 0}`);
           let replyText = payload.text;
           if (!replyText) {
-            runtime.log?.("[tlon] DELIVER_CALLBACK: empty text, skipping");
             return;
           }
 
@@ -1125,7 +1123,6 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
                 story,
               });
             } else {
-              runtime.log?.(`[tlon] DELIVER: sendGroupMessage to=${parsed.hostShip}/${parsed.channelName} replyToId=${parentId ?? "none"}`);
               await sendGroupMessage({
                 api: api,
                 fromShip: botShipName,
@@ -1134,7 +1131,6 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
                 text: replyText,
                 replyToId: parentId ?? undefined,
               });
-              runtime.log?.("[tlon] DELIVER: sendGroupMessage completed");
             }
             // Track thread participation for future replies without mention
             if (parentId) {
@@ -1425,11 +1421,25 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       const isDmThreadReply = Boolean(dmReplyMemo);
       const dmContent = essay || dmReplyMemo;
 
+      // For DM thread replies, extract the reply's own ID (distinct from the parent post ID)
+      // The reply ID may be in dmReply.id, or we construct it from author/sent
+      let dmReplyOwnId: string | undefined;
+      if (isDmThreadReply && dmReply) {
+        dmReplyOwnId = dmReply.id ?? dmReply.delta?.add?.id;
+        // If no explicit reply ID, construct from author/sent (same format as our outbound)
+        if (!dmReplyOwnId && dmReplyMemo?.author && dmReplyMemo?.sent) {
+          dmReplyOwnId = `${normalizeShip(dmReplyMemo.author)}/${dmReplyMemo.sent}`;
+        }
+      }
+
       if (!dmContent) {
         return;
       }
 
-      if (!processedTracker.mark(messageId)) {
+      // Use the reply's own ID for thread replies so the agent has the correct message ID
+      const effectiveMessageId = dmReplyOwnId ?? messageId;
+
+      if (!processedTracker.mark(effectiveMessageId)) {
         return;
       }
 
@@ -1480,9 +1490,9 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
 
       // Owner is always allowed to DM (bypass allowlist)
       if (isOwner(senderShip)) {
-        runtime.log?.(`[tlon] Processing DM from owner ${senderShip}${isDmThreadReply ? ` (thread reply, parent=${dmReplyParentId})` : ""}`);
+        runtime.log?.(`[tlon] Processing DM from owner ${senderShip}${isDmThreadReply ? ` (thread reply, parent=${dmReplyParentId}, replyId=${effectiveMessageId})` : ""}`);
         await processMessage({
-          messageId: messageId ?? "",
+          messageId: effectiveMessageId ?? "",
           senderShip,
           messageText,
           messageContent: dmContent.content,
@@ -1503,7 +1513,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
             requestingShip: senderShip,
             messagePreview: messageText.substring(0, 100),
             originalMessage: {
-              messageId: messageId ?? "",
+              messageId: effectiveMessageId ?? "",
               messageText,
               messageContent: dmContent.content,
               timestamp: dmContent.sent || Date.now(),
@@ -1517,7 +1527,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       }
 
       await processMessage({
-        messageId: messageId ?? "",
+        messageId: effectiveMessageId ?? "",
         senderShip,
         messageText,
         messageContent: dmContent.content, // Pass raw content for media extraction
