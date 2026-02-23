@@ -1207,11 +1207,36 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
               : "";
             const authorInfo = cached?.author ? ` (by ${cached.author})` : "";
             const eventText = `Tlon reaction in ${nest}: ${reactEmoji} by ${ship} on post ${postId}${authorInfo}${contentSnippet}`;
-            core.system.enqueueSystemEvent(eventText, {
-              sessionKey: route.sessionKey,
-              contextKey: `tlon:reaction:${nest}:${postId}:${reactEmoji}:${ship}`,
-            });
             runtime.log?.(`[tlon] REACTION: ${eventText}`);
+
+            // If reacting to the bot's own message, dispatch as a real message
+            // so the agent runs immediately (e.g. thumbs-up as "yes")
+            if (cached?.author === botShipName) {
+              const parentPostId = replyReacts
+                ? (response?.post?.id ?? undefined)
+                : undefined;
+              const reactText = `[${ship} reacted ${reactEmoji} to your message: "${cached.content.substring(0, 300)}${cached.content.length > 300 ? "..." : ""}"]`;
+              runtime.log?.(`[tlon] Dispatching reaction as message: ${reactText.substring(0, 100)}`);
+              const parsed = parseChannelNest(nest);
+              await processMessage({
+                messageId: `react-${postId}-${ship}-${Date.now()}`,
+                senderShip: ship,
+                messageText: reactText,
+                isGroup: true,
+                channelNest: nest,
+                hostShip: parsed?.hostShip,
+                channelName: parsed?.channelName,
+                timestamp: Date.now(),
+                parentId: parentPostId ?? postId,
+                isThreadReply: true,
+              });
+            } else {
+              // For reactions on other people's messages, just enqueue as system event
+              core.system.enqueueSystemEvent(eventText, {
+                sessionKey: route.sessionKey,
+                contextKey: `tlon:reaction:${nest}:${postId}:${reactEmoji}:${ship}`,
+              });
+            }
           } catch (err: any) {
             runtime.error?.(`[tlon] Error handling reaction: ${err?.message ?? String(err)}`);
           }
