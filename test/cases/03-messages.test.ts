@@ -60,7 +60,7 @@ describe("messages", () => {
     }
 
     const token = `it-post-${Date.now().toString(36)}`;
-    const prompt = `Post this exact text into your channel ${fixtures.group.chatChannel}: "${token}"`;
+    const prompt = `Post this exact text into your channel ${fixtures.group.chatChannel}: "${token}" — confirm when done.`;
     console.log(`\n[TEST] Sending prompt: "${prompt}"`);
 
     const response = await fixtures.client.prompt(prompt);
@@ -70,6 +70,11 @@ describe("messages", () => {
     if (!response.success) {
       throw new Error(response.error ?? "Prompt failed");
     }
+
+    // Check the bot confirmed the action
+    const text = response.text?.toLowerCase() ?? "";
+    const hasConfirmation = text.includes("posted") || text.includes("sent") || text.includes("done") || text.includes(token.toLowerCase());
+    expect(hasConfirmation).toBe(true);
 
     // Verify the message was actually posted by checking channel state
     console.log(`[TEST] Waiting for message with token "${token}" to appear...`);
