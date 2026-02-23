@@ -114,10 +114,31 @@ describe("contacts", () => {
       throw new Error(response.error ?? "Prompt failed");
     }
 
-    // Nickname read paths are inconsistent across API surfaces in CI. Validate
-    // the write path through assistant confirmation text instead of brittle scries.
-    const reply = response.text?.toLowerCase() ?? "";
-    expect(reply).toContain(nicknameToken.toLowerCase());
+    console.log(`[TEST] Waiting for self profile nickname to be "${nicknameToken}"...`);
+    const updated = await waitFor(async () => {
+      // With @tloncorp/api scry(app, path), the path should NOT include .json.
+      // Using /v1/self.json can become a doubled suffix in some call paths.
+      const selfProfile = await botState.scry<Record<string, unknown>>("contacts", "/v1/self");
+      const profile = (selfProfile ?? {}) as {
+        nickname?: string | { value?: string | null } | null;
+        nickName?: string | { value?: string | null } | null;
+      };
+
+      const nicknameFromField =
+        typeof profile.nickname === "string"
+          ? profile.nickname
+          : (profile.nickname as { value?: string | null } | null | undefined)?.value;
+      const nicknameFromAltField =
+        typeof profile.nickName === "string"
+          ? profile.nickName
+          : (profile.nickName as { value?: string | null } | null | undefined)?.value;
+
+      const currentNickname = nicknameFromField ?? nicknameFromAltField ?? "";
+      console.log(`[TEST] Current nickname (self scry): "${currentNickname}"`);
+      return currentNickname === nicknameToken;
+    }, 30_000);
+
+    expect(updated).toBe(true);
   });
 
   test("updates the bot profile bio", async () => {
