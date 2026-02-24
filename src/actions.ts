@@ -236,7 +236,7 @@ async function handleReply({
     return jsonResult({ ok: true, replied: messageId, target: to });
   }
 
-  if (parsed.kind === "channel") {
+  if (parsed.kind === "group") {
     await sendGroupMessage({
       fromShip,
       hostShip: parsed.hostShip,

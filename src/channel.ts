@@ -26,7 +26,6 @@ import {
   sendDmWithStory,
   sendGroupMessageWithStory,
   sendHeapPost,
-  commentOnHeapPost,
 } from "./urbit/send.js";
 import { uploadImageFromUrl } from "./urbit/upload.js";
 import { tlonMessageActions } from "./actions.js";
@@ -135,20 +134,12 @@ const tlonOutbound: ChannelOutboundAdapter = {
         }
         if (parsed.kind === "heap") {
           const story = markdownToStory(text);
-          if (replyId) {
-            return await commentOnHeapPost({
-              fromShip,
-              hostShip: parsed.hostShip,
-              channelName: parsed.channelName,
-              curioId: replyId,
-              story,
-            });
-          }
           return await sendHeapPost({
             fromShip,
             hostShip: parsed.hostShip,
             channelName: parsed.channelName,
             story,
+            replyToId: replyId,
           });
         }
         return await sendGroupMessage({
@@ -185,20 +176,12 @@ const tlonOutbound: ChannelOutboundAdapter = {
           return await sendDmWithStory({ fromShip, toShip: parsed.ship, story, replyToId: replyId });
         }
         if (parsed.kind === "heap") {
-          if (replyId) {
-            return await commentOnHeapPost({
-              fromShip,
-              hostShip: parsed.hostShip,
-              channelName: parsed.channelName,
-              curioId: replyId,
-              story,
-            });
-          }
           return await sendHeapPost({
             fromShip,
             hostShip: parsed.hostShip,
             channelName: parsed.channelName,
             story,
+            replyToId: replyId,
           });
         }
         return await sendGroupMessageWithStory({
@@ -380,9 +363,9 @@ export const tlonPlugin: ChannelPlugin = {
       // Gallery/heap channel guidance
       hints.push(
         "",
-        "Tlon gallery channels (heap/~host/name) are for image posts.",
-        "- To post to a gallery: use action=send, to=heap/~host/name, media=<imageUrl>, message=<caption>",
-        "- Gallery posts without images may not appear. Always include a media URL when creating new gallery posts.",
+        "Tlon gallery channels (heap/~host/name) are for collecting images, links, and media.",
+        "- To post to a gallery: use action=send, to=heap/~host/name, message=<text or URL>",
+        "- For image posts, include media=<imageUrl> with an optional message=<caption>",
         "- To react to a gallery comment: use action=react, to=heap/~host/name, messageId=<commentId>, parentId=<postId>, emoji=<emoji>",
       );
 

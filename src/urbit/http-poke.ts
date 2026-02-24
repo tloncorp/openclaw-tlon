@@ -1,5 +1,7 @@
+import { randomUUID } from "node:crypto";
 import { authenticate } from "./auth.js";
-import { ssrfPolicyFromAllowPrivateNetwork } from "./context.js";
+import { ssrfPolicyFromAllowPrivateNetwork, type SsrFPolicy } from "./context.js";
+import { urbitFetch } from "./fetch.js";
 
 export type HttpPokeApi = {
   poke: (params: { app: string; mark: string; json: unknown }) => Promise<number>;
@@ -17,8 +19,8 @@ export async function createHttpPokeApi(params: {
 }): Promise<HttpPokeApi> {
   const ssrfPolicy = ssrfPolicyFromAllowPrivateNetwork(params.allowPrivateNetwork);
   const cookie = await authenticate(params.url, params.code, { ssrfPolicy });
-  const channelId = `${Math.floor(Date.now() / 1000)}-${Math.random().toString(36).substring(2, 8)}`;
-  const channelUrl = `${params.url}/~/channel/${channelId}`;
+  const channelId = `${Math.floor(Date.now() / 1000)}-${randomUUID().slice(0, 8)}`;
+  const channelPath = `/~/channel/${channelId}`;
   const shipName = params.ship.replace(/^~/, "");
 
   return {
@@ -33,21 +35,31 @@ export async function createHttpPokeApi(params: {
         json: pokeParams.json,
       };
 
-      const response = await fetch(channelUrl, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-          Cookie: cookie.split(";")[0],
+      const { response, release } = await urbitFetch({
+        baseUrl: params.url,
+        path: channelPath,
+        init: {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            Cookie: cookie.split(";")[0],
+          },
+          body: JSON.stringify([pokeData]),
         },
-        body: JSON.stringify([pokeData]),
+        ssrfPolicy,
+        timeoutMs: 30_000,
+        auditContext: "tlon-http-poke",
       });
 
-      if (!response.ok && response.status !== 204) {
-        const errorText = await response.text();
-        throw new Error(`Poke failed: ${response.status} - ${errorText}`);
+      try {
+        if (!response.ok && response.status !== 204) {
+          const errorText = await response.text();
+          throw new Error(`Poke failed: ${response.status} - ${errorText}`);
+        }
+        return pokeId;
+      } finally {
+        await release();
       }
-
-      return pokeId;
     },
     delete: async () => {
       // No-op for HTTP-only client

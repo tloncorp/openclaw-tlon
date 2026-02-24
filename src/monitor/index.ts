@@ -1215,16 +1215,16 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
             // If reacting to the bot's own message, dispatch as a real message
             // so the agent runs immediately (e.g. thumbs-up as "yes")
             if (cached?.author === botShipName) {
-              // Send just the emoji as the message — the agent has session context
-              // from its own question and will interpret the reaction naturally.
-              // NOTE: parentId is deliberately omitted from processMessage to avoid
-              // MessageThreadId/ReplyToId in ctx which can cause the agent to suppress
-              // responses. The deliver callback uses reactionParentId directly instead.
+              // Include context so agent knows what was reacted to, since we're
+              // deliberately omitting thread context (parentId) to avoid the agent
+              // suppressing responses when it sees its own message in thread history.
               const reactionParentId = replyReacts
                 ? (response?.post?.id ?? postId)
                 : postId;
-              const reactText = reactEmoji;
-              runtime.log?.(`[tlon] Dispatching channel reaction as message: ${reactText} from ${ship}`);
+              const reactText = cached?.content
+                ? `${reactEmoji} (reacting to: "${cached.content}")`
+                : reactEmoji;
+              runtime.log?.(`[tlon] Dispatching channel reaction as message: ${reactEmoji} from ${ship}`);
               const parsed = parseChannelNest(nest);
               await processMessage({
                 messageId: `react-${postId}-${ship}-${Date.now()}`,
@@ -1468,10 +1468,11 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
             // If reacting to the bot's own message, dispatch as a real message
             // so the agent runs immediately (e.g. thumbs-up as "yes")
             if (isAdd && cached?.author === botShipName) {
-              // Send just the emoji as the message — the agent has session context
-              // from its own question and will interpret the reaction naturally
-              const reactText = reactEmoji;
-              runtime.log?.(`[tlon] Dispatching DM reaction as message: ${reactText} from ${reactAuthor}`);
+              // Include context so agent knows what was reacted to
+              const reactText = cached?.content
+                ? `${reactEmoji} (reacting to: "${cached.content}")`
+                : reactEmoji;
+              runtime.log?.(`[tlon] Dispatching DM reaction as message: ${reactEmoji} from ${reactAuthor}`);
               await processMessage({
                 messageId: `react-${messageId}-${reactAuthor}-${Date.now()}`,
                 senderShip: reactAuthor,
