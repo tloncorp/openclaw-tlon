@@ -25,4 +25,4 @@ export {
 
 export { getTestConfig, type TestEnvConfig } from "./config.js";
 
-export { waitFor, getFixtures, type TestFixtures } from "./fixtures.js";
+export { waitFor, getFixtures, requireFixtureGroup, type TestFixtures } from "./fixtures.js";

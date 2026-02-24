@@ -2,6 +2,7 @@ import { describe, test, expect, beforeAll } from "vitest";
 import {
   getFixtures,
   waitFor,
+  requireFixtureGroup,
   type TestFixtures,
 } from "../lib/index.js";
 
@@ -10,17 +11,10 @@ describe("groups", () => {
 
   beforeAll(async () => {
     fixtures = await getFixtures();
-
-    if (!fixtures.group) {
-      console.log("[GROUPS] No fixture group available, tests will be skipped");
-    }
   });
 
   test("knows about the fixture group", async () => {
-    if (!fixtures.group) {
-      console.log("[TEST] Skipping: no fixture group");
-      return;
-    }
+    requireFixtureGroup(fixtures);
 
     const response = await fixtures.client.prompt(
       `Tell me about your group ${fixtures.group.id}. Include both the group id and title.`
@@ -35,10 +29,7 @@ describe("groups", () => {
   });
 
   test("lists group channels", async () => {
-    if (!fixtures.group) {
-      console.log("[TEST] Skipping: no fixture group");
-      return;
-    }
+    requireFixtureGroup(fixtures);
 
     const response = await fixtures.client.prompt(
       `List the channels in group ${fixtures.group.id}.`

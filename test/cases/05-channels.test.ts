@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeAll } from "vitest";
-import { getFixtures, waitFor, type TestFixtures } from "../lib/index.js";
+import { getFixtures, waitFor, requireFixtureGroup, type TestFixtures } from "../lib/index.js";
 
 describe("channels", () => {
   let fixtures: TestFixtures;
@@ -91,10 +91,7 @@ describe("channels", () => {
   });
 
   test("adds a channel to a group", async () => {
-    if (!fixtures.group) {
-      console.log("[TEST] Skipping: no fixture group");
-      return;
-    }
+    requireFixtureGroup(fixtures);
 
     const channelName = `test-${Date.now().toString(36)}`;
     const prompt = `Add a new chat channel called "${channelName}" to your group ${fixtures.group.id}.`;
@@ -134,10 +131,7 @@ describe("channels", () => {
   });
 
   test("updates a channel title", async () => {
-    if (!fixtures.group) {
-      console.log("[TEST] Skipping: no fixture group");
-      return;
-    }
+    requireFixtureGroup(fixtures);
 
     const newTitle = `Updated Title ${Date.now().toString(36)}`;
     const prompt = `Update the title of channel ${fixtures.group.chatChannel} to "${newTitle}".`;
@@ -163,10 +157,7 @@ describe("channels", () => {
   });
 
   test("gets info for a group channel", async () => {
-    if (!fixtures.group) {
-      console.log("[TEST] Skipping: no fixture group");
-      return;
-    }
+    requireFixtureGroup(fixtures);
 
     const prompt = `Get detailed information about channel ${fixtures.group.chatChannel}.`;
     console.log(`\n[TEST] Sending prompt: "${prompt}"`);

@@ -3,6 +3,7 @@ import { getTextContent } from "@tloncorp/api";
 import {
   getFixtures,
   waitFor,
+  requireFixtureGroup,
   type TestFixtures,
 } from "../lib/index.js";
 
@@ -14,10 +15,7 @@ describe("messages", () => {
   });
 
   test("can read messages from fixture group channel", async () => {
-    if (!fixtures.group) {
-      console.log("[TEST] Skipping: no fixture group");
-      return;
-    }
+    requireFixtureGroup(fixtures);
 
     const prompt = `Show me recent messages from your own channel ${fixtures.group.chatChannel}.`;
     console.log(`\n[TEST] Sending prompt: "${prompt}"`);
@@ -54,10 +52,7 @@ describe("messages", () => {
   });
 
   test("posts a message into a bot-owned channel", async () => {
-    if (!fixtures.group) {
-      console.log("[TEST] Skipping: no fixture group");
-      return;
-    }
+    requireFixtureGroup(fixtures);
 
     const token = `it-post-${Date.now().toString(36)}`;
     const prompt = `Post this exact text into your channel ${fixtures.group.chatChannel}: "${token}" — then reply back here in this DM to confirm it was posted.`;

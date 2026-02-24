@@ -171,8 +171,9 @@ async function setupFixtures(): Promise<TestFixtures> {
 export async function waitFor<T>(
   fn: () => Promise<T | undefined>,
   timeoutMs: number,
-  intervalMs = 1500
-): Promise<T | undefined> {
+  intervalMs = 1500,
+  description = "condition"
+): Promise<T> {
   const started = Date.now();
   while (Date.now() - started < timeoutMs) {
     const result = await fn();
@@ -181,7 +182,22 @@ export async function waitFor<T>(
     }
     await sleep(intervalMs);
   }
-  return undefined;
+  throw new Error(`Timeout waiting for ${description} after ${timeoutMs}ms`);
+}
+
+/**
+ * Asserts that fixture group exists, throwing a descriptive error if not.
+ * Use this instead of early returns so tests fail clearly when fixtures are missing.
+ */
+export function requireFixtureGroup(
+  fixtures: TestFixtures
+): asserts fixtures is TestFixtures & { group: NonNullable<TestFixtures["group"]> } {
+  if (!fixtures.group) {
+    throw new Error(
+      "Test requires fixture group but it was not created. " +
+        "Check fixture setup logs for errors."
+    );
+  }
 }
 
 function sleep(ms: number): Promise<void> {
