@@ -7,8 +7,9 @@
  */
 
 import { Urbit, getTextContent } from "@tloncorp/api";
-import { sendDm, type TlonPokeApi } from "../../src/urbit/send.js";
+import { scot, da } from "@urbit/aura";
 import { createStateClient, type StateClient, type StateClientConfig } from "./state.js";
+import { markdownToStory, type Story } from "../../src/urbit/story.js";
 
 /** Ship connection credentials */
 export interface ShipCredentials {
@@ -93,6 +94,7 @@ export function createTlonClient(config: TlonClientConfig): TestClient {
 
   // Create Urbit client for test user to send DMs
   const testUserShipClean = testUser.shipName.replace(/^~/, "");
+  const testUserShipNorm = testUser.shipName.startsWith("~") ? testUser.shipName : `~${testUser.shipName}`;
   const urbit = new Urbit(testUser.shipUrl, testUser.code);
   urbit.ship = testUserShipClean;
 
@@ -105,9 +107,41 @@ export function createTlonClient(config: TlonClientConfig): TestClient {
     }
   };
 
-  // Create poke API wrapper for sendDm
-  const api: TlonPokeApi = {
-    poke: (params) => urbit.poke(params),
+  /**
+   * Send a DM using direct poke to chat app.
+   * Can't use the plugin's sendDm because it uses @tloncorp/api global client
+   * which is configured for the bot, not the test user.
+   */
+  const sendTestUserDm = async (toShip: string, message: string) => {
+    await ensureConnected();
+    const story: Story = markdownToStory(message);
+    const targetShip = toShip.startsWith("~") ? toShip : `~${toShip}`;
+    const sentAt = Date.now();
+    const idUd = scot("ud", da.fromUnix(sentAt));
+    const id = `${testUserShipNorm}/${idUd}`;
+
+    const delta = {
+      add: {
+        memo: {
+          content: story,
+          author: testUserShipNorm,
+          sent: sentAt,
+        },
+        kind: null,
+        time: null,
+      },
+    };
+
+    const action = {
+      ship: targetShip,
+      diff: { id, delta },
+    };
+
+    await urbit.poke({
+      app: "chat",
+      mark: "chat-dm-action",
+      json: action,
+    });
   };
 
   return {
@@ -130,19 +164,13 @@ export function createTlonClient(config: TlonClientConfig): TestClient {
           console.log(`DM baseline poll failed: ${err}`);
         }
 
-        // Use the plugin's sendDm function for correct formatting.
+        // Send DM via direct poke (can't use plugin's sendDm since it uses global API client)
         // Retry transient channel failures so tests don't fail fast and cascade prompts.
         let sent = false;
         let lastSendError = "";
         for (let attempt = 1; attempt <= 3; attempt += 1) {
           try {
-            await ensureConnected();
-            await sendDm({
-              api,
-              fromShip: testUser.shipName,
-              toShip: bot.shipName,
-              text,
-            });
+            await sendTestUserDm(bot.shipName, text);
             sent = true;
             break;
           } catch (err) {
