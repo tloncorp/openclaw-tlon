@@ -1652,7 +1652,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         runtime.error?.(`[tlon] Channels firehose error: ${String(error)}`);
       },
       quit: () => {
-        runtime.log?.("[tlon] Channels firehose subscription ended");
+        runtime.log?.("[tlon] Channels firehose quit received, SSE client will resubscribe");
       },
     });
     runtime.log?.("[tlon] Subscribed to channels firehose (/v2)");
@@ -1666,7 +1666,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         runtime.error?.(`[tlon] Chat firehose error: ${String(error)}`);
       },
       quit: () => {
-        runtime.log?.("[tlon] Chat firehose subscription ended");
+        runtime.log?.("[tlon] Chat firehose quit received, SSE client will resubscribe");
       },
     });
     runtime.log?.("[tlon] Subscribed to chat firehose (/v3)");
@@ -1698,7 +1698,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         runtime.error?.(`[tlon] Contacts subscription error: ${String(error)}`);
       },
       quit: () => {
-        runtime.log?.("[tlon] Contacts subscription ended");
+        runtime.log?.("[tlon] Contacts quit received, SSE client will resubscribe");
       },
     });
     runtime.log?.("[tlon] Subscribed to contacts updates (/v1/news)");
@@ -1906,7 +1906,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
           runtime.error?.(`[tlon] Groups-ui subscription error: ${String(error)}`);
         },
         quit: () => {
-          runtime.log?.("[tlon] Groups-ui subscription ended");
+          runtime.log?.("[tlon] Groups-ui quit received, SSE client will resubscribe");
         },
       });
       runtime.log?.("[tlon] Subscribed to groups-ui for real-time channel detection");
@@ -2047,7 +2047,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
             runtime.error?.(`[tlon] Foreigns subscription error: ${String(error)}`);
           },
           quit: () => {
-            runtime.log?.("[tlon] Foreigns subscription ended");
+            runtime.log?.("[tlon] Foreigns quit received, SSE client will resubscribe");
           },
         });
         runtime.log?.(
