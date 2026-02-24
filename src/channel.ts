@@ -22,10 +22,8 @@ import { urbitFetch } from "./urbit/fetch.js";
 import {
   buildMediaStory,
   sendDm,
-  sendGroupMessage,
   sendDmWithStory,
-  sendGroupMessageWithStory,
-  sendHeapPost,
+  sendChannelPost,
 } from "./urbit/send.js";
 import { uploadImageFromUrl } from "./urbit/upload.js";
 import { tlonMessageActions } from "./actions.js";
@@ -132,21 +130,11 @@ const tlonOutbound: ChannelOutboundAdapter = {
         if (parsed.kind === "dm") {
           return await sendDm({ fromShip, toShip: parsed.ship, text, replyToId: replyId });
         }
-        if (parsed.kind === "heap") {
-          const story = markdownToStory(text);
-          return await sendHeapPost({
-            fromShip,
-            hostShip: parsed.hostShip,
-            channelName: parsed.channelName,
-            story,
-            replyToId: replyId,
-          });
-        }
-        return await sendGroupMessage({
+        // Channel post (chat, heap, or diary)
+        return await sendChannelPost({
           fromShip,
-          hostShip: parsed.hostShip,
-          channelName: parsed.channelName,
-          text,
+          nest: parsed.nest,
+          story: markdownToStory(text),
           replyToId: replyId,
         });
       },
@@ -170,24 +158,15 @@ const tlonOutbound: ChannelOutboundAdapter = {
         const uploadedUrl = mediaUrl ? await uploadImageFromUrl(mediaUrl) : undefined;
         const fromShip = normalizeShip(account.ship!);
         const story = buildMediaStory(text, uploadedUrl);
-
         const replyId = (replyToId ?? threadId) ? String(replyToId ?? threadId) : undefined;
+
         if (parsed.kind === "dm") {
           return await sendDmWithStory({ fromShip, toShip: parsed.ship, story, replyToId: replyId });
         }
-        if (parsed.kind === "heap") {
-          return await sendHeapPost({
-            fromShip,
-            hostShip: parsed.hostShip,
-            channelName: parsed.channelName,
-            story,
-            replyToId: replyId,
-          });
-        }
-        return await sendGroupMessageWithStory({
+        // Channel post (chat, heap, or diary)
+        return await sendChannelPost({
           fromShip,
-          hostShip: parsed.hostShip,
-          channelName: parsed.channelName,
+          nest: parsed.nest,
           story,
           replyToId: replyId,
         });

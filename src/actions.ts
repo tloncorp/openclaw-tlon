@@ -15,8 +15,7 @@ import {
   addDmReaction,
   removeDmReaction,
   deleteHeapPost,
-  commentOnHeapPost,
-  sendGroupMessage,
+  sendChannelPost,
 } from "./urbit/send.js";
 import { markdownToStory } from "./urbit/story.js";
 
@@ -126,8 +125,9 @@ async function handleReact({
     return jsonResult({ ok: true, added: emoji });
   }
 
-  // Channel or heap reaction
-  const nestPrefix = parsed.kind === "heap" ? "heap" : "chat";
+  // Channel reaction (chat, heap, or diary)
+  // Extract nest prefix from the nest string (e.g., "heap" from "heap/~host/channel")
+  const nestPrefix = parsed.nest.split("/")[0];
   if (remove) {
     await removeChannelReaction({
       fromShip,
@@ -173,10 +173,11 @@ async function handleDelete({
 
   const parsed = parseTlonTarget(to);
   if (!parsed || parsed.kind === "dm") {
-    throw new Error("Tlon delete is only supported for heap posts.");
+    throw new Error("Tlon delete is only supported for channel posts.");
   }
 
-  if (parsed.kind !== "heap") {
+  const nestPrefix = parsed.nest.split("/")[0];
+  if (nestPrefix !== "heap") {
     throw new Error("Tlon delete is currently only supported for heap posts. Use heap/~host/channel as the target.");
   }
 
@@ -225,29 +226,18 @@ async function handleReply({
 
   const story = markdownToStory(message);
 
-  if (parsed.kind === "heap") {
-    await commentOnHeapPost({
-      fromShip,
-      hostShip: parsed.hostShip,
-      channelName: parsed.channelName,
-      curioId: messageId,
-      story,
-    });
-    return jsonResult({ ok: true, replied: messageId, target: to });
+  if (parsed.kind === "dm") {
+    throw new Error(
+      "Tlon reply action is supported for channel targets. For DMs, use action=send with replyTo.",
+    );
   }
 
-  if (parsed.kind === "group") {
-    await sendGroupMessage({
-      fromShip,
-      hostShip: parsed.hostShip,
-      channelName: parsed.channelName,
-      text: message,
-      replyToId: messageId,
-    });
-    return jsonResult({ ok: true, replied: messageId, target: to });
-  }
-
-  throw new Error(
-    "Tlon reply action is supported for channel and heap targets. For DMs, use action=send with replyTo.",
-  );
+  // Channel reply (chat, heap, or diary)
+  await sendChannelPost({
+    fromShip,
+    nest: parsed.nest,
+    story,
+    replyToId: messageId,
+  });
+  return jsonResult({ ok: true, replied: messageId, target: to });
 }

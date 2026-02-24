@@ -7,9 +7,8 @@ import { normalizeShip, parseChannelNest } from "../targets.js";
 import { resolveTlonAccount } from "../types.js";
 import { authenticate } from "../urbit/auth.js";
 import { ssrfPolicyFromAllowPrivateNetwork } from "../urbit/context.js";
-import type { Foreigns, DmInvite } from "../urbit/foreigns.js";
 import { configureTlonApiWithPoke } from "../urbit/api-client.js";
-import { sendDm, sendGroupMessage, sendHeapPost } from "../urbit/send.js";
+import { sendDm, sendChannelPost } from "../urbit/send.js";
 import { markdownToStory } from "../urbit/story.js";
 import { UrbitSSEClient } from "../urbit/sse-client.js";
 import {
@@ -944,16 +943,12 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         if (history.length === 0) {
           const noHistoryMsg =
             "I couldn't fetch any messages for this channel. It might be empty or there might be a permissions issue.";
-          if (isGroup) {
-            const parsed = parseChannelNest(groupChannel);
-            if (parsed) {
-              await sendGroupMessage({
-                fromShip: botShipName,
-                hostShip: parsed.hostShip,
-                channelName: parsed.channelName,
-                text: noHistoryMsg,
-              });
-            }
+          if (isGroup && groupChannel) {
+            await sendChannelPost({
+              fromShip: botShipName,
+              nest: groupChannel,
+              story: markdownToStory(noHistoryMsg),
+            });
           } else {
             await sendDm({
               fromShip: botShipName,
@@ -980,15 +975,11 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       } catch (error: any) {
         const errorMsg = `Sorry, I encountered an error while fetching the channel history: ${error?.message ?? String(error)}`;
         if (isGroup && groupChannel) {
-          const parsed = parseChannelNest(groupChannel);
-          if (parsed) {
-            await sendGroupMessage({
-              fromShip: botShipName,
-              hostShip: parsed.hostShip,
-              channelName: parsed.channelName,
-              text: errorMsg,
-            });
-          }
+          await sendChannelPost({
+            fromShip: botShipName,
+            nest: groupChannel,
+            story: markdownToStory(errorMsg),
+          });
         } else {
           await sendDm({ fromShip: botShipName, toShip: senderShip, text: errorMsg });
         }
@@ -1152,29 +1143,13 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
           }
 
           if (isGroup && groupChannel) {
-            const parsed = parseChannelNest(groupChannel);
-            if (!parsed) {
-              return;
-            }
-            // Heap channels: reply as a comment on the parent post
-            if (groupChannel.startsWith("heap/") && deliverParentId) {
-              const story = markdownToStory(replyText);
-              await sendHeapPost({
-                fromShip: botShipName,
-                hostShip: parsed.hostShip,
-                channelName: parsed.channelName,
-                story,
-                replyToId: String(deliverParentId),
-              });
-            } else {
-              await sendGroupMessage({
-                fromShip: botShipName,
-                hostShip: parsed.hostShip,
-                channelName: parsed.channelName,
-                text: replyText,
-                replyToId: deliverParentId ?? undefined,
-              });
-            }
+            // Send to any channel type (chat, heap, diary) using the nest directly
+            await sendChannelPost({
+              fromShip: botShipName,
+              nest: groupChannel,
+              story: markdownToStory(replyText),
+              replyToId: deliverParentId ?? undefined,
+            });
             // Track thread participation for future replies without mention
             if (deliverParentId) {
               participatedThreads.add(String(deliverParentId));
