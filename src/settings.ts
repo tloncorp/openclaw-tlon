@@ -53,6 +53,10 @@ export type TlonSettingsStore = {
   ownerShip?: string;
   /** Pending approval requests awaiting owner response */
   pendingApprovals?: PendingApproval[];
+  /** Epoch ms timestamp of the last message received from the owner ship */
+  lastOwnerMessageAt?: number;
+  /** ISO date (YYYY-MM-DD) of the last owner message — human-readable for LLM heartbeat checks */
+  lastOwnerMessageDate?: string;
 };
 
 export type TlonSettingsState = {
@@ -98,7 +102,7 @@ function parseChannelRules(
  * Parse settings from the raw Urbit settings-store response.
  * The response shape is: { [bucket]: { [key]: value } }
  */
-function parseSettingsResponse(raw: unknown): TlonSettingsStore {
+export function parseSettingsResponse(raw: unknown): TlonSettingsStore {
   if (!raw || typeof raw !== "object") {
     return {};
   }
@@ -135,6 +139,10 @@ function parseSettingsResponse(raw: unknown): TlonSettingsStore {
       : undefined,
     ownerShip: typeof settings.ownerShip === "string" ? settings.ownerShip : undefined,
     pendingApprovals: parsePendingApprovals(settings.pendingApprovals),
+    lastOwnerMessageAt:
+      typeof settings.lastOwnerMessageAt === "number" ? settings.lastOwnerMessageAt : undefined,
+    lastOwnerMessageDate:
+      typeof settings.lastOwnerMessageDate === "string" ? settings.lastOwnerMessageDate : undefined,
   };
 }
 
@@ -231,7 +239,7 @@ function parseSettingsEvent(event: unknown): { key: string; value: unknown } | n
 /**
  * Apply a single settings update to the current state.
  */
-function applySettingsUpdate(
+export function applySettingsUpdate(
   current: TlonSettingsStore,
   key: string,
   value: unknown,
@@ -279,6 +287,12 @@ function applySettingsUpdate(
       break;
     case "pendingApprovals":
       next.pendingApprovals = parsePendingApprovals(value);
+      break;
+    case "lastOwnerMessageAt":
+      next.lastOwnerMessageAt = typeof value === "number" ? value : undefined;
+      break;
+    case "lastOwnerMessageDate":
+      next.lastOwnerMessageDate = typeof value === "string" ? value : undefined;
       break;
   }
 

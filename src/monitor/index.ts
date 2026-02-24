@@ -1,5 +1,6 @@
-import { format } from "node:util";
 import type { RuntimeEnv, ReplyPayload, OpenClawConfig } from "openclaw/plugin-sdk";
+import { format } from "node:util";
+import type { Foreigns, DmInvite } from "../urbit/foreigns.js";
 import { getTlonRuntime } from "../runtime.js";
 import { createSettingsManager, type TlonSettingsStore } from "../settings.js";
 import { normalizeShip, parseChannelNest } from "../targets.js";
@@ -8,7 +9,7 @@ import { authenticate } from "../urbit/auth.js";
 import { ssrfPolicyFromAllowPrivateNetwork } from "../urbit/context.js";
 import type { Foreigns, DmInvite } from "../urbit/foreigns.js";
 import { configureTlonApiWithPoke } from "../urbit/api-client.js";
-import { sendDm, sendGroupMessage, commentOnHeapPost } from "../urbit/send.js";
+import { sendDm, sendGroupMessage, sendHeapPost } from "../urbit/send.js";
 import { markdownToStory } from "../urbit/story.js";
 import { UrbitSSEClient } from "../urbit/sse-client.js";
 import {
@@ -862,6 +863,44 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       messageText = stripBotMention(messageText, botShipName);
     }
 
+    // Track owner interaction timestamp for heartbeat engagement recovery.
+    // Store both epoch ms (for code) and ISO date (for LLM — models can't reliably convert epoch).
+    if (isOwner(senderShip)) {
+      const isoDate = new Date(timestamp).toISOString().split("T")[0]; // YYYY-MM-DD
+      Promise.all([
+        api.poke({
+          app: "settings",
+          mark: "settings-event",
+          json: {
+            "put-entry": {
+              desk: "moltbot",
+              "bucket-key": "tlon",
+              "entry-key": "lastOwnerMessageAt",
+              value: timestamp,
+            },
+          },
+        }),
+        api.poke({
+          app: "settings",
+          mark: "settings-event",
+          json: {
+            "put-entry": {
+              desk: "moltbot",
+              "bucket-key": "tlon",
+              "entry-key": "lastOwnerMessageDate",
+              value: isoDate,
+            },
+          },
+        }),
+      ])
+        .then(() => {
+          runtime.log?.(`[tlon] Updated lastOwnerMessageAt: ${timestamp} (${isoDate})`);
+        })
+        .catch((err) => {
+          runtime.error?.(`[tlon] Failed to update lastOwnerMessageAt: ${String(err)}`);
+        });
+    }
+
     // Download any images from the message content
     let attachments: Array<{ path: string; contentType: string }> = [];
     if (messageContent) {
@@ -1010,7 +1049,10 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       : `${senderShip} [${senderRole}]`;
 
     // Compute command authorization for slash commands (owner-only)
-    const shouldComputeAuth = core.channel.commands.shouldComputeCommandAuthorized(messageText, cfg);
+    const shouldComputeAuth = core.channel.commands.shouldComputeCommandAuthorized(
+      messageText,
+      cfg,
+    );
     let commandAuthorized = false;
 
     if (shouldComputeAuth) {
@@ -1019,15 +1061,13 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
 
       commandAuthorized = core.channel.commands.resolveCommandAuthorizedFromAuthorizers({
         useAccessGroups,
-        authorizers: [
-          { configured: Boolean(effectiveOwnerShip), allowed: senderIsOwner },
-        ],
+        authorizers: [{ configured: Boolean(effectiveOwnerShip), allowed: senderIsOwner }],
       });
 
       // Log when non-owner attempts a slash command (will be silently ignored by Gateway)
       if (!commandAuthorized) {
         console.log(
-          `[tlon] Command attempt denied: ${senderShip} is not owner (owner=${effectiveOwnerShip ?? "not configured"})`
+          `[tlon] Command attempt denied: ${senderShip} is not owner (owner=${effectiveOwnerShip ?? "not configured"})`,
         );
       }
     }
@@ -1119,12 +1159,12 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
             // Heap channels: reply as a comment on the parent post
             if (groupChannel.startsWith("heap/") && deliverParentId) {
               const story = markdownToStory(replyText);
-              await commentOnHeapPost({
+              await sendHeapPost({
                 fromShip: botShipName,
                 hostShip: parsed.hostShip,
                 channelName: parsed.channelName,
-                curioId: String(deliverParentId),
                 story,
+                replyToId: String(deliverParentId),
               });
             } else {
               await sendGroupMessage({
