@@ -151,58 +151,6 @@ export async function sendChannelPost({
   return { channel: "tlon", messageId: `${fromShip}/${sentAt}` };
 }
 
-// --- Legacy wrappers (for backward compatibility) ---
-
-type SendGroupParams = {
-  fromShip: string;
-  hostShip: string;
-  channelName: string;
-  text: string;
-  replyToId?: string | null;
-};
-
-type SendGroupStoryParams = {
-  fromShip: string;
-  hostShip: string;
-  channelName: string;
-  story: Story;
-  replyToId?: string | null;
-  /** Channel type prefix: "chat" | "heap" | "diary". Defaults to "chat". */
-  nestPrefix?: string;
-};
-
-export async function sendGroupMessage({
-  fromShip,
-  hostShip,
-  channelName,
-  text,
-  replyToId,
-}: SendGroupParams) {
-  const story: Story = markdownToStory(text);
-  return sendChannelPost({
-    fromShip,
-    nest: `chat/${hostShip}/${channelName}`,
-    story,
-    replyToId,
-  });
-}
-
-export async function sendGroupMessageWithStory({
-  fromShip,
-  hostShip,
-  channelName,
-  story,
-  replyToId,
-  nestPrefix = "chat",
-}: SendGroupStoryParams) {
-  return sendChannelPost({
-    fromShip,
-    nest: `${nestPrefix}/${hostShip}/${channelName}`,
-    story,
-    replyToId,
-  });
-}
-
 // --- Utilities ---
 
 export function buildMediaText(text: string | undefined, mediaUrl: string | undefined): string {
@@ -379,62 +327,6 @@ export async function removeDmReaction({
     postAuthor: effectivePostAuthor,
   });
 }
-
-// --- Heap/Gallery (legacy wrapper) ---
-
-type SendHeapPostParams = {
-  fromShip: string;
-  hostShip: string;
-  channelName: string;
-  story: Story;
-  title?: string;
-  replyToId?: string | null;
-};
-
-/**
- * @deprecated Use sendChannelPost with nest="heap/~host/channel" instead
- */
-export async function sendHeapPost({
-  fromShip,
-  hostShip,
-  channelName,
-  story,
-  title,
-  replyToId,
-}: SendHeapPostParams) {
-  return sendChannelPost({
-    fromShip,
-    nest: `heap/${hostShip}/${channelName}`,
-    story,
-    replyToId,
-    title,
-  });
-}
-
-/**
- * @deprecated Use sendChannelPost with nest="heap/~host/channel" and replyToId instead
- */
-export async function commentOnHeapPost({
-  fromShip,
-  hostShip,
-  channelName,
-  curioId,
-  story,
-}: {
-  fromShip: string;
-  hostShip: string;
-  channelName: string;
-  curioId: string;
-  story: Story;
-}) {
-  return sendChannelPost({
-    fromShip,
-    nest: `heap/${hostShip}/${channelName}`,
-    story,
-    replyToId: curioId,
-  });
-}
-
 // --- Delete ---
 
 type DeleteHeapPostParams = {
