@@ -1,12 +1,12 @@
-import { format } from "node:util";
 import type { RuntimeEnv, ReplyPayload, OpenClawConfig } from "openclaw/plugin-sdk";
+import { format } from "node:util";
+import type { Foreigns, DmInvite } from "../urbit/foreigns.js";
 import { getTlonRuntime } from "../runtime.js";
 import { createSettingsManager, type TlonSettingsStore } from "../settings.js";
 import { normalizeShip, parseChannelNest } from "../targets.js";
 import { resolveTlonAccount } from "../types.js";
 import { authenticate } from "../urbit/auth.js";
 import { ssrfPolicyFromAllowPrivateNetwork } from "../urbit/context.js";
-import type { Foreigns, DmInvite } from "../urbit/foreigns.js";
 import { sendDm, sendGroupMessage } from "../urbit/send.js";
 import { UrbitSSEClient } from "../urbit/sse-client.js";
 import {
@@ -844,6 +844,44 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     const groupChannel = channelNest; // For compatibility
     let messageText = params.messageText;
 
+    // Track owner interaction timestamp for heartbeat engagement recovery.
+    // Store both epoch ms (for code) and ISO date (for LLM — models can't reliably convert epoch).
+    if (isOwner(senderShip)) {
+      const isoDate = new Date(timestamp).toISOString().split("T")[0]; // YYYY-MM-DD
+      Promise.all([
+        api.poke({
+          app: "settings",
+          mark: "settings-event",
+          json: {
+            "put-entry": {
+              desk: "moltbot",
+              "bucket-key": "tlon",
+              "entry-key": "lastOwnerMessageAt",
+              value: timestamp,
+            },
+          },
+        }),
+        api.poke({
+          app: "settings",
+          mark: "settings-event",
+          json: {
+            "put-entry": {
+              desk: "moltbot",
+              "bucket-key": "tlon",
+              "entry-key": "lastOwnerMessageDate",
+              value: isoDate,
+            },
+          },
+        }),
+      ])
+        .then(() => {
+          runtime.log?.(`[tlon] Updated lastOwnerMessageAt: ${timestamp} (${isoDate})`);
+        })
+        .catch((err) => {
+          runtime.error?.(`[tlon] Failed to update lastOwnerMessageAt: ${String(err)}`);
+        });
+    }
+
     // Download any images from the message content
     let attachments: Array<{ path: string; contentType: string }> = [];
     if (messageContent) {
@@ -996,7 +1034,10 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       : `${senderShip} [${senderRole}]`;
 
     // Compute command authorization for slash commands (owner-only)
-    const shouldComputeAuth = core.channel.commands.shouldComputeCommandAuthorized(messageText, cfg);
+    const shouldComputeAuth = core.channel.commands.shouldComputeCommandAuthorized(
+      messageText,
+      cfg,
+    );
     let commandAuthorized = false;
 
     if (shouldComputeAuth) {
@@ -1005,15 +1046,13 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
 
       commandAuthorized = core.channel.commands.resolveCommandAuthorizedFromAuthorizers({
         useAccessGroups,
-        authorizers: [
-          { configured: Boolean(effectiveOwnerShip), allowed: senderIsOwner },
-        ],
+        authorizers: [{ configured: Boolean(effectiveOwnerShip), allowed: senderIsOwner }],
       });
 
       // Log when non-owner attempts a slash command (will be silently ignored by Gateway)
       if (!commandAuthorized) {
         console.log(
-          `[tlon] Command attempt denied: ${senderShip} is not owner (owner=${effectiveOwnerShip ?? "not configured"})`
+          `[tlon] Command attempt denied: ${senderShip} is not owner (owner=${effectiveOwnerShip ?? "not configured"})`,
         );
       }
     }
@@ -1035,9 +1074,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     });
 
     // Strip bot ship mention for CommandBody so "/status" is recognized as command-only
-    const commandBody = isGroup
-      ? stripBotMention(messageText, botShipName)
-      : messageText;
+    const commandBody = isGroup ? stripBotMention(messageText, botShipName) : messageText;
 
     const ctxPayload = core.channel.reply.finalizeInboundContext({
       Body: body,

@@ -35,6 +35,13 @@ cat > "$CONFIG_DIR/openclaw.json" << EOF
       "workspace": "/root/.openclaw/workspace",
       "model": {
         "primary": "${MODEL:-openrouter/minimax/minimax-m2.1}"
+      },
+      "heartbeat": {
+        "every": "1m",
+        "activeHours": {
+          "start": "00:00",
+          "end": "24:00"
+        }
       }
     },
     "list": [
@@ -70,7 +77,8 @@ cat > "$CONFIG_DIR/openclaw.json" << EOF
       "web_search",
       "read",
       "cron",
-      "tlon"
+      "tlon",
+      "message"
     ],
     "deny": [
       "apply_patch",
@@ -121,7 +129,7 @@ mkdir -p "$WORKSPACE_DIR"
 echo "==> Loading tlonbot prompts..."
 if [ -d "/workspace/tlonbot/prompts" ]; then
   echo "  (using mounted tlonbot volume)"
-  for f in SOUL.md TOOLS.md BOOTSTRAP.md USER.md AGENTS.md; do
+  for f in SOUL.md TOOLS.md BOOTSTRAP.md USER.md AGENTS.md HEARTBEAT.md; do
     if [ -f "/workspace/tlonbot/prompts/$f" ]; then
       cp "/workspace/tlonbot/prompts/$f" "$WORKSPACE_DIR/$f" && echo "  - $f" || echo "  - $f (failed)"
     fi
@@ -129,13 +137,13 @@ if [ -d "/workspace/tlonbot/prompts" ]; then
 elif [ -n "$TLONBOT_TOKEN" ]; then
   echo "  (fetching from GitHub with TLONBOT_TOKEN)"
   TLONBOT_RAW="https://raw.githubusercontent.com/tloncorp/tlonbot/master/prompts"
-  for f in SOUL.md TOOLS.md BOOTSTRAP.md USER.md AGENTS.md; do
+  for f in SOUL.md TOOLS.md BOOTSTRAP.md USER.md AGENTS.md HEARTBEAT.md; do
     curl -fsSL -H "Authorization: token $TLONBOT_TOKEN" "$TLONBOT_RAW/$f" -o "$WORKSPACE_DIR/$f" 2>/dev/null && echo "  - $f" || echo "  - $f (failed)"
   done
 else
   echo "  (no tlonbot mount or token, trying public GitHub access)"
   TLONBOT_RAW="https://raw.githubusercontent.com/tloncorp/tlonbot/master/prompts"
-  for f in SOUL.md TOOLS.md BOOTSTRAP.md USER.md AGENTS.md; do
+  for f in SOUL.md TOOLS.md BOOTSTRAP.md USER.md AGENTS.md HEARTBEAT.md; do
     curl -fsSL "$TLONBOT_RAW/$f" -o "$WORKSPACE_DIR/$f" 2>/dev/null && echo "  - $f" || true
   done
 fi
