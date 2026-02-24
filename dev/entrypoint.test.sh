@@ -77,7 +77,8 @@ cat > "$CONFIG_DIR/openclaw.json" << EOF
       "web_search",
       "read",
       "cron",
-      "tlon"
+      "tlon",
+      "message"
     ],
     "deny": [
       "apply_patch",
