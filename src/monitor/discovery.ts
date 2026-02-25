@@ -26,6 +26,7 @@ export async function fetchGroupChanges(
 
 export interface InitData {
   channels: string[];
+  channelToGroup: Map<string, string>;
   foreigns: Foreigns | null;
 }
 
@@ -42,12 +43,14 @@ export async function fetchInitData(
     const initData = (await api.scry("/groups-ui/v6/init.json")) as any;
 
     const channels: string[] = [];
+    const channelToGroup = new Map<string, string>();
     if (initData?.groups) {
-      for (const groupData of Object.values(initData.groups as Record<string, any>)) {
+      for (const [groupFlag, groupData] of Object.entries(initData.groups as Record<string, any>)) {
         if (groupData && typeof groupData === "object" && groupData.channels) {
           for (const channelNest of Object.keys(groupData.channels)) {
             if (channelNest.startsWith("chat/") || channelNest.startsWith("heap/")) {
               channels.push(channelNest);
+              channelToGroup.set(channelNest, groupFlag);
             }
           }
         }
@@ -70,10 +73,10 @@ export async function fetchInitData(
       }
     }
 
-    return { channels, foreigns };
+    return { channels, channelToGroup, foreigns };
   } catch (error: any) {
     runtime.log?.(`[tlon] Init data fetch failed: ${error?.message ?? String(error)}`);
-    return { channels: [], foreigns: null };
+    return { channels: [], channelToGroup: new Map(), foreigns: null };
   }
 }
 

@@ -7,6 +7,7 @@ import { normalizeShip, parseChannelNest } from "../targets.js";
 import { resolveTlonAccount } from "../types.js";
 import { authenticate } from "../urbit/auth.js";
 import { ssrfPolicyFromAllowPrivateNetwork } from "../urbit/context.js";
+import { getGroup, type Group } from "@tloncorp/api";
 import { configureTlonApiWithPoke } from "../urbit/api-client.js";
 import { sendDm, sendChannelPost } from "../urbit/send.js";
 import { markdownToStory } from "../urbit/story.js";
@@ -165,8 +166,10 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     },
   });
 
-  // Configure @tloncorp/api's global client to use the SSE client's poke for all send operations
-  configureTlonApiWithPoke(api.poke.bind(api), botShipName, account.url);
+  // Configure @tloncorp/api's global client to use the SSE client's poke and scry
+  const apiScryFn = ({ app, path }: { app: string; path: string }) =>
+    api!.scry(`/${app}${path}.json`);
+  configureTlonApiWithPoke(api.poke.bind(api), botShipName, account.url, apiScryFn);
 
   const processedTracker = createProcessedMessageTracker(2000);
   let groupChannels: string[] = [];
@@ -197,6 +200,91 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
   // Track DM senders per session to detect shared sessions (security warning)
   const dmSendersBySession = new Map<string, Set<string>>();
   let sharedSessionWarningSent = false;
+
+  // Channel nest → group flag mapping (populated during discovery)
+  const channelToGroup = new Map<string, string>();
+
+  // Cached group member data: groupFlag → { members, roles, fetchedAt }
+  const groupMemberCache = new Map<
+    string,
+    { members: Group["members"]; roles: Group["roles"]; fetchedAt: number }
+  >();
+  const GROUP_MEMBER_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+  async function getGroupMemberContext(channelNest: string): Promise<string | null> {
+    let groupFlag = channelToGroup.get(channelNest);
+    if (!groupFlag) {
+      // Channel not in map — try a one-time init fetch to discover the mapping
+      try {
+        const initData = await fetchInitData(api!, runtime);
+        for (const [nest, flag] of initData.channelToGroup) {
+          channelToGroup.set(nest, flag);
+        }
+        groupFlag = channelToGroup.get(channelNest);
+      } catch {
+        // Ignore — we'll just skip member context
+      }
+      if (!groupFlag) {
+        return null;
+      }
+    }
+
+    const now = Date.now();
+    const cached = groupMemberCache.get(groupFlag);
+    if (cached && now - cached.fetchedAt < GROUP_MEMBER_CACHE_TTL) {
+      return formatMemberContext(cached.members, cached.roles, groupFlag);
+    }
+
+    try {
+      const group = await getGroup(groupFlag);
+      const entry = { members: group.members, roles: group.roles, fetchedAt: now };
+      groupMemberCache.set(groupFlag, entry);
+      runtime.log?.(`[tlon] Fetched ${group.members?.length ?? 0} members for ${groupFlag}`);
+      return formatMemberContext(entry.members, entry.roles, groupFlag);
+    } catch (error: any) {
+      runtime.error?.(
+        `[tlon] Failed to fetch group members for ${groupFlag}: ${error?.message ?? String(error)}`,
+      );
+      // Return stale cache if available
+      if (cached) {
+        return formatMemberContext(cached.members, cached.roles, groupFlag);
+      }
+      return null;
+    }
+  }
+
+  function formatMemberContext(
+    members: Group["members"],
+    roles: Group["roles"],
+    groupFlag: string,
+  ): string | null {
+    if (!members?.length) {
+      return null;
+    }
+
+    const roleMap = new Map<string, string>();
+    if (roles) {
+      for (const role of roles) {
+        roleMap.set(role.id, role.title ?? role.id);
+      }
+    }
+
+    const lines = members
+      .filter((m) => m.status === "joined")
+      .map((m) => {
+        const memberRoles = m.roles
+          ?.map((r) => roleMap.get(r.roleId) ?? r.roleId)
+          .filter(Boolean);
+        const roleStr = memberRoles?.length ? ` (${memberRoles.join(", ")})` : "";
+        return `  ${m.contactId}${roleStr}`;
+      });
+
+    if (!lines.length) {
+      return null;
+    }
+
+    return `[Group ${groupFlag} — ${lines.length} members]\n${lines.join("\n")}`;
+  }
 
   // Fetch bot's nickname from contacts
   try {
@@ -349,16 +437,22 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
   }
 
   // Run channel discovery AFTER settings are loaded (so settings store value is used)
-  if (effectiveAutoDiscoverChannels) {
-    try {
-      const initData = await fetchInitData(api, runtime);
-      if (initData.channels.length > 0) {
-        groupChannels = initData.channels;
-      }
-      initForeigns = initData.foreigns;
-    } catch (error: any) {
-      runtime.error?.(`[tlon] Auto-discovery failed: ${error?.message ?? String(error)}`);
+  // Always fetch init data for channel→group mapping (needed for member context).
+  // When autoDiscoverChannels is on, also use discovered channels for monitoring.
+  try {
+    const initData = await fetchInitData(api, runtime);
+    if (effectiveAutoDiscoverChannels && initData.channels.length > 0) {
+      groupChannels = initData.channels;
     }
+    for (const [nest, flag] of initData.channelToGroup) {
+      channelToGroup.set(nest, flag);
+    }
+    initForeigns = initData.foreigns;
+    if (channelToGroup.size > 0) {
+      runtime.log?.(`[tlon] Mapped ${channelToGroup.size} channel(s) to groups`);
+    }
+  } catch (error: any) {
+    runtime.error?.(`[tlon] Init data fetch failed: ${error?.message ?? String(error)}`);
   }
 
   // Merge manual config with auto-discovered channels
@@ -1060,6 +1154,19 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         console.log(
           `[tlon] Command attempt denied: ${senderShip} is not owner (owner=${effectiveOwnerShip ?? "not configured"})`,
         );
+      }
+    }
+
+    // Inject group member context so the agent knows who's in the channel
+    if (isGroup && groupChannel) {
+      try {
+        const memberContext = await getGroupMemberContext(groupChannel);
+        if (memberContext) {
+          messageText = `${memberContext}\n\n${messageText}`;
+        }
+      } catch (error: any) {
+        // Non-critical — continue without member context
+        runtime.log?.(`[tlon] Could not inject member context: ${error?.message ?? String(error)}`);
       }
     }
 
