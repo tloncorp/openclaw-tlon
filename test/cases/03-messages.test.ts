@@ -55,7 +55,7 @@ describe("messages", () => {
     requireFixtureGroup(fixtures);
 
     const token = `it-post-${Date.now().toString(36)}`;
-    const prompt = `Post this exact text into your channel ${fixtures.group.chatChannel}: "${token}" — then reply back here in this DM to confirm it was posted.`;
+    const prompt = `Post this exact text into your channel ${fixtures.group.chatChannel}: "${token}" — You MUST respond with exactly 'Done' after posting`;
     console.log(`\n[TEST] Sending prompt: "${prompt}"`);
 
     const response = await fixtures.client.prompt(prompt);
