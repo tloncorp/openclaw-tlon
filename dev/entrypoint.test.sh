@@ -121,6 +121,14 @@ EOF
 echo "==> Config written:"
 cat "$CONFIG_DIR/openclaw.json"
 
+# Debug: Dump agent config and heartbeat settings
+echo "==> DEBUG: Agent config:"
+cat "$CONFIG_DIR/openclaw.json" | jq '.agents'
+echo "==> DEBUG: Heartbeat config:"
+cat "$CONFIG_DIR/openclaw.json" | jq '.agents.defaults.heartbeat'
+echo "==> DEBUG: Tlon channel config:"
+cat "$CONFIG_DIR/openclaw.json" | jq '.channels.tlon'
+
 # Create workspace
 WORKSPACE_DIR=/root/.openclaw/workspace
 mkdir -p "$WORKSPACE_DIR"
@@ -160,6 +168,22 @@ fi
 
 echo "==> Workspace contents:"
 ls -la "$WORKSPACE_DIR/"
+
+# Debug: Dump prompt file contents
+echo "==> DEBUG: Prompt files content:"
+for f in SOUL.md TOOLS.md AGENTS.md HEARTBEAT.md USER.md; do
+  if [ -f "$WORKSPACE_DIR/$f" ]; then
+    echo "--- BEGIN $WORKSPACE_DIR/$f ---"
+    cat "$WORKSPACE_DIR/$f"
+    echo "--- END $f ---"
+  fi
+done
+
+# Debug: Dump skill env vars
+echo "==> DEBUG: Skill env vars:"
+echo "  URBIT_URL=${URBIT_URL:-<not set>}"
+echo "  URBIT_SHIP=${URBIT_SHIP:-<not set>}"
+echo "  URBIT_CODE=${URBIT_CODE:-<not set>}"
 
 # Create sessions directory
 SESSIONS_DIR=/root/.openclaw/agents/test/sessions
