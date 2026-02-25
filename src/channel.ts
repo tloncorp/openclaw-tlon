@@ -1,4 +1,3 @@
-import { configureClient } from "@tloncorp/api";
 import type {
   ChannelOutboundAdapter,
   ChannelPlugin,
@@ -17,63 +16,18 @@ import { tlonOnboardingAdapter } from "./onboarding.js";
 import { formatTargetHint, normalizeShip, parseTlonTarget } from "./targets.js";
 import { resolveTlonAccount, listTlonAccountIds } from "./types.js";
 import { authenticate } from "./urbit/auth.js";
+import { withAuthenticatedTlonApi } from "./urbit/api-client.js";
 import { ssrfPolicyFromAllowPrivateNetwork } from "./urbit/context.js";
 import { urbitFetch } from "./urbit/fetch.js";
 import {
   buildMediaStory,
   sendDm,
-  sendGroupMessage,
   sendDmWithStory,
-  sendGroupMessageWithStory,
+  sendChannelPost,
 } from "./urbit/send.js";
 import { uploadImageFromUrl } from "./urbit/upload.js";
-
-// Simple HTTP-only poke that doesn't open an EventSource (avoids conflict with monitor's SSE)
-async function createHttpPokeApi(params: {
-  url: string;
-  code: string;
-  ship: string;
-  allowPrivateNetwork?: boolean;
-}) {
-  const ssrfPolicy = ssrfPolicyFromAllowPrivateNetwork(params.allowPrivateNetwork);
-  const cookie = await authenticate(params.url, params.code, { ssrfPolicy });
-  const channelId = `${Math.floor(Date.now() / 1000)}-${Math.random().toString(36).substring(2, 8)}`;
-  const channelUrl = `${params.url}/~/channel/${channelId}`;
-  const shipName = params.ship.replace(/^~/, "");
-
-  return {
-    poke: async (pokeParams: { app: string; mark: string; json: unknown }) => {
-      const pokeId = Date.now();
-      const pokeData = {
-        id: pokeId,
-        action: "poke",
-        ship: shipName,
-        app: pokeParams.app,
-        mark: pokeParams.mark,
-        json: pokeParams.json,
-      };
-
-      const response = await fetch(channelUrl, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-          Cookie: cookie.split(";")[0],
-        },
-        body: JSON.stringify([pokeData]),
-      });
-
-      if (!response.ok && response.status !== 204) {
-        const errorText = await response.text();
-        throw new Error(`Poke failed: ${response.status} - ${errorText}`);
-      }
-
-      return pokeId;
-    },
-    delete: async () => {
-      // No-op for HTTP-only client
-    },
-  };
-}
+import { tlonMessageActions } from "./actions.js";
+import { markdownToStory } from "./urbit/story.js";
 
 const TLON_CHANNEL_ID = "tlon" as const;
 
@@ -170,46 +124,23 @@ const tlonOutbound: ChannelOutboundAdapter = {
     }
     console.log(`[tlon:sendText] parsed target: kind=${parsed.kind}`);
 
-    // Use HTTP-only poke (no EventSource) to avoid conflicts with monitor's SSE connection
-    const api = await createHttpPokeApi({
-      url: account.url,
-      ship: account.ship,
-      code: account.code,
-      allowPrivateNetwork: account.allowPrivateNetwork ?? undefined,
-    });
-
-    try {
-      const fromShip = normalizeShip(account.ship);
-      if (parsed.kind === "dm") {
-        console.log(`[tlon:sendText] sending DM from ${fromShip} to ${parsed.ship}`);
-        const result = await sendDm({
-          api,
+    return await withAuthenticatedTlonApi(
+      { url: account.url, code: account.code, ship: account.ship, allowPrivateNetwork: account.allowPrivateNetwork ?? undefined },
+      async () => {
+        const fromShip = normalizeShip(account.ship!);
+        const replyId = (replyToId ?? threadId) ? String(replyToId ?? threadId) : undefined;
+        if (parsed.kind === "dm") {
+          return await sendDm({ fromShip, toShip: parsed.ship, text, replyToId: replyId });
+        }
+        // Channel post (chat, heap, or diary)
+        return await sendChannelPost({
           fromShip,
-          toShip: parsed.ship,
-          text,
+          nest: parsed.nest,
+          story: markdownToStory(text),
+          replyToId: replyId,
         });
-        console.log(`[tlon:sendText] DM sent, result:`, result);
-        return result;
-      }
-      const replyId = (replyToId ?? threadId) ? String(replyToId ?? threadId) : undefined;
-      console.log(`[tlon:sendText] sending group message to ${parsed.hostShip}/${parsed.channelName}`);
-      const result = await sendGroupMessage({
-        api,
-        fromShip,
-        hostShip: parsed.hostShip,
-        channelName: parsed.channelName,
-        text,
-        replyToId: replyId,
-      });
-      console.log(`[tlon:sendText] group message sent, result:`, result);
-      return result;
-    } finally {
-      try {
-        await api.delete();
-      } catch {
-        // ignore cleanup errors
-      }
-    }
+      },
+    );
   },
   sendMedia: async ({ cfg, to, text, mediaUrl, accountId, replyToId, threadId }) => {
     const account = resolveTlonAccount(cfg, accountId ?? undefined);
@@ -222,51 +153,27 @@ const tlonOutbound: ChannelOutboundAdapter = {
       throw new Error(`Invalid Tlon target. Use ${formatTargetHint()}`);
     }
 
-    // Configure the API client for uploads
-    configureClient({
-      shipUrl: account.url,
-      shipName: account.ship.replace(/^~/, ""),
-      verbose: false,
-      getCode: async () => account.code!,
-    });
+    return await withAuthenticatedTlonApi(
+      { url: account.url, code: account.code, ship: account.ship, allowPrivateNetwork: account.allowPrivateNetwork ?? undefined },
+      async () => {
+        // Upload inside authenticated context — uploadFile needs scry access
+        const uploadedUrl = mediaUrl ? await uploadImageFromUrl(mediaUrl) : undefined;
+        const fromShip = normalizeShip(account.ship!);
+        const story = buildMediaStory(text, uploadedUrl);
+        const replyId = (replyToId ?? threadId) ? String(replyToId ?? threadId) : undefined;
 
-    const uploadedUrl = mediaUrl ? await uploadImageFromUrl(mediaUrl) : undefined;
-
-    const api = await createHttpPokeApi({
-      url: account.url,
-      ship: account.ship,
-      code: account.code,
-      allowPrivateNetwork: account.allowPrivateNetwork ?? undefined,
-    });
-
-    try {
-      const fromShip = normalizeShip(account.ship);
-      const story = buildMediaStory(text, uploadedUrl);
-
-      if (parsed.kind === "dm") {
-        return await sendDmWithStory({
-          api,
+        if (parsed.kind === "dm") {
+          return await sendDmWithStory({ fromShip, toShip: parsed.ship, story, replyToId: replyId });
+        }
+        // Channel post (chat, heap, or diary)
+        return await sendChannelPost({
           fromShip,
-          toShip: parsed.ship,
+          nest: parsed.nest,
           story,
+          replyToId: replyId,
         });
-      }
-      const replyId = (replyToId ?? threadId) ? String(replyToId ?? threadId) : undefined;
-      return await sendGroupMessageWithStory({
-        api,
-        fromShip,
-        hostShip: parsed.hostShip,
-        channelName: parsed.channelName,
-        story,
-        replyToId: replyId,
-      });
-    } finally {
-      try {
-        await api.delete();
-      } catch {
-        // ignore cleanup errors
-      }
-    }
+      },
+    );
   },
 };
 
@@ -287,6 +194,18 @@ export const tlonPlugin: ChannelPlugin = {
     media: true,
     reply: true,
     threads: true,
+    reactions: true,
+  },
+  threading: {
+    resolveReplyToMode: () => "all",
+    buildToolContext: ({ context, hasRepliedRef }) => {
+      const threadId = context.MessageThreadId ?? context.ReplyToId;
+      return {
+        currentChannelId: context.To?.trim() || undefined,
+        currentThreadTs: threadId != null ? String(threadId) : undefined,
+        hasRepliedRef,
+      };
+    },
   },
   onboarding: tlonOnboardingAdapter,
   reload: { configPrefixes: ["channels.tlon"] },
@@ -416,6 +335,54 @@ export const tlonPlugin: ChannelPlugin = {
     },
   },
   outbound: tlonOutbound,
+  actions: tlonMessageActions,
+  agentPrompt: {
+    messageToolHints: ({ cfg, accountId }) => {
+      const account = resolveTlonAccount(cfg, accountId ?? undefined);
+      const hints: string[] = [];
+
+      // Gallery/heap channel guidance
+      hints.push(
+        "",
+        "Tlon gallery channels (heap/~host/name) are for collecting images, links, and media.",
+        "- To post to a gallery: use action=send, to=heap/~host/name, message=<text or URL>",
+        "- For image posts, include media=<imageUrl> with an optional message=<caption>",
+        "- To react to a gallery comment: use action=react, to=heap/~host/name, messageId=<commentId>, parentId=<postId>, emoji=<emoji>",
+      );
+
+      // Reaction guidance
+      const level = account.reactionLevel ?? "minimal";
+      if (level !== "off" && level !== "ack") {
+        if (level === "extensive") {
+          hints.push(
+            "",
+            "Reactions are enabled for Tlon in EXTENSIVE mode.",
+            "Feel free to react liberally:",
+            "- Acknowledge messages with appropriate emojis",
+            "- Express sentiment and personality through reactions",
+            "- React to interesting content, humor, or notable events",
+            "- Use reactions to confirm understanding or agreement",
+            "- Use action=react with emoji, messageId, and target (channel nest or DM ship)",
+            "Guideline: react whenever it feels natural.",
+          );
+        } else {
+          // minimal (default)
+          hints.push(
+            "",
+            "Reactions are enabled for Tlon in MINIMAL mode.",
+            "React ONLY when truly relevant:",
+            "- Acknowledge important user requests or confirmations",
+            "- Express genuine sentiment (humor, appreciation) sparingly",
+            "- Avoid reacting to routine messages or your own replies",
+            "- Use action=react with emoji, messageId, and target (channel nest or DM ship)",
+            "Guideline: at most 1 reaction per 5-10 exchanges.",
+          );
+        }
+      }
+
+      return hints;
+    },
+  },
   status: {
     defaultRuntime: {
       accountId: "default",

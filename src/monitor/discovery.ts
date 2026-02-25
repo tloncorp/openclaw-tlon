@@ -46,7 +46,7 @@ export async function fetchInitData(
       for (const groupData of Object.values(initData.groups as Record<string, any>)) {
         if (groupData && typeof groupData === "object" && groupData.channels) {
           for (const channelNest of Object.keys(groupData.channels)) {
-            if (channelNest.startsWith("chat/")) {
+            if (channelNest.startsWith("chat/") || channelNest.startsWith("heap/")) {
               channels.push(channelNest);
             }
           }
@@ -55,9 +55,9 @@ export async function fetchInitData(
     }
 
     if (channels.length > 0) {
-      runtime.log?.(`[tlon] Auto-discovered ${channels.length} chat channel(s)`);
+      runtime.log?.(`[tlon] Auto-discovered ${channels.length} channel(s) (chat + heap)`);
     } else {
-      runtime.log?.("[tlon] No chat channels found via auto-discovery");
+      runtime.log?.("[tlon] No channels found via auto-discovery");
     }
 
     const foreigns = (initData?.foreigns as Foreigns) || null;

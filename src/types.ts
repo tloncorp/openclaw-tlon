@@ -20,6 +20,8 @@ export type TlonResolvedAccount = {
   defaultAuthorizedShips: string[];
   /** Ship that receives approval requests for DMs, channel mentions, and group invites */
   ownerShip: string | null;
+  /** Controls agent reaction behavior: off | ack | minimal | extensive (default: minimal) */
+  reactionLevel: string | null;
 };
 
 export function resolveTlonAccount(
@@ -42,6 +44,7 @@ export function resolveTlonAccount(
         autoAcceptDmInvites?: boolean;
         autoAcceptGroupInvites?: boolean;
         ownerShip?: string;
+        reactionLevel?: string;
         accounts?: Record<string, Record<string, unknown>>;
       }
     | undefined;
@@ -65,6 +68,7 @@ export function resolveTlonAccount(
       autoAcceptGroupInvites: null,
       defaultAuthorizedShips: [],
       ownerShip: null,
+      reactionLevel: null,
     };
   }
 
@@ -95,6 +99,7 @@ export function resolveTlonAccount(
     base.autoAcceptGroupInvites ??
     null) as boolean | null;
   const ownerShip = (account?.ownerShip ?? base.ownerShip ?? null) as string | null;
+  const reactionLevel = (account?.reactionLevel ?? base.reactionLevel ?? null) as string | null;
   const defaultAuthorizedShips = ((account as Record<string, unknown>)?.defaultAuthorizedShips ??
     (base as Record<string, unknown>)?.defaultAuthorizedShips ??
     []) as string[];
@@ -118,6 +123,7 @@ export function resolveTlonAccount(
     autoAcceptGroupInvites,
     defaultAuthorizedShips,
     ownerShip,
+    reactionLevel,
   };
 }
 

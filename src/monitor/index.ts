@@ -1,13 +1,15 @@
-import { format } from "node:util";
 import type { RuntimeEnv, ReplyPayload, OpenClawConfig } from "openclaw/plugin-sdk";
+import { format } from "node:util";
+import type { Foreigns, DmInvite } from "../urbit/foreigns.js";
 import { getTlonRuntime } from "../runtime.js";
 import { createSettingsManager, type TlonSettingsStore } from "../settings.js";
 import { normalizeShip, parseChannelNest } from "../targets.js";
 import { resolveTlonAccount } from "../types.js";
 import { authenticate } from "../urbit/auth.js";
 import { ssrfPolicyFromAllowPrivateNetwork } from "../urbit/context.js";
-import type { Foreigns, DmInvite } from "../urbit/foreigns.js";
-import { sendDm, sendGroupMessage } from "../urbit/send.js";
+import { configureTlonApiWithPoke } from "../urbit/api-client.js";
+import { sendDm, sendChannelPost } from "../urbit/send.js";
+import { markdownToStory } from "../urbit/story.js";
 import { UrbitSSEClient } from "../urbit/sse-client.js";
 import {
   type PendingApproval,
@@ -25,7 +27,7 @@ import {
   formatPendingList,
 } from "./approval.js";
 import { fetchAllChannels, fetchInitData } from "./discovery.js";
-import { cacheMessage, getChannelHistory, fetchThreadHistory } from "./history.js";
+import { cacheMessage, lookupCachedMessage, getChannelHistory, fetchThreadHistory } from "./history.js";
 import { downloadMessageImages } from "./media.js";
 import { createProcessedMessageTracker } from "./processed-messages.js";
 import {
@@ -162,6 +164,9 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       runtime.log?.("[tlon] Re-authentication successful");
     },
   });
+
+  // Configure @tloncorp/api's global client to use the SSE client's poke for all send operations
+  configureTlonApiWithPoke(api.poke.bind(api), botShipName, account.url);
 
   const processedTracker = createProcessedMessageTracker(2000);
   let groupChannels: string[] = [];
@@ -576,7 +581,6 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     }
     try {
       await sendDm({
-        api: api!,
         fromShip: botShipName,
         toShip: effectiveOwnerShip,
         text: message,
@@ -828,6 +832,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     timestamp: number;
     parentId?: string | null;
     isThreadReply?: boolean;
+    replyParentId?: string | null; // Override parentId for delivery only (not in ctx payload)
   }) => {
     const {
       messageId,
@@ -841,8 +846,59 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       isThreadReply,
       messageContent,
     } = params;
+    // replyParentId overrides parentId for the deliver callback (thread reply routing)
+    // but doesn't affect the ctx payload (MessageThreadId/ReplyToId).
+    // Used for reactions: agent sees no thread context (so it responds), but
+    // the reply is still delivered as a thread reply.
+    const deliverParentId = params.replyParentId ?? parentId;
     const groupChannel = channelNest; // For compatibility
     let messageText = params.messageText;
+    const rawMessageText = messageText; // Preserve original before any modifications
+
+    // Strip bot mention EARLY, before thread context is prepended.
+    // This ensures [Current message] in thread context won't contain the bot ship name,
+    // which was causing the agent to mistake it for its own message and return NO_REPLY.
+    if (isGroup) {
+      messageText = stripBotMention(messageText, botShipName);
+    }
+
+    // Track owner interaction timestamp for heartbeat engagement recovery.
+    // Store both epoch ms (for code) and ISO date (for LLM — models can't reliably convert epoch).
+    if (isOwner(senderShip)) {
+      const isoDate = new Date(timestamp).toISOString().split("T")[0]; // YYYY-MM-DD
+      Promise.all([
+        api.poke({
+          app: "settings",
+          mark: "settings-event",
+          json: {
+            "put-entry": {
+              desk: "moltbot",
+              "bucket-key": "tlon",
+              "entry-key": "lastOwnerMessageAt",
+              value: timestamp,
+            },
+          },
+        }),
+        api.poke({
+          app: "settings",
+          mark: "settings-event",
+          json: {
+            "put-entry": {
+              desk: "moltbot",
+              "bucket-key": "tlon",
+              "entry-key": "lastOwnerMessageDate",
+              value: isoDate,
+            },
+          },
+        }),
+      ])
+        .then(() => {
+          runtime.log?.(`[tlon] Updated lastOwnerMessageAt: ${timestamp} (${isoDate})`);
+        })
+        .catch((err) => {
+          runtime.error?.(`[tlon] Failed to update lastOwnerMessageAt: ${String(err)}`);
+        });
+    }
 
     // Download any images from the message content
     let attachments: Array<{ path: string; contentType: string }> = [];
@@ -887,20 +943,14 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         if (history.length === 0) {
           const noHistoryMsg =
             "I couldn't fetch any messages for this channel. It might be empty or there might be a permissions issue.";
-          if (isGroup) {
-            const parsed = parseChannelNest(groupChannel);
-            if (parsed) {
-              await sendGroupMessage({
-                api: api,
-                fromShip: botShipName,
-                hostShip: parsed.hostShip,
-                channelName: parsed.channelName,
-                text: noHistoryMsg,
-              });
-            }
+          if (isGroup && groupChannel) {
+            await sendChannelPost({
+              fromShip: botShipName,
+              nest: groupChannel,
+              story: markdownToStory(noHistoryMsg),
+            });
           } else {
             await sendDm({
-              api: api,
               fromShip: botShipName,
               toShip: senderShip,
               text: noHistoryMsg,
@@ -925,18 +975,13 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       } catch (error: any) {
         const errorMsg = `Sorry, I encountered an error while fetching the channel history: ${error?.message ?? String(error)}`;
         if (isGroup && groupChannel) {
-          const parsed = parseChannelNest(groupChannel);
-          if (parsed) {
-            await sendGroupMessage({
-              api: api,
-              fromShip: botShipName,
-              hostShip: parsed.hostShip,
-              channelName: parsed.channelName,
-              text: errorMsg,
-            });
-          }
+          await sendChannelPost({
+            fromShip: botShipName,
+            nest: groupChannel,
+            story: markdownToStory(errorMsg),
+          });
         } else {
-          await sendDm({ api: api, fromShip: botShipName, toShip: senderShip, text: errorMsg });
+          await sendDm({ fromShip: botShipName, toShip: senderShip, text: errorMsg });
         }
         return;
       }
@@ -978,7 +1023,6 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
 
           // Send async, don't block message processing
           sendDm({
-            api,
             fromShip: botShipName,
             toShip: effectiveOwnerShip,
             text: warningMsg,
@@ -996,7 +1040,10 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       : `${senderShip} [${senderRole}]`;
 
     // Compute command authorization for slash commands (owner-only)
-    const shouldComputeAuth = core.channel.commands.shouldComputeCommandAuthorized(messageText, cfg);
+    const shouldComputeAuth = core.channel.commands.shouldComputeCommandAuthorized(
+      messageText,
+      cfg,
+    );
     let commandAuthorized = false;
 
     if (shouldComputeAuth) {
@@ -1005,19 +1052,18 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
 
       commandAuthorized = core.channel.commands.resolveCommandAuthorizedFromAuthorizers({
         useAccessGroups,
-        authorizers: [
-          { configured: Boolean(effectiveOwnerShip), allowed: senderIsOwner },
-        ],
+        authorizers: [{ configured: Boolean(effectiveOwnerShip), allowed: senderIsOwner }],
       });
 
       // Log when non-owner attempts a slash command (will be silently ignored by Gateway)
       if (!commandAuthorized) {
         console.log(
-          `[tlon] Command attempt denied: ${senderShip} is not owner (owner=${effectiveOwnerShip ?? "not configured"})`
+          `[tlon] Command attempt denied: ${senderShip} is not owner (owner=${effectiveOwnerShip ?? "not configured"})`,
         );
       }
     }
 
+    // Bot mention was already stripped early (before thread context), so use messageText directly
     // Prepend attachment annotations to message body (similar to Signal format)
     let bodyWithAttachments = messageText;
     if (attachments.length > 0) {
@@ -1034,10 +1080,10 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       body: bodyWithAttachments,
     });
 
-    // Strip bot ship mention for CommandBody so "/status" is recognized as command-only
+    // Use raw text (no thread context) for command detection so "/status" is recognized
     const commandBody = isGroup
-      ? stripBotMention(messageText, botShipName)
-      : messageText;
+      ? stripBotMention(rawMessageText, botShipName)
+      : rawMessageText;
 
     const ctxPayload = core.channel.reply.finalizeInboundContext({
       Body: body,
@@ -1062,7 +1108,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       OriginatingChannel: "tlon",
       OriginatingTo: `tlon:${isGroup ? groupChannel : botShipName}`,
       // Include thread context for automatic reply routing
-      ...(parentId && { ThreadId: String(parentId), ReplyToId: String(parentId) }),
+      ...(parentId && { MessageThreadId: String(parentId), ReplyToId: String(parentId) }),
     });
 
     const dispatchStartTime = Date.now();
@@ -1097,25 +1143,20 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
           }
 
           if (isGroup && groupChannel) {
-            const parsed = parseChannelNest(groupChannel);
-            if (!parsed) {
-              return;
-            }
-            await sendGroupMessage({
-              api: api,
+            // Send to any channel type (chat, heap, diary) using the nest directly
+            await sendChannelPost({
               fromShip: botShipName,
-              hostShip: parsed.hostShip,
-              channelName: parsed.channelName,
-              text: replyText,
-              replyToId: parentId ?? undefined,
+              nest: groupChannel,
+              story: markdownToStory(replyText),
+              replyToId: deliverParentId ?? undefined,
             });
             // Track thread participation for future replies without mention
-            if (parentId) {
-              participatedThreads.add(String(parentId));
-              runtime.log?.(`[tlon] Now tracking thread for future replies: ${parentId}`);
+            if (deliverParentId) {
+              participatedThreads.add(String(deliverParentId));
+              runtime.log?.(`[tlon] Now tracking thread for future replies: ${deliverParentId}`);
             }
           } else {
-            await sendDm({ api: api, fromShip: botShipName, toShip: senderShip, text: replyText });
+            await sendDm({ fromShip: botShipName, toShip: senderShip, text: replyText, replyToId: deliverParentId ? String(deliverParentId) : undefined });
           }
         },
         onError: (err, info) => {
@@ -1136,8 +1177,16 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
   const handleChannelsFirehose = async (event: any) => {
     try {
       const nest = event?.nest;
+
       if (!nest) {
         return;
+      }
+
+      // Auto-watch channels from firehose: if we receive events for a channel,
+      // the bot is a member of the group — add it to watchedChannels automatically.
+      if (!watchedChannels.has(nest) && (nest.startsWith("chat/") || nest.startsWith("heap/"))) {
+        watchedChannels.add(nest);
+        runtime.log?.(`[tlon] Auto-watching channel from firehose: ${nest}`);
       }
 
       // Only process channels we're watching
@@ -1150,9 +1199,77 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         return;
       }
 
+      // Handle reaction events (top-level posts)
+      const reacts = response?.post?.["r-post"]?.reacts;
+      // Handle reaction events (replies/comments)
+      const replyReacts = response?.post?.["r-post"]?.reply?.["r-reply"]?.reacts;
+      const effectiveReacts = reacts || replyReacts;
+      if (effectiveReacts && typeof effectiveReacts === "object") {
+        const postId = replyReacts
+          ? (response?.post?.["r-post"]?.reply?.id ?? response?.post?.id ?? "unknown")
+          : (response?.post?.id ?? "unknown");
+        for (const [reactShip, reactEmoji] of Object.entries(effectiveReacts as Record<string, string>)) {
+          const ship = normalizeShip(reactShip);
+          if (!ship || ship === botShipName) continue;
+          try {
+            const route = core.channel.routing.resolveAgentRoute({
+              cfg,
+              channel: "tlon",
+              accountId: opts.accountId ?? undefined,
+              peer: { kind: "group", id: nest },
+            });
+            // Look up the reacted-to message content for context
+            const cached = lookupCachedMessage(nest, postId);
+            const contentSnippet = cached?.content
+              ? ` (message: "${cached.content.substring(0, 200)}${cached.content.length > 200 ? "..." : ""}")`
+              : "";
+            const authorInfo = cached?.author ? ` (by ${cached.author})` : "";
+            const eventText = `Tlon reaction in ${nest}: ${reactEmoji} by ${ship} on post ${postId}${authorInfo}${contentSnippet}`;
+            runtime.log?.(`[tlon] REACTION: ${eventText}`);
+
+            // If reacting to the bot's own message, dispatch as a real message
+            // so the agent runs immediately (e.g. thumbs-up as "yes")
+            if (cached?.author === botShipName) {
+              // Include context so agent knows what was reacted to, since we're
+              // deliberately omitting thread context (parentId) to avoid the agent
+              // suppressing responses when it sees its own message in thread history.
+              const reactionParentId = replyReacts
+                ? (response?.post?.id ?? postId)
+                : postId;
+              const reactText = cached?.content
+                ? `${reactEmoji} (reacting to: "${cached.content}")`
+                : reactEmoji;
+              runtime.log?.(`[tlon] Dispatching channel reaction as message: ${reactEmoji} from ${ship}`);
+              const parsed = parseChannelNest(nest);
+              await processMessage({
+                messageId: `react-${postId}-${ship}-${Date.now()}`,
+                senderShip: ship,
+                messageText: reactText,
+                isGroup: true,
+                channelNest: nest,
+                hostShip: parsed?.hostShip,
+                channelName: parsed?.channelName,
+                timestamp: Date.now(),
+                replyParentId: reactionParentId, // Thread reply for delivery only
+              });
+            } else {
+              // For reactions on other people's messages, just enqueue as system event
+              core.system.enqueueSystemEvent(eventText, {
+                sessionKey: route.sessionKey,
+                contextKey: `tlon:reaction:${nest}:${postId}:${reactEmoji}:${ship}`,
+              });
+            }
+          } catch (err: any) {
+            runtime.error?.(`[tlon] Error handling reaction: ${err?.message ?? String(err)}`);
+          }
+        }
+        return;
+      }
+
       // Handle post responses (new posts and replies)
       const essay = response?.post?.["r-post"]?.set?.essay;
       const memo = response?.post?.["r-post"]?.reply?.["r-reply"]?.set?.memo;
+
       if (!essay && !memo) {
         return;
       }
@@ -1165,8 +1282,8 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         return;
       }
 
-      const senderShip = normalizeShip(content.author ?? "");
-      if (!senderShip || senderShip === botShipName) {
+      const senderShip = normalizeShip(content?.author ?? "");
+      if (!senderShip) {
         return;
       }
 
@@ -1178,12 +1295,18 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         return;
       }
 
+      // Cache ALL messages (including bot's own) so reaction lookups have context
       cacheMessage(nest, {
         author: senderShip,
         content: messageText,
         timestamp: content.sent || Date.now(),
         id: messageId,
       });
+
+      // Skip processing bot's own messages (but they're already cached above)
+      if (senderShip === botShipName) {
+        return;
+      }
 
       // Get thread info early for participation check
       const seal = isThreadReply
@@ -1332,19 +1455,111 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
 
       // Handle add events (new messages)
       const essay = response?.add?.essay;
-      if (!essay) {
+      const dmReply = response?.reply;
+
+      // Handle DM reaction events
+      const dmAddReact = response?.["add-react"];
+      const dmDelReact = response?.["del-react"];
+      if (dmAddReact || dmDelReact) {
+        const isAdd = Boolean(dmAddReact);
+        const reactData = dmAddReact || dmDelReact;
+        const reactAuthor = normalizeShip(reactData?.author ?? reactData?.ship ?? "");
+        const reactEmoji = reactData?.react ?? "";
+        if (reactAuthor && reactAuthor !== botShipName) {
+          try {
+            const partnerShip = extractDmPartnerShip(whom);
+            const route = core.channel.routing.resolveAgentRoute({
+              cfg,
+              channel: "tlon",
+              accountId: opts.accountId ?? undefined,
+              peer: { kind: "direct", id: partnerShip || reactAuthor },
+            });
+
+            // Look up cached DM message for context
+            const dmCacheKey = `dm/${whom}`;
+            const cached = lookupCachedMessage(dmCacheKey, messageId);
+            const action = isAdd ? "added" : "removed";
+
+            // If reacting to the bot's own message, dispatch as a real message
+            // so the agent runs immediately (e.g. thumbs-up as "yes")
+            if (isAdd && cached?.author === botShipName) {
+              // Include context so agent knows what was reacted to
+              const reactText = cached?.content
+                ? `${reactEmoji} (reacting to: "${cached.content}")`
+                : reactEmoji;
+              runtime.log?.(`[tlon] Dispatching DM reaction as message: ${reactEmoji} from ${reactAuthor}`);
+              await processMessage({
+                messageId: `react-${messageId}-${reactAuthor}-${Date.now()}`,
+                senderShip: reactAuthor,
+                messageText: reactText,
+                isGroup: false,
+                timestamp: Date.now(),
+                replyParentId: messageId, // Thread reply for delivery only
+              });
+            } else {
+              const contentSnippet = cached?.content
+                ? ` (message: "${cached.content.substring(0, 200)}${cached.content.length > 200 ? "..." : ""}")`
+                : "";
+              const authorInfo = cached?.author ? ` (by ${cached.author})` : "";
+              const eventText = `Tlon DM reaction ${action}: ${reactEmoji} by ${reactAuthor} on message ${messageId}${authorInfo}${contentSnippet}`;
+              core.system.enqueueSystemEvent(eventText, {
+                sessionKey: route.sessionKey,
+                contextKey: `tlon:dm-reaction:${messageId}:${reactEmoji}:${reactAuthor}:${action}`,
+              });
+              runtime.log?.(`[tlon] DM_REACTION: ${eventText}`);
+            }
+          } catch (err: any) {
+            runtime.error?.(`[tlon] Error handling DM reaction: ${err?.message ?? String(err)}`);
+          }
+        }
         return;
       }
 
-      if (!processedTracker.mark(messageId)) {
+      // Extract memo from DM thread reply
+      const dmReplyMemo = dmReply?.delta?.add?.memo;
+      const dmReplyParentId = dmReply ? event.id : undefined;
+      const isDmThreadReply = Boolean(dmReplyMemo);
+      const dmContent = essay || dmReplyMemo;
+
+      // For DM thread replies, extract the reply's own ID (distinct from the parent post ID)
+      // The reply ID may be in dmReply.id, or we construct it from author/sent
+      let dmReplyOwnId: string | undefined;
+      if (isDmThreadReply && dmReply) {
+        dmReplyOwnId = dmReply.id ?? dmReply.delta?.add?.id;
+        // If no explicit reply ID, construct from author/sent (same format as our outbound)
+        if (!dmReplyOwnId && dmReplyMemo?.author && dmReplyMemo?.sent) {
+          dmReplyOwnId = `${normalizeShip(dmReplyMemo.author)}/${dmReplyMemo.sent}`;
+        }
+      }
+
+      if (!dmContent) {
         return;
       }
 
-      const authorShip = normalizeShip(essay.author ?? "");
+      // Use the reply's own ID for thread replies so the agent has the correct message ID
+      const effectiveMessageId = dmReplyOwnId ?? messageId;
+
+      if (!processedTracker.mark(effectiveMessageId)) {
+        return;
+      }
+
+      const authorShip = normalizeShip(dmContent?.author ?? "");
       const partnerShip = extractDmPartnerShip(whom);
       const senderShip = partnerShip || authorShip;
 
-      // Ignore the bot's own outbound DM events.
+      // Cache DM messages (including bot's own) so reaction lookups have context
+      const dmCacheKey = `dm/${whom}`;
+      const rawCacheText = extractMessageText(dmContent.content);
+      if (rawCacheText.trim()) {
+        cacheMessage(dmCacheKey, {
+          author: authorShip,
+          content: rawCacheText,
+          timestamp: dmContent.sent || Date.now(),
+          id: effectiveMessageId,
+        });
+      }
+
+      // Skip processing bot's own messages (but they're already cached above)
       if (authorShip === botShipName) {
         return;
       }
@@ -1360,8 +1575,8 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       }
 
       // Resolve any cited/quoted messages first
-      const citedContent = await resolveAllCites(essay.content);
-      const rawText = extractMessageText(essay.content);
+      const citedContent = await resolveAllCites(dmContent.content);
+      const rawText = extractMessageText(dmContent.content);
       const messageText = citedContent + rawText;
       if (!messageText.trim()) {
         return;
@@ -1387,14 +1602,16 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
 
       // Owner is always allowed to DM (bypass allowlist)
       if (isOwner(senderShip)) {
-        runtime.log?.(`[tlon] Processing DM from owner ${senderShip}`);
+        runtime.log?.(`[tlon] Processing DM from owner ${senderShip}${isDmThreadReply ? ` (thread reply, parent=${dmReplyParentId}, replyId=${effectiveMessageId})` : ""}`);
         await processMessage({
-          messageId: messageId ?? "",
+          messageId: effectiveMessageId ?? "",
           senderShip,
           messageText,
-          messageContent: essay.content,
+          messageContent: dmContent.content,
           isGroup: false,
-          timestamp: essay.sent || Date.now(),
+          timestamp: dmContent.sent || Date.now(),
+          parentId: dmReplyParentId,
+          isThreadReply: isDmThreadReply,
         });
         return;
       }
@@ -1408,10 +1625,10 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
             requestingShip: senderShip,
             messagePreview: messageText.substring(0, 100),
             originalMessage: {
-              messageId: messageId ?? "",
+              messageId: effectiveMessageId ?? "",
               messageText,
-              messageContent: essay.content,
-              timestamp: essay.sent || Date.now(),
+              messageContent: dmContent.content,
+              timestamp: dmContent.sent || Date.now(),
             },
           });
           await queueApprovalRequest(approval);
@@ -1422,12 +1639,14 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       }
 
       await processMessage({
-        messageId: messageId ?? "",
+        messageId: effectiveMessageId ?? "",
         senderShip,
         messageText,
-        messageContent: essay.content, // Pass raw content for media extraction
+        messageContent: dmContent.content, // Pass raw content for media extraction
         isGroup: false,
-        timestamp: essay.sent || Date.now(),
+        timestamp: dmContent.sent || Date.now(),
+        parentId: dmReplyParentId,
+        isThreadReply: isDmThreadReply,
       });
     } catch (error: any) {
       runtime.error?.(
@@ -1448,7 +1667,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         runtime.error?.(`[tlon] Channels firehose error: ${String(error)}`);
       },
       quit: () => {
-        runtime.log?.("[tlon] Channels firehose subscription ended");
+        runtime.log?.("[tlon] Channels firehose quit received, SSE client will resubscribe");
       },
     });
     runtime.log?.("[tlon] Subscribed to channels firehose (/v2)");
@@ -1462,7 +1681,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         runtime.error?.(`[tlon] Chat firehose error: ${String(error)}`);
       },
       quit: () => {
-        runtime.log?.("[tlon] Chat firehose subscription ended");
+        runtime.log?.("[tlon] Chat firehose quit received, SSE client will resubscribe");
       },
     });
     runtime.log?.("[tlon] Subscribed to chat firehose (/v3)");
@@ -1494,7 +1713,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         runtime.error?.(`[tlon] Contacts subscription error: ${String(error)}`);
       },
       quit: () => {
-        runtime.log?.("[tlon] Contacts subscription ended");
+        runtime.log?.("[tlon] Contacts quit received, SSE client will resubscribe");
       },
     });
     runtime.log?.("[tlon] Subscribed to contacts updates (/v1/news)");
@@ -1606,8 +1825,8 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
               if (event.channels && typeof event.channels === "object") {
                 const channels = event.channels as Record<string, any>;
                 for (const [channelNest, _channelData] of Object.entries(channels)) {
-                  // Only monitor chat channels
-                  if (!channelNest.startsWith("chat/")) {
+                  // Only monitor chat and heap channels
+                  if (!channelNest.startsWith("chat/") && !channelNest.startsWith("heap/")) {
                     continue;
                   }
 
@@ -1654,7 +1873,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
                 const join = event.join as { group?: string; channels?: string[] };
                 if (join.channels) {
                   for (const channelNest of join.channels) {
-                    if (!channelNest.startsWith("chat/")) {
+                    if (!channelNest.startsWith("chat/") && !channelNest.startsWith("heap/")) {
                       continue;
                     }
                     if (!watchedChannels.has(channelNest)) {
@@ -1702,7 +1921,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
           runtime.error?.(`[tlon] Groups-ui subscription error: ${String(error)}`);
         },
         quit: () => {
-          runtime.log?.("[tlon] Groups-ui subscription ended");
+          runtime.log?.("[tlon] Groups-ui quit received, SSE client will resubscribe");
         },
       });
       runtime.log?.("[tlon] Subscribed to groups-ui for real-time channel detection");
@@ -1843,7 +2062,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
             runtime.error?.(`[tlon] Foreigns subscription error: ${String(error)}`);
           },
           quit: () => {
-            runtime.log?.("[tlon] Foreigns subscription ended");
+            runtime.log?.("[tlon] Foreigns quit received, SSE client will resubscribe");
           },
         });
         runtime.log?.(
