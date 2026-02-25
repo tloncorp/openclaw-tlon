@@ -8,6 +8,7 @@ export type TlonResolvedAccount = {
   ship: string | null;
   url: string | null;
   code: string | null;
+  allowPrivateNetwork: boolean | null;
   groupChannels: string[];
   dmAllowlist: string[];
   /** Ships allowed to invite us to groups (security: prevent malicious group invites) */
@@ -32,6 +33,7 @@ export function resolveTlonAccount(
         ship?: string;
         url?: string;
         code?: string;
+        allowPrivateNetwork?: boolean;
         groupChannels?: string[];
         dmAllowlist?: string[];
         groupInviteAllowlist?: string[];
@@ -53,6 +55,7 @@ export function resolveTlonAccount(
       ship: null,
       url: null,
       code: null,
+      allowPrivateNetwork: null,
       groupChannels: [],
       dmAllowlist: [],
       groupInviteAllowlist: [],
@@ -60,6 +63,7 @@ export function resolveTlonAccount(
       showModelSignature: null,
       autoAcceptDmInvites: null,
       autoAcceptGroupInvites: null,
+      defaultAuthorizedShips: [],
       ownerShip: null,
     };
   }
@@ -70,6 +74,9 @@ export function resolveTlonAccount(
   const ship = (account?.ship ?? base.ship ?? null) as string | null;
   const url = (account?.url ?? base.url ?? null) as string | null;
   const code = (account?.code ?? base.code ?? null) as string | null;
+  const allowPrivateNetwork = (account?.allowPrivateNetwork ?? base.allowPrivateNetwork ?? null) as
+    | boolean
+    | null;
   const groupChannels = (account?.groupChannels ?? base.groupChannels ?? []) as string[];
   const dmAllowlist = (account?.dmAllowlist ?? base.dmAllowlist ?? []) as string[];
   const groupInviteAllowlist = (account?.groupInviteAllowlist ??
@@ -88,6 +95,9 @@ export function resolveTlonAccount(
     base.autoAcceptGroupInvites ??
     null) as boolean | null;
   const ownerShip = (account?.ownerShip ?? base.ownerShip ?? null) as string | null;
+  const defaultAuthorizedShips = ((account as Record<string, unknown>)?.defaultAuthorizedShips ??
+    (base as Record<string, unknown>)?.defaultAuthorizedShips ??
+    []) as string[];
   const configured = Boolean(ship && url && code);
 
   return {
@@ -98,6 +108,7 @@ export function resolveTlonAccount(
     ship,
     url,
     code,
+    allowPrivateNetwork,
     groupChannels,
     dmAllowlist,
     groupInviteAllowlist,
@@ -105,6 +116,7 @@ export function resolveTlonAccount(
     showModelSignature,
     autoAcceptDmInvites,
     autoAcceptGroupInvites,
+    defaultAuthorizedShips,
     ownerShip,
   };
 }

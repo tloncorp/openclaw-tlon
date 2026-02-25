@@ -13,19 +13,19 @@
     "test:security": "vitest run src/security.test.ts",
     "test:watch": "vitest src/",
     "test:integration": "./test/run.sh",
-    "test:integration:watch": "./test/run.sh --watch",
-    "test:all": "vitest run",
-    "test:ci": "docker compose --env-file .env -f dev/docker-compose.yml up -d && ./test/run.sh; docker compose --env-file .env -f dev/docker-compose.yml down"
+    "test:integration:dev": "./test/run-dev.sh",
+    "test:integration:watch": "./test/run-dev.sh --watch",
+    "test:all": "vitest run"
   },
   "dependencies": {
     "@tloncorp/api": "github:tloncorp/api-beta#main",
-    "@tloncorp/tlon-skill": "0.1.9",
+    "@tloncorp/tlon-skill": "0.1.11",
     "@urbit/aura": "^3.0.0",
     "@urbit/http-api": "^3.0.0"
   },
   "devDependencies": {
     "dotenv": "^17.2.4",
-    "openclaw": "^2026.1.30",
+    "openclaw": "2026.2.19-2",
     "oxfmt": "0.27.0",
     "oxlint": "^1.42.0",
     "oxlint-tsgolint": "^0.12.2",

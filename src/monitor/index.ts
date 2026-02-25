@@ -6,21 +6,9 @@ import { createSettingsManager, type TlonSettingsStore } from "../settings.js";
 import { normalizeShip, parseChannelNest } from "../targets.js";
 import { resolveTlonAccount } from "../types.js";
 import { authenticate } from "../urbit/auth.js";
+import { ssrfPolicyFromAllowPrivateNetwork } from "../urbit/context.js";
 import { sendDm, sendGroupMessage } from "../urbit/send.js";
 import { UrbitSSEClient } from "../urbit/sse-client.js";
-import { fetchAllChannels, fetchInitData } from "./discovery.js";
-import { cacheMessage, getChannelHistory, fetchThreadHistory } from "./history.js";
-import { downloadMessageImages } from "./media.js";
-import { createProcessedMessageTracker } from "./processed-messages.js";
-import {
-  extractMessageText,
-  extractCites,
-  formatModelName,
-  isBotMentioned,
-  isDmAllowed,
-  isSummarizationRequest,
-  type ParsedCite,
-} from "./utils.js";
 import {
   type PendingApproval,
   type AdminCommand,
@@ -36,6 +24,20 @@ import {
   formatBlockedList,
   formatPendingList,
 } from "./approval.js";
+import { fetchAllChannels, fetchInitData } from "./discovery.js";
+import { cacheMessage, getChannelHistory, fetchThreadHistory } from "./history.js";
+import { downloadMessageImages } from "./media.js";
+import { createProcessedMessageTracker } from "./processed-messages.js";
+import {
+  extractMessageText,
+  extractCites,
+  formatModelName,
+  isBotMentioned,
+  stripBotMention,
+  isDmAllowed,
+  isSummarizationRequest,
+  type ParsedCite,
+} from "./utils.js";
 
 export type MonitorTlonOpts = {
   runtime?: RuntimeEnv;
@@ -80,7 +82,9 @@ function resolveChannelAuthorization(
 export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<void> {
   const core = getTlonRuntime();
   const cfg = core.config.loadConfig() as OpenClawConfig;
-  if (cfg.channels?.tlon?.enabled === false) {return;}
+  if (cfg.channels?.tlon?.enabled === false) {
+    return;
+  }
 
   const logger = core.logging.getChildLogger({ module: "tlon-auto-reply" });
   const formatRuntimeMessage = (...args: Parameters<RuntimeEnv["log"]>) => format(...args);
@@ -97,7 +101,9 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
   };
 
   const account = resolveTlonAccount(cfg, opts.accountId ?? undefined);
-  if (!account.enabled) {return;}
+  if (!account.enabled) {
+    return;
+  }
   if (!account.configured || !account.ship || !account.url || !account.code) {
     throw new Error("Tlon account not configured (ship/url/code required)");
   }
@@ -105,35 +111,57 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
   const botShipName = normalizeShip(account.ship);
   runtime.log?.(`[tlon] Starting monitor for ${botShipName}`);
 
-  let api: UrbitSSEClient | null = null;
-  for (let attempt = 1; ; attempt++) {
-    if (opts.abortSignal?.aborted) {
-      throw new Error("Aborted while waiting to authenticate");
-    }
-    try {
-      runtime.log?.(`[tlon] Attempting authentication to ${account.url}...`);
-      const cookie = await authenticate(account.url, account.code);
-      api = new UrbitSSEClient(account.url, cookie, {
-        ship: botShipName,
-        logger: {
-          log: (message) => runtime.log?.(message),
-          error: (message) => runtime.error?.(message),
-        },
-      });
-      break;
-    } catch (error: any) {
-      runtime.error?.(`[tlon] Failed to authenticate (attempt ${attempt}): ${error?.message ?? String(error)}`);
-      const delay = Math.min(5000, 1000 * Math.pow(2, attempt - 1));
-      runtime.log?.(`[tlon] Retrying authentication in ${delay}ms...`);
-      await new Promise<void>((resolve, reject) => {
-        const timer = setTimeout(resolve, delay);
-        if (opts.abortSignal) {
-          const onAbort = () => { clearTimeout(timer); reject(new Error("Aborted")); };
-          opts.abortSignal.addEventListener("abort", onAbort, { once: true });
+  const ssrfPolicy = ssrfPolicyFromAllowPrivateNetwork(account.allowPrivateNetwork);
+
+  // Helper to authenticate with retry logic
+  async function authenticateWithRetry(maxAttempts = 10): Promise<string> {
+    for (let attempt = 1; ; attempt++) {
+      if (opts.abortSignal?.aborted) {
+        throw new Error("Aborted while waiting to authenticate");
+      }
+      try {
+        runtime.log?.(`[tlon] Attempting authentication to ${account.url}...`);
+        return await authenticate(account.url, account.code, { ssrfPolicy });
+      } catch (error: any) {
+        runtime.error?.(
+          `[tlon] Failed to authenticate (attempt ${attempt}): ${error?.message ?? String(error)}`,
+        );
+        if (attempt >= maxAttempts) {
+          throw error;
         }
-      });
+        const delay = Math.min(30000, 1000 * Math.pow(2, attempt - 1));
+        runtime.log?.(`[tlon] Retrying authentication in ${delay}ms...`);
+        await new Promise<void>((resolve, reject) => {
+          const timer = setTimeout(resolve, delay);
+          if (opts.abortSignal) {
+            const onAbort = () => {
+              clearTimeout(timer);
+              reject(new Error("Aborted"));
+            };
+            opts.abortSignal.addEventListener("abort", onAbort, { once: true });
+          }
+        });
+      }
     }
   }
+
+  let api: UrbitSSEClient | null = null;
+  const cookie = await authenticateWithRetry();
+  api = new UrbitSSEClient(account.url, cookie, {
+    ship: botShipName,
+    ssrfPolicy,
+    logger: {
+      log: (message) => runtime.log?.(message),
+      error: (message) => runtime.error?.(message),
+    },
+    // Re-authenticate on reconnect in case the session expired
+    onReconnect: async (client) => {
+      runtime.log?.("[tlon] Re-authenticating on SSE reconnect...");
+      const newCookie = await authenticateWithRetry(5);
+      client.updateCookie(newCookie);
+      runtime.log?.("[tlon] Re-authentication successful");
+    },
+  });
 
   const processedTracker = createProcessedMessageTracker(2000);
   let groupChannels: string[] = [];
@@ -359,7 +387,9 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
 
   // Helper to resolve cited message content
   async function resolveCiteContent(cite: ParsedCite): Promise<string | null> {
-    if (cite.type !== "chan" || !cite.nest || !cite.postId) {return null;}
+    if (cite.type !== "chan" || !cite.nest || !cite.postId) {
+      return null;
+    }
 
     try {
       // Scry for the specific post: /v4/{nest}/posts/post/{postId}
@@ -384,7 +414,9 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
   // Resolve all cites in message content and return quoted text
   async function resolveAllCites(content: unknown): Promise<string> {
     const cites = extractCites(content);
-    if (cites.length === 0) {return "";}
+    if (cites.length === 0) {
+      return "";
+    }
 
     const resolved: string[] = [];
     for (const cite of cites) {
@@ -607,7 +639,9 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
 
     const approval = findPendingApproval(pendingApprovals, parsed.id);
     if (!approval) {
-      await sendOwnerNotification("No pending approval found" + (parsed.id ? ` for ID: ${parsed.id}` : ""));
+      await sendOwnerNotification(
+        "No pending approval found" + (parsed.id ? ` for ID: ${parsed.id}` : ""),
+      );
       return true; // Still consumed the message
     }
 
@@ -684,7 +718,9 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
                     }
                   }
                   if (newCount > 0) {
-                    runtime.log?.(`[tlon] Discovered ${newCount} new channel(s) after joining group`);
+                    runtime.log?.(
+                      `[tlon] Discovered ${newCount} new channel(s) after joining group`,
+                    );
                   }
                 } catch (err) {
                   runtime.log?.(`[tlon] Channel discovery after group join failed: ${String(err)}`);
@@ -731,7 +767,9 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
 
       case "pending": {
         await sendOwnerNotification(formatPendingList(pendingApprovals));
-        runtime.log?.(`[tlon] Owner requested pending approvals list (${pendingApprovals.length} pending)`);
+        runtime.log?.(
+          `[tlon] Owner requested pending approvals list (${pendingApprovals.length} pending)`,
+        );
         return true;
       }
 
@@ -755,10 +793,17 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
 
   // Check if a ship is the owner (always allowed to DM)
   function isOwner(ship: string): boolean {
-    if (!effectiveOwnerShip) {return false;}
+    if (!effectiveOwnerShip) {
+      return false;
+    }
     return normalizeShip(ship) === effectiveOwnerShip;
   }
 
+  /**
+   * Extract the DM partner ship from the 'whom' field.
+   * This is the canonical source for DM routing (more reliable than essay.author).
+   * Returns empty string if whom doesn't contain a valid patp-like value.
+   */
   function extractDmPartnerShip(whom: unknown): string {
     const raw =
       typeof whom === "string"
@@ -798,6 +843,44 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     } = params;
     const groupChannel = channelNest; // For compatibility
     let messageText = params.messageText;
+
+    // Track owner interaction timestamp for heartbeat engagement recovery.
+    // Store both epoch ms (for code) and ISO date (for LLM — models can't reliably convert epoch).
+    if (isOwner(senderShip)) {
+      const isoDate = new Date(timestamp).toISOString().split("T")[0]; // YYYY-MM-DD
+      Promise.all([
+        api.poke({
+          app: "settings",
+          mark: "settings-event",
+          json: {
+            "put-entry": {
+              desk: "moltbot",
+              "bucket-key": "tlon",
+              "entry-key": "lastOwnerMessageAt",
+              value: timestamp,
+            },
+          },
+        }),
+        api.poke({
+          app: "settings",
+          mark: "settings-event",
+          json: {
+            "put-entry": {
+              desk: "moltbot",
+              "bucket-key": "tlon",
+              "entry-key": "lastOwnerMessageDate",
+              value: isoDate,
+            },
+          },
+        }),
+      ])
+        .then(() => {
+          runtime.log?.(`[tlon] Updated lastOwnerMessageAt: ${timestamp} (${isoDate})`);
+        })
+        .catch((err) => {
+          runtime.error?.(`[tlon] Failed to update lastOwnerMessageAt: ${String(err)}`);
+        });
+    }
 
     // Download any images from the message content
     let attachments: Array<{ path: string; contentType: string }> = [];
@@ -932,8 +1015,13 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
             `Docs: https://docs.openclaw.ai/concepts/session#secure-dm-mode`;
 
           // Send async, don't block message processing
-          sendDm({ api, fromShip: botShipName, toShip: effectiveOwnerShip, text: warningMsg }).catch(
-            (err) => runtime.error?.(`[tlon] Failed to send security warning to owner: ${err}`),
+          sendDm({
+            api,
+            fromShip: botShipName,
+            toShip: effectiveOwnerShip,
+            text: warningMsg,
+          }).catch((err) =>
+            runtime.error?.(`[tlon] Failed to send security warning to owner: ${err}`),
           );
         }
       }
@@ -944,6 +1032,30 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     const fromLabel = isGroup
       ? `${senderShip} [${senderRole}] in ${channelNest}`
       : `${senderShip} [${senderRole}]`;
+
+    // Compute command authorization for slash commands (owner-only)
+    const shouldComputeAuth = core.channel.commands.shouldComputeCommandAuthorized(
+      messageText,
+      cfg,
+    );
+    let commandAuthorized = false;
+
+    if (shouldComputeAuth) {
+      const useAccessGroups = cfg.commands?.useAccessGroups !== false;
+      const senderIsOwner = isOwner(senderShip);
+
+      commandAuthorized = core.channel.commands.resolveCommandAuthorizedFromAuthorizers({
+        useAccessGroups,
+        authorizers: [{ configured: Boolean(effectiveOwnerShip), allowed: senderIsOwner }],
+      });
+
+      // Log when non-owner attempts a slash command (will be silently ignored by Gateway)
+      if (!commandAuthorized) {
+        console.log(
+          `[tlon] Command attempt denied: ${senderShip} is not owner (owner=${effectiveOwnerShip ?? "not configured"})`,
+        );
+      }
+    }
 
     // Prepend attachment annotations to message body (similar to Signal format)
     let bodyWithAttachments = messageText;
@@ -961,10 +1073,13 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       body: bodyWithAttachments,
     });
 
+    // Strip bot ship mention for CommandBody so "/status" is recognized as command-only
+    const commandBody = isGroup ? stripBotMention(messageText, botShipName) : messageText;
+
     const ctxPayload = core.channel.reply.finalizeInboundContext({
       Body: body,
       RawBody: messageText,
-      CommandBody: messageText,
+      CommandBody: commandBody,
       From: isGroup ? `tlon:group:${groupChannel}` : `tlon:${senderShip}`,
       To: `tlon:${botShipName}`,
       SessionKey: route.sessionKey,
@@ -974,6 +1089,8 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       SenderName: senderShip,
       SenderId: senderShip,
       SenderRole: senderRole,
+      CommandAuthorized: commandAuthorized,
+      CommandSource: "text" as const,
       Provider: "tlon",
       Surface: "tlon",
       MessageSid: messageId,
@@ -1001,22 +1118,26 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         humanDelay,
         deliver: async (payload: ReplyPayload) => {
           let replyText = payload.text;
-          if (!replyText) {return;}
+          if (!replyText) {
+            return;
+          }
 
           // Use settings store value if set, otherwise fall back to file config
           const showSignature = effectiveShowModelSig;
           if (showSignature) {
             const modelInfo =
-              payload.metadata?.model ||
-              payload.model ||
-              route.model ||
+              (payload as { metadata?: { model?: string } }).metadata?.model ||
+              (payload as { model?: string }).model ||
+              (route as { model?: string }).model ||
               cfg.agents?.defaults?.model?.primary;
             replyText = `${replyText}\n\n_[Generated by ${formatModelName(modelInfo)}]_`;
           }
 
           if (isGroup && groupChannel) {
             const parsed = parseChannelNest(groupChannel);
-            if (!parsed) {return;}
+            if (!parsed) {
+              return;
+            }
             await sendGroupMessage({
               api: api,
               fromShip: botShipName,
@@ -1031,7 +1152,6 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
               runtime.log?.(`[tlon] Now tracking thread for future replies: ${parentId}`);
             }
           } else {
-            runtime.log?.(`[tlon] Sending DM reply from ${botShipName} to ${senderShip}`);
             await sendDm({ api: api, fromShip: botShipName, toShip: senderShip, text: replyText });
           }
         },
@@ -1053,33 +1173,47 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
   const handleChannelsFirehose = async (event: any) => {
     try {
       const nest = event?.nest;
-      if (!nest) {return;}
+      if (!nest) {
+        return;
+      }
 
       // Only process channels we're watching
-      if (!watchedChannels.has(nest)) {return;}
+      if (!watchedChannels.has(nest)) {
+        return;
+      }
 
       const response = event?.response;
-      if (!response) {return;}
+      if (!response) {
+        return;
+      }
 
       // Handle post responses (new posts and replies)
       const essay = response?.post?.["r-post"]?.set?.essay;
       const memo = response?.post?.["r-post"]?.reply?.["r-reply"]?.set?.memo;
-      if (!essay && !memo) {return;}
+      if (!essay && !memo) {
+        return;
+      }
 
       const content = memo || essay;
       const isThreadReply = Boolean(memo);
       const messageId = isThreadReply ? response?.post?.["r-post"]?.reply?.id : response?.post?.id;
 
-      if (!processedTracker.mark(messageId)) {return;}
+      if (!processedTracker.mark(messageId)) {
+        return;
+      }
 
       const senderShip = normalizeShip(content.author ?? "");
-      if (!senderShip || senderShip === botShipName) {return;}
+      if (!senderShip || senderShip === botShipName) {
+        return;
+      }
 
       // Resolve any cited/quoted messages first
       const citedContent = await resolveAllCites(content.content);
       const rawText = extractMessageText(content.content);
       const messageText = citedContent + rawText;
-      if (!messageText.trim()) {return;}
+      if (!messageText.trim()) {
+        return;
+      }
 
       cacheMessage(nest, {
         author: senderShip,
@@ -1176,7 +1310,9 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       if (Array.isArray(event)) {
         for (const invite of event as DmInvite[]) {
           const ship = normalizeShip(invite.ship || "");
-          if (!ship || processedDmInvites.has(ship)) {continue;}
+          if (!ship || processedDmInvites.has(ship)) {
+            continue;
+          }
 
           // Owner is always allowed
           if (isOwner(ship)) {
@@ -1223,7 +1359,9 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         }
         return;
       }
-      if (!("whom" in event) || !("response" in event)) {return;}
+      if (!("whom" in event) || !("response" in event)) {
+        return;
+      }
 
       const whom = event.whom; // DM partner ship or club ID
       const messageId = event.id;
@@ -1231,18 +1369,27 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
 
       // Handle add events (new messages)
       const essay = response?.add?.essay;
-      if (!essay) {return;}
+      if (!essay) {
+        return;
+      }
 
-      if (!processedTracker.mark(messageId)) {return;}
+      if (!processedTracker.mark(messageId)) {
+        return;
+      }
 
       const authorShip = normalizeShip(essay.author ?? "");
       const partnerShip = extractDmPartnerShip(whom);
       const senderShip = partnerShip || authorShip;
 
       // Ignore the bot's own outbound DM events.
-      if (authorShip === botShipName) {return;}
-      if (!senderShip || senderShip === botShipName) {return;}
+      if (authorShip === botShipName) {
+        return;
+      }
+      if (!senderShip || senderShip === botShipName) {
+        return;
+      }
 
+      // Log mismatch between author and partner for debugging
       if (authorShip && partnerShip && authorShip !== partnerShip) {
         runtime.log?.(
           `[tlon] DM ship mismatch (author=${authorShip}, partner=${partnerShip}) - routing to partner`,
@@ -1253,7 +1400,9 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       const citedContent = await resolveAllCites(essay.content);
       const rawText = extractMessageText(essay.content);
       const messageText = citedContent + rawText;
-      if (!messageText.trim()) {return;}
+      if (!messageText.trim()) {
+        return;
+      }
 
       // Check if this is the owner sending an approval response
       if (isOwner(senderShip) && isApprovalResponse(messageText)) {
@@ -1467,7 +1616,9 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       // Update pending approvals
       if (newSettings.pendingApprovals !== undefined) {
         pendingApprovals = newSettings.pendingApprovals;
-        runtime.log?.(`[tlon] Settings: pendingApprovals updated (${pendingApprovals.length} items)`);
+        runtime.log?.(
+          `[tlon] Settings: pendingApprovals updated (${pendingApprovals.length} items)`,
+        );
       }
     });
 
@@ -1493,7 +1644,9 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
                 const channels = event.channels as Record<string, any>;
                 for (const [channelNest, _channelData] of Object.entries(channels)) {
                   // Only monitor chat channels
-                  if (!channelNest.startsWith("chat/")) {continue;}
+                  if (!channelNest.startsWith("chat/")) {
+                    continue;
+                  }
 
                   // If this is a new channel we're not watching yet, add it
                   if (!watchedChannels.has(channelNest)) {
@@ -1538,7 +1691,9 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
                 const join = event.join as { group?: string; channels?: string[] };
                 if (join.channels) {
                   for (const channelNest of join.channels) {
-                    if (!channelNest.startsWith("chat/")) {continue;}
+                    if (!channelNest.startsWith("chat/")) {
+                      continue;
+                    }
                     if (!watchedChannels.has(channelNest)) {
                       watchedChannels.add(channelNest);
                       runtime.log?.(`[tlon] Auto-detected joined channel: ${channelNest}`);
@@ -1600,14 +1755,22 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
 
       // Helper to process pending invites
       const processPendingInvites = async (foreigns: Foreigns) => {
-        if (!foreigns || typeof foreigns !== "object") {return;}
+        if (!foreigns || typeof foreigns !== "object") {
+          return;
+        }
 
         for (const [groupFlag, foreign] of Object.entries(foreigns)) {
-          if (processedGroupInvites.has(groupFlag)) {continue;}
-          if (!foreign.invites || foreign.invites.length === 0) {continue;}
+          if (processedGroupInvites.has(groupFlag)) {
+            continue;
+          }
+          if (!foreign.invites || foreign.invites.length === 0) {
+            continue;
+          }
 
           const validInvite = foreign.invites.find((inv) => inv.valid);
-          if (!validInvite) {continue;}
+          if (!validInvite) {
+            continue;
+          }
 
           const inviterShip = validInvite.from;
           const normalizedInviter = normalizeShip(inviterShip);
@@ -1624,9 +1787,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
                 },
               });
               processedGroupInvites.add(groupFlag);
-              runtime.log?.(
-                `[tlon] Auto-accepted group invite from owner: ${groupFlag}`,
-              );
+              runtime.log?.(`[tlon] Auto-accepted group invite from owner: ${groupFlag}`);
             } catch (err) {
               runtime.error?.(`[tlon] Failed to accept group invite from owner: ${String(err)}`);
             }
@@ -1649,11 +1810,12 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
           }
 
           // Check if inviter is on allowlist
-          const isAllowed = effectiveGroupInviteAllowlist.length > 0
-            ? effectiveGroupInviteAllowlist
-                .map((s) => normalizeShip(s))
-                .some((s) => s === normalizedInviter)
-            : false; // Fail-safe: empty allowlist means deny
+          const isAllowed =
+            effectiveGroupInviteAllowlist.length > 0
+              ? effectiveGroupInviteAllowlist
+                  .map((s) => normalizeShip(s))
+                  .some((s) => s === normalizedInviter)
+              : false; // Fail-safe: empty allowlist means deny
 
           if (!isAllowed) {
             // If owner is configured, queue approval
@@ -1703,14 +1865,16 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         await api.subscribe({
           app: "groups",
           path: "/v1/foreigns",
-          event: async (event: Foreigns) => {
-            try {
-              await processPendingInvites(event);
-            } catch (error: any) {
-              runtime.error?.(
-                `[tlon] Error handling foreigns event: ${error?.message ?? String(error)}`,
-              );
-            }
+          event: (data: unknown) => {
+            void (async () => {
+              try {
+                await processPendingInvites(data as Foreigns);
+              } catch (error: any) {
+                runtime.error?.(
+                  `[tlon] Error handling foreigns event: ${error?.message ?? String(error)}`,
+                );
+              }
+            })();
           },
           err: (error) => {
             runtime.error?.(`[tlon] Foreigns subscription error: ${String(error)}`);
@@ -1768,8 +1932,9 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     );
 
     if (opts.abortSignal) {
+      const signal = opts.abortSignal;
       await new Promise((resolve) => {
-        opts.abortSignal.addEventListener(
+        signal.addEventListener(
           "abort",
           () => {
             clearInterval(pollInterval);

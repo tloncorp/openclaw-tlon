@@ -1,22 +1,24 @@
+import { configureClient } from "@tloncorp/api";
 import type {
   ChannelOutboundAdapter,
   ChannelPlugin,
   ChannelSetupInput,
   OpenClawConfig,
 } from "openclaw/plugin-sdk";
-import { configureClient } from "@tloncorp/api";
 import {
   applyAccountNameToChannelSection,
   DEFAULT_ACCOUNT_ID,
   normalizeAccountId,
 } from "openclaw/plugin-sdk";
+import { buildTlonAccountFields } from "./account-fields.js";
 import { tlonChannelConfigSchema } from "./config-schema.js";
 import { monitorTlonProvider } from "./monitor/index.js";
 import { tlonOnboardingAdapter } from "./onboarding.js";
 import { formatTargetHint, normalizeShip, parseTlonTarget } from "./targets.js";
 import { resolveTlonAccount, listTlonAccountIds } from "./types.js";
 import { authenticate } from "./urbit/auth.js";
-import { ensureUrbitConnectPatched, Urbit } from "./urbit/http-api.js";
+import { ssrfPolicyFromAllowPrivateNetwork } from "./urbit/context.js";
+import { urbitFetch } from "./urbit/fetch.js";
 import {
   buildMediaStory,
   sendDm,
@@ -27,8 +29,14 @@ import {
 import { uploadImageFromUrl } from "./urbit/upload.js";
 
 // Simple HTTP-only poke that doesn't open an EventSource (avoids conflict with monitor's SSE)
-async function createHttpPokeApi(params: { url: string; code: string; ship: string }) {
-  const cookie = await authenticate(params.url, params.code);
+async function createHttpPokeApi(params: {
+  url: string;
+  code: string;
+  ship: string;
+  allowPrivateNetwork?: boolean;
+}) {
+  const ssrfPolicy = ssrfPolicyFromAllowPrivateNetwork(params.allowPrivateNetwork);
+  const cookie = await authenticate(params.url, params.code, { ssrfPolicy });
   const channelId = `${Math.floor(Date.now() / 1000)}-${Math.random().toString(36).substring(2, 8)}`;
   const channelUrl = `${params.url}/~/channel/${channelId}`;
   const shipName = params.ship.replace(/^~/, "");
@@ -73,9 +81,11 @@ type TlonSetupInput = ChannelSetupInput & {
   ship?: string;
   url?: string;
   code?: string;
+  allowPrivateNetwork?: boolean;
   groupChannels?: string[];
   dmAllowlist?: string[];
   autoDiscoverChannels?: boolean;
+  ownerShip?: string;
 };
 
 function applyTlonSetupConfig(params: {
@@ -93,16 +103,7 @@ function applyTlonSetupConfig(params: {
   });
   const base = namedConfig.channels?.tlon ?? {};
 
-  const payload = {
-    ...(input.ship ? { ship: input.ship } : {}),
-    ...(input.url ? { url: input.url } : {}),
-    ...(input.code ? { code: input.code } : {}),
-    ...(input.groupChannels ? { groupChannels: input.groupChannels } : {}),
-    ...(input.dmAllowlist ? { dmAllowlist: input.dmAllowlist } : {}),
-    ...(typeof input.autoDiscoverChannels === "boolean"
-      ? { autoDiscoverChannels: input.autoDiscoverChannels }
-      : {}),
-  };
+  const payload = buildTlonAccountFields(input);
 
   if (useDefault) {
     return {
@@ -172,6 +173,7 @@ const tlonOutbound: ChannelOutboundAdapter = {
       url: account.url,
       ship: account.ship,
       code: account.code,
+      allowPrivateNetwork: account.allowPrivateNetwork ?? undefined,
     });
 
     try {
@@ -212,6 +214,7 @@ const tlonOutbound: ChannelOutboundAdapter = {
       throw new Error(`Invalid Tlon target. Use ${formatTargetHint()}`);
     }
 
+    // Configure the API client for uploads
     configureClient({
       shipUrl: account.url,
       shipName: account.ship.replace(/^~/, ""),
@@ -225,6 +228,7 @@ const tlonOutbound: ChannelOutboundAdapter = {
       url: account.url,
       ship: account.ship,
       code: account.code,
+      allowPrivateNetwork: account.allowPrivateNetwork ?? undefined,
     });
 
     try {
@@ -281,8 +285,7 @@ export const tlonPlugin: ChannelPlugin = {
   configSchema: tlonChannelConfigSchema,
   config: {
     listAccountIds: (cfg) => listTlonAccountIds(cfg),
-    resolveAccount: (cfg, accountId) =>
-      resolveTlonAccount(cfg, accountId ?? undefined),
+    resolveAccount: (cfg, accountId) => resolveTlonAccount(cfg, accountId ?? undefined),
     defaultAccountId: () => "default",
     setAccountEnabled: ({ cfg, accountId, enabled }) => {
       const useDefault = !accountId || accountId === "default";
@@ -318,7 +321,13 @@ export const tlonPlugin: ChannelPlugin = {
     deleteAccount: ({ cfg, accountId }) => {
       const useDefault = !accountId || accountId === "default";
       if (useDefault) {
-        const { ship: _ship, code: _code, url: _url, name: _name, ...rest } = cfg.channels?.tlon ?? {};
+        const {
+          ship: _ship,
+          code: _code,
+          url: _url,
+          name: _name,
+          ...rest
+        } = cfg.channels?.tlon ?? {};
         return {
           ...cfg,
           channels: {
@@ -364,9 +373,15 @@ export const tlonPlugin: ChannelPlugin = {
       const ship = setupInput.ship?.trim() || resolved.ship;
       const url = setupInput.url?.trim() || resolved.url;
       const code = setupInput.code?.trim() || resolved.code;
-      if (!ship) {return "Tlon requires --ship.";}
-      if (!url) {return "Tlon requires --url.";}
-      if (!code) {return "Tlon requires --code.";}
+      if (!ship) {
+        return "Tlon requires --ship.";
+      }
+      if (!url) {
+        return "Tlon requires --url.";
+      }
+      if (!code) {
+        return "Tlon requires --code.";
+      }
       return null;
     },
     applyAccountConfig: ({ cfg, accountId, input }) =>
@@ -379,8 +394,12 @@ export const tlonPlugin: ChannelPlugin = {
   messaging: {
     normalizeTarget: (target) => {
       const parsed = parseTlonTarget(target);
-      if (!parsed) {return target.trim();}
-      if (parsed.kind === "dm") {return parsed.ship;}
+      if (!parsed) {
+        return target.trim();
+      }
+      if (parsed.kind === "dm") {
+        return parsed.ship;
+      }
       return parsed.nest;
     },
     targetResolver: {
@@ -412,46 +431,62 @@ export const tlonPlugin: ChannelPlugin = {
         return [];
       });
     },
-    buildChannelSummary: ({ snapshot }) => ({
-      configured: snapshot.configured ?? false,
-      ship: snapshot.ship ?? null,
-      url: snapshot.url ?? null,
-    }),
+    buildChannelSummary: ({ snapshot }) => {
+      const s = snapshot as { configured?: boolean; ship?: string; url?: string };
+      return {
+        configured: s.configured ?? false,
+        ship: s.ship ?? null,
+        url: s.url ?? null,
+      };
+    },
     probeAccount: async ({ account }) => {
       if (!account.configured || !account.ship || !account.url || !account.code) {
         return { ok: false, error: "Not configured" };
       }
       try {
-        ensureUrbitConnectPatched();
-        const api = await Urbit.authenticate({
-          ship: account.ship.replace(/^~/, ""),
-          url: account.url,
-          code: account.code,
-          verbose: false,
+        const ssrfPolicy = ssrfPolicyFromAllowPrivateNetwork(account.allowPrivateNetwork);
+        const cookie = await authenticate(account.url, account.code, { ssrfPolicy });
+        // Simple probe - just verify we can reach /~/name
+        const { response, release } = await urbitFetch({
+          baseUrl: account.url,
+          path: "/~/name",
+          init: {
+            method: "GET",
+            headers: { Cookie: cookie },
+          },
+          ssrfPolicy,
+          timeoutMs: 30_000,
+          auditContext: "tlon-probe-account",
         });
         try {
-          await api.getOurName();
+          if (!response.ok) {
+            return { ok: false, error: `Name request failed: ${response.status}` };
+          }
           return { ok: true };
         } finally {
-          await api.delete();
+          await release();
         }
-      } catch (error: any) {
-        return { ok: false, error: error?.message ?? String(error) };
+      } catch (error) {
+        return { ok: false, error: (error as { message?: string })?.message ?? String(error) };
       }
     },
-    buildAccountSnapshot: ({ account, runtime, probe }) => ({
-      accountId: account.accountId,
-      name: account.name,
-      enabled: account.enabled,
-      configured: account.configured,
-      ship: account.ship,
-      url: account.url,
-      running: runtime?.running ?? false,
-      lastStartAt: runtime?.lastStartAt ?? null,
-      lastStopAt: runtime?.lastStopAt ?? null,
-      lastError: runtime?.lastError ?? null,
-      probe,
-    }),
+    buildAccountSnapshot: ({ account, runtime, probe }) => {
+      // Tlon-specific snapshot with ship/url for status display
+      const snapshot = {
+        accountId: account.accountId,
+        name: account.name,
+        enabled: account.enabled,
+        configured: account.configured,
+        ship: account.ship,
+        url: account.url,
+        running: runtime?.running ?? false,
+        lastStartAt: runtime?.lastStartAt ?? null,
+        lastStopAt: runtime?.lastStopAt ?? null,
+        lastError: runtime?.lastError ?? null,
+        probe,
+      };
+      return snapshot as import("openclaw/plugin-sdk").ChannelAccountSnapshot;
+    },
   },
   gateway: {
     startAccount: async (ctx) => {
@@ -460,7 +495,7 @@ export const tlonPlugin: ChannelPlugin = {
         accountId: account.accountId,
         ship: account.ship,
         url: account.url,
-      });
+      } as import("openclaw/plugin-sdk").ChannelAccountSnapshot);
       ctx.log?.info(`[${account.accountId}] starting Tlon provider for ${account.ship ?? "tlon"}`);
       return monitorTlonProvider({
         runtime: ctx.runtime,

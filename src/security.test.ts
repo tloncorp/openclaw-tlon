@@ -348,10 +348,7 @@ describe("Security: Sender Role Identification", () => {
    */
 
   // Helper to compute sender role (mirrors logic in monitor/index.ts)
-  function getSenderRole(
-    senderShip: string,
-    ownerShip: string | null,
-  ): "owner" | "user" {
+  function getSenderRole(senderShip: string, ownerShip: string | null): "owner" | "user" {
     if (!ownerShip) return "user";
     return normalizeShip(senderShip) === normalizeShip(ownerShip) ? "owner" : "user";
   }
@@ -406,12 +403,7 @@ describe("Security: Sender Role Identification", () => {
     });
 
     it("group message from owner includes [owner] in label", () => {
-      const label = getFromLabel(
-        "~nocsyx-lassul",
-        "~nocsyx-lassul",
-        true,
-        "chat/~host/general",
-      );
+      const label = getFromLabel("~nocsyx-lassul", "~nocsyx-lassul", true, "chat/~host/general");
       expect(label).toBe("~nocsyx-lassul [owner] in chat/~host/general");
       expect(label).toContain("[owner]");
     });

@@ -2,12 +2,28 @@ import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { MoltbotPluginApi } from "openclaw/plugin-sdk";
+import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 import { emptyPluginConfigSchema } from "openclaw/plugin-sdk";
 import { tlonPlugin } from "./src/channel.js";
 import { setTlonRuntime } from "./src/runtime.js";
+import { resolveTlonAccount } from "./src/types.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+
+// Whitelist of allowed tlon subcommands
+const ALLOWED_TLON_COMMANDS = new Set([
+  "activity",
+  "channels",
+  "contacts",
+  "groups",
+  "messages",
+  "dms",
+  "posts",
+  "notebook",
+  "settings",
+  "help",
+  "version",
+]);
 
 /**
  * Find the tlon binary from the skill package
@@ -23,7 +39,9 @@ function findTlonBinary(): string {
   const arch = process.arch;
   const platformPkg = `@tloncorp/tlon-skill-${platform}-${arch}`;
   const platformBin = join(__dirname, "node_modules", platformPkg, "tlon");
-  console.log(`[tlon] Checking for platform binary at: ${platformBin}, exists: ${existsSync(platformBin)}`);
+  console.log(
+    `[tlon] Checking for platform binary at: ${platformBin}, exists: ${existsSync(platformBin)}`,
+  );
   if (existsSync(platformBin)) return platformBin;
 
   // Fallback to PATH
@@ -42,12 +60,28 @@ function shellSplit(str: string): string[] {
   let escape = false;
 
   for (const ch of str) {
-    if (escape) { cur += ch; escape = false; continue; }
-    if (ch === "\\" && !inSingle) { escape = true; continue; }
-    if (ch === '"' && !inSingle) { inDouble = !inDouble; continue; }
-    if (ch === "'" && !inDouble) { inSingle = !inSingle; continue; }
+    if (escape) {
+      cur += ch;
+      escape = false;
+      continue;
+    }
+    if (ch === "\\" && !inSingle) {
+      escape = true;
+      continue;
+    }
+    if (ch === '"' && !inSingle) {
+      inDouble = !inDouble;
+      continue;
+    }
+    if (ch === "'" && !inDouble) {
+      inSingle = !inSingle;
+      continue;
+    }
     if (/\s/.test(ch) && !inDouble && !inSingle) {
-      if (cur) { args.push(cur); cur = ""; }
+      if (cur) {
+        args.push(cur);
+        cur = "";
+      }
       continue;
     }
     cur += ch;
@@ -59,11 +93,21 @@ function shellSplit(str: string): string[] {
 /**
  * Run the tlon command and return the result
  */
-function runTlonCommand(binary: string, args: string[]): Promise<string> {
+function runTlonCommand(
+  binary: string,
+  args: string[],
+  credentials?: { url: string; ship: string; code: string },
+): Promise<string> {
   return new Promise((resolve, reject) => {
-    const child = spawn(binary, args, {
-      env: process.env,
-    });
+    // Build environment with Tlon credentials if provided
+    const env = { ...process.env };
+    if (credentials) {
+      env.URBIT_URL = credentials.url;
+      env.URBIT_SHIP = credentials.ship;
+      env.URBIT_CODE = credentials.code;
+    }
+
+    const child = spawn(binary, args, { env });
 
     let stdout = "";
     let stderr = "";
@@ -95,15 +139,30 @@ const plugin = {
   name: "Tlon",
   description: "Tlon/Urbit channel plugin",
   configSchema: emptyPluginConfigSchema(),
-  register(api: MoltbotPluginApi) {
+  register(api: OpenClawPluginApi) {
     setTlonRuntime(api.runtime);
     api.registerChannel({ plugin: tlonPlugin });
 
     // Register the tlon tool
     const tlonBinary = findTlonBinary();
     api.logger.info(`[tlon] Registering tlon tool, binary: ${tlonBinary}`);
+
+    // Capture credentials from config at registration time
+    const account = resolveTlonAccount(api.config);
+    const credentials =
+      account.configured && account.url && account.ship && account.code
+        ? { url: account.url, ship: account.ship, code: account.code }
+        : undefined;
+
+    if (credentials) {
+      api.logger.info(`[tlon] Credentials available for ${account.ship}`);
+    } else {
+      api.logger.warn(`[tlon] No credentials configured - tlon tool will rely on env vars`);
+    }
+
     api.registerTool({
       name: "tlon",
+      label: "Tlon CLI",
       description:
         "Tlon/Urbit API operations: activity, channels, contacts, groups, messages, dms, posts, notebook, settings. " +
         "Examples: 'activity mentions --limit 10', 'channels groups', 'contacts self', 'groups list'",
@@ -122,14 +181,30 @@ const plugin = {
       async execute(_id: string, params: { command: string }) {
         try {
           const args = shellSplit(params.command);
-          const output = await runTlonCommand(tlonBinary, args);
+
+          // Validate first argument is a whitelisted tlon subcommand
+          const subcommand = args[0];
+          if (!ALLOWED_TLON_COMMANDS.has(subcommand)) {
+            return {
+              content: [
+                {
+                  type: "text" as const,
+                  text: `Error: Unknown tlon subcommand '${subcommand}'. Allowed: ${[...ALLOWED_TLON_COMMANDS].join(", ")}`,
+                },
+              ],
+              details: { error: true },
+            };
+          }
+
+          const output = await runTlonCommand(tlonBinary, args, credentials);
           return {
-            content: [{ type: "text", text: output }],
+            content: [{ type: "text" as const, text: output }],
+            details: undefined,
           };
         } catch (error: any) {
           return {
-            content: [{ type: "text", text: `Error: ${error.message}` }],
-            isError: true,
+            content: [{ type: "text" as const, text: `Error: ${error.message}` }],
+            details: { error: true },
           };
         }
       },
