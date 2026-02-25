@@ -242,13 +242,17 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       runtime.log?.(`[tlon] Fetched ${group.members?.length ?? 0} members for ${groupFlag}`);
       return formatMemberContext(entry.members, entry.roles, groupFlag);
     } catch (error: any) {
-      runtime.error?.(
-        `[tlon] Failed to fetch group members for ${groupFlag}: ${error?.message ?? String(error)}`,
+      runtime.log?.(
+        `[tlon] Could not fetch group members for ${groupFlag}: ${error?.message ?? String(error)}`,
       );
-      // Return stale cache if available
+      // Cache the failure so we don't retry on every message
       if (cached) {
+        // Extend stale cache TTL so we don't spam the ship
+        cached.fetchedAt = now;
         return formatMemberContext(cached.members, cached.roles, groupFlag);
       }
+      // Cache empty result for failed groups
+      groupMemberCache.set(groupFlag, { members: null, roles: null, fetchedAt: now });
       return null;
     }
   }
