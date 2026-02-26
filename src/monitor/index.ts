@@ -198,7 +198,25 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
   const dmSendersBySession = new Map<string, Set<string>>();
   let sharedSessionWarningSent = false;
 
-  // Fetch bot's nickname from contacts
+  // Nickname cache for all known contacts (ship -> nickname)
+  const nicknameCache = new Map<string, string>();
+
+  // Sanitize nickname to prevent format injection
+  function sanitizeNickname(nickname: string): string {
+    return nickname
+      .replace(/[\[\]()]/g, "")  // Remove format-breaking chars
+      .slice(0, 50);              // Reasonable length limit
+  }
+
+  // Format a ship with nickname if available
+  function formatShipWithNickname(ship: string): string {
+    const nickname = nicknameCache.get(ship);
+    if (!nickname) return ship;
+    const sanitized = sanitizeNickname(nickname);
+    return sanitized ? `${ship} (${sanitized})` : ship;
+  }
+
+  // Fetch bot's nickname and all contacts
   try {
     const selfProfile = await api.scry("/contacts/v1/self.json");
     if (selfProfile && typeof selfProfile === "object") {
@@ -206,10 +224,27 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       botNickname = profile.nickname?.value || null;
       if (botNickname) {
         runtime.log?.(`[tlon] Bot nickname: ${botNickname}`);
+        nicknameCache.set(botShipName, botNickname);
       }
     }
   } catch (error: any) {
-    runtime.log?.(`[tlon] Could not fetch nickname: ${error?.message ?? String(error)}`);
+    runtime.log?.(`[tlon] Could not fetch self profile: ${error?.message ?? String(error)}`);
+  }
+
+  // Fetch all contacts to populate nickname cache
+  try {
+    const allContacts = await api.scry("/contacts/v1/all.json") as Record<string, any> | null;
+    if (allContacts && typeof allContacts === "object") {
+      for (const [ship, contact] of Object.entries(allContacts)) {
+        const nickname = contact?.nickname?.value ?? contact?.nickname;
+        if (nickname && typeof nickname === "string") {
+          nicknameCache.set(normalizeShip(ship), nickname);
+        }
+      }
+      runtime.log?.(`[tlon] Loaded ${nicknameCache.size} contact nickname(s)`);
+    }
+  } catch (error: any) {
+    runtime.log?.(`[tlon] Could not fetch contacts: ${error?.message ?? String(error)}`);
   }
 
   // Store init foreigns for processing after settings are loaded
@@ -1035,9 +1070,10 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     }
 
     const senderRole = isOwner(senderShip) ? "owner" : "user";
+    const senderDisplay = formatShipWithNickname(senderShip);
     const fromLabel = isGroup
-      ? `${senderShip} [${senderRole}] in ${channelNest}`
-      : `${senderShip} [${senderRole}]`;
+      ? `${senderDisplay} [${senderRole}] in ${channelNest}`
+      : `${senderDisplay} [${senderRole}]`;
 
     // Compute command authorization for slash commands (owner-only)
     const shouldComputeAuth = core.channel.commands.shouldComputeCommandAuthorized(
@@ -1223,8 +1259,9 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
             const contentSnippet = cached?.content
               ? ` (message: "${cached.content.substring(0, 200)}${cached.content.length > 200 ? "..." : ""}")`
               : "";
-            const authorInfo = cached?.author ? ` (by ${cached.author})` : "";
-            const eventText = `Tlon reaction in ${nest}: ${reactEmoji} by ${ship} on post ${postId}${authorInfo}${contentSnippet}`;
+            const authorInfo = cached?.author ? ` (by ${formatShipWithNickname(cached.author)})` : "";
+            const reactorDisplay = formatShipWithNickname(ship);
+            const eventText = `Tlon reaction in ${nest}: ${reactEmoji} by ${reactorDisplay} on post ${postId}${authorInfo}${contentSnippet}`;
             runtime.log?.(`[tlon] REACTION: ${eventText}`);
 
             // If reacting to the bot's own message, dispatch as a real message
@@ -1500,8 +1537,9 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
               const contentSnippet = cached?.content
                 ? ` (message: "${cached.content.substring(0, 200)}${cached.content.length > 200 ? "..." : ""}")`
                 : "";
-              const authorInfo = cached?.author ? ` (by ${cached.author})` : "";
-              const eventText = `Tlon DM reaction ${action}: ${reactEmoji} by ${reactAuthor} on message ${messageId}${authorInfo}${contentSnippet}`;
+              const authorInfo = cached?.author ? ` (by ${formatShipWithNickname(cached.author)})` : "";
+              const reactorDisplay = formatShipWithNickname(reactAuthor);
+              const eventText = `Tlon DM reaction ${action}: ${reactEmoji} by ${reactorDisplay} on message ${messageId}${authorInfo}${contentSnippet}`;
               core.system.enqueueSystemEvent(eventText, {
                 sessionKey: route.sessionKey,
                 contextKey: `tlon:dm-reaction:${messageId}:${reactEmoji}:${reactAuthor}:${action}`,
@@ -1699,7 +1737,24 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
               const newNickname = selfUpdate.contact.nickname.value || null;
               if (newNickname !== botNickname) {
                 botNickname = newNickname;
-                runtime.log?.(`[tlon] Nickname updated: ${botNickname}`);
+                runtime.log?.(`[tlon] Bot nickname updated: ${botNickname}`);
+                if (botNickname) {
+                  nicknameCache.set(botShipName, botNickname);
+                } else {
+                  nicknameCache.delete(botShipName);
+                }
+              }
+            }
+          }
+          // Look for peer profile updates (other users)
+          if (event?.peer) {
+            const ship = event.peer.ship ? normalizeShip(event.peer.ship) : null;
+            const nickname = event.peer.contact?.nickname?.value ?? event.peer.contact?.nickname;
+            if (ship) {
+              if (nickname && typeof nickname === "string") {
+                nicknameCache.set(ship, nickname);
+              } else {
+                nicknameCache.delete(ship);
               }
             }
           }
