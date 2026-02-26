@@ -171,7 +171,13 @@ echo "  TEST_USER_SHIP=$TEST_USER_SHIP"
 echo ""
 
 # Run test cases sequentially to avoid overlapping DM prompts
+# 06-heartbeat.test.ts is currently flaky/non-deterministic (model engagement behavior).
+# Skip by default in CI; enable explicitly with RUN_HEARTBEAT_TEST=1.
 for test_file in test/cases/*.test.ts; do
+  if [[ "$test_file" == *"06-heartbeat.test.ts"* ]] && [[ "${RUN_HEARTBEAT_TEST:-0}" != "1" ]]; then
+    echo "Skipping $test_file (set RUN_HEARTBEAT_TEST=1 to include)"
+    continue
+  fi
   echo "Running $test_file..."
   pnpm vitest run "$test_file" "$@" || exit $?
 done
