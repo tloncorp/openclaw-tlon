@@ -170,6 +170,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
 
   const processedTracker = createProcessedMessageTracker(2000);
   let groupChannels: string[] = [];
+  const channelToGroup = new Map<string, string>();
   let botNickname: string | null = null;
 
   // Settings store manager for hot-reloading config
@@ -389,6 +390,10 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       const initData = await fetchInitData(api, runtime);
       if (initData.channels.length > 0) {
         groupChannels = initData.channels;
+      }
+      // Populate channel-to-group mapping for member hint injection
+      for (const [nest, groupFlag] of initData.channelToGroup) {
+        channelToGroup.set(nest, groupFlag);
       }
       initForeigns = initData.foreigns;
     } catch (error: any) {
@@ -1107,6 +1112,14 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         .map((a) => `[media attached: ${a.path} (${a.contentType}) | ${a.path}]`)
         .join("\n");
       bodyWithAttachments = mediaLines + "\n" + messageText;
+    }
+
+    // For group messages, add a hint about how to query members (avoids injecting full list)
+    if (isGroup && channelNest) {
+      const groupFlag = channelToGroup.get(channelNest);
+      if (groupFlag) {
+        bodyWithAttachments += `\n[Group members available via: tlon groups info ${groupFlag}]`;
+      }
     }
 
     const body = core.channel.reply.formatAgentEnvelope({
@@ -1873,6 +1886,38 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         path: "/groups/ui",
         event: async (event: any) => {
           try {
+            // Handle fleet (member) changes - inject system message for joins
+            if (event?.flag && event?.update?.fleet) {
+              const groupFlag = event.flag as string;
+              const fleet = event.update.fleet;
+              // Fleet structure: { "~ship": { add: null } } or similar
+              if (fleet && typeof fleet === "object") {
+                for (const [ship, diff] of Object.entries(fleet)) {
+                  if (diff && typeof diff === "object" && "add" in (diff as any)) {
+                    // New member joined - find sessions with channels in this group
+                    for (const [nest, flag] of channelToGroup.entries()) {
+                      if (flag === groupFlag && watchedChannels.has(nest)) {
+                        const route = core.channel.routing.resolveAgentRoute({
+                          cfg,
+                          channel: "tlon",
+                          peer: { kind: "group", id: nest },
+                        });
+                        if (route?.sessionKey) {
+                          const memberDisplay = formatShipWithNickname(ship);
+                          core.system.enqueueSystemEvent(
+                            `[${memberDisplay} joined group ${groupFlag}]`,
+                            { sessionKey: route.sessionKey },
+                          );
+                          runtime.log?.(`[tlon] Member joined: ${ship} → ${groupFlag}`);
+                          break; // Only inject once per group
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+
             // Handle group/channel join events
             // Event structure: { group: { flag: "~host/group-name", ... }, channels: { ... } }
             if (event && typeof event === "object") {
