@@ -112,6 +112,7 @@ const tlonOutbound: ChannelOutboundAdapter = {
     return { ok: true, to: parsed.nest };
   },
   sendText: async ({ cfg, to, text, accountId, replyToId, threadId }) => {
+    console.log(`[tlon:sendText] to=${to}, text=${text.slice(0, 50)}..., replyToId=${replyToId}, threadId=${threadId}`);
     const account = resolveTlonAccount(cfg, accountId ?? undefined);
     if (!account.configured || !account.ship || !account.url || !account.code) {
       throw new Error("Tlon account not configured");
@@ -121,6 +122,7 @@ const tlonOutbound: ChannelOutboundAdapter = {
     if (!parsed) {
       throw new Error(`Invalid Tlon target. Use ${formatTargetHint()}`);
     }
+    console.log(`[tlon:sendText] parsed target: kind=${parsed.kind}`);
 
     return await withAuthenticatedTlonApi(
       { url: account.url, code: account.code, ship: account.ship, allowPrivateNetwork: account.allowPrivateNetwork ?? undefined },
