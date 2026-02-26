@@ -59,6 +59,9 @@ cat > "$CONFIG_DIR/openclaw.json" << EOF
     "mode": "local",
     "auth": {
       "token": "ci-test-token"
+    },
+    "controlUi": {
+      "dangerouslyAllowHostHeaderOriginFallback": true
     }
   },
   "plugins": {
