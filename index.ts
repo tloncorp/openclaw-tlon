@@ -233,7 +233,10 @@ const plugin = {
 
       const role = getSessionRole(ctx.sessionKey ?? "");
 
-      if (role !== "owner") {
+      // Allow owner sessions and internal sessions (heartbeat, cron, etc.).
+      // Internal sessions have no role because they're not triggered by DMs.
+      // Only block when role is explicitly "user" (non-owner DM).
+      if (role === "user") {
         api.logger.warn(
           `[tlon] Blocked ${event.toolName} tool for non-owner. Session: ${ctx.sessionKey}, Role: ${role}`,
         );
@@ -244,7 +247,7 @@ const plugin = {
       }
 
       api.logger.info(
-        `[tlon] Allowed ${event.toolName} tool for owner. Session: ${ctx.sessionKey}`,
+        `[tlon] Allowed ${event.toolName} tool for ${role ?? "internal"} session. Session: ${ctx.sessionKey}`,
       );
     });
   },

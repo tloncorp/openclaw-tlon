@@ -294,6 +294,11 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         fileValue: account.showModelSignature,
         settingsValue: currentSettings.showModelSig,
       },
+      {
+        key: "ownerShip",
+        fileValue: account.ownerShip,
+        settingsValue: currentSettings.ownerShip,
+      },
     ];
 
     for (const { key, fileValue, settingsValue } of migrations) {
