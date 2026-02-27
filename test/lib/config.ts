@@ -14,6 +14,8 @@ export interface TestEnvConfig {
   testUser: ShipCredentials;
   /** Bot credentials (for checking state after processing) */
   bot: ShipCredentials;
+  /** Third-party ship credentials (non-owner, for security tests) */
+  thirdParty?: ShipCredentials;
   /** Direct mode options */
   gatewayUrl?: string;
   sessionKey?: string;
@@ -53,6 +55,20 @@ export function getTestConfig(): TestClientConfig {
   const testUserShip = process.env.TEST_USER_SHIP ?? botShip;
   const testUserCode = process.env.TEST_USER_CODE ?? botCode;
 
+  // Third-party ship credentials (non-owner, for security tests)
+  // Only populated when all three env vars are set
+  let thirdParty: ShipCredentials | undefined;
+  const thirdPartyUrl = process.env.TEST_THIRD_PARTY_URL;
+  const thirdPartyShip = process.env.TEST_THIRD_PARTY_SHIP;
+  const thirdPartyCode = process.env.TEST_THIRD_PARTY_CODE;
+  if (thirdPartyUrl && thirdPartyShip && thirdPartyCode) {
+    thirdParty = {
+      shipUrl: normalizeShipUrl(thirdPartyUrl, runningInDocker),
+      shipName: thirdPartyShip,
+      code: thirdPartyCode,
+    };
+  }
+
   const config: TestClientConfig = {
     mode,
     testUser: {
@@ -65,6 +81,7 @@ export function getTestConfig(): TestClientConfig {
       shipName: botShip,
       code: botCode,
     },
+    thirdParty,
   };
 
   if (mode === "direct") {

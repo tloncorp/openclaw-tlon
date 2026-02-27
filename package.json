@@ -12,7 +12,7 @@
     "test": "vitest run src/",
     "test:security": "vitest run src/security.test.ts",
     "test:watch": "vitest src/",
-    "test:integration": "./test/run.sh",
+    "test:integration": "bash ./test/run.sh",
     "test:integration:dev": "./test/run-dev.sh",
     "test:integration:watch": "./test/run-dev.sh --watch",
     "test:all": "vitest run"

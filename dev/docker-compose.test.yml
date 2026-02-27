@@ -22,6 +22,12 @@ services:
         echo "==> Extracting ten..."
         tar xzf rube-ten23.tgz || { echo "Failed to extract ten"; exit 1; }
 
+        echo "==> Downloading mug..."
+        curl -fSL https://bootstrap.urbit.org/rube-mug23.tgz -o rube-mug23.tgz || { echo "Failed to download mug"; exit 1; }
+        ls -la rube-mug23.tgz
+        echo "==> Extracting mug..."
+        tar xzf rube-mug23.tgz || { echo "Failed to extract mug"; exit 1; }
+
         echo "==> Downloading vere..."
         curl -fSL https://urbit.org/install/linux-x86_64/latest | tar xz || { echo "Failed to download vere"; exit 1; }
         VERE=$$(ls -1 vere-*-linux-x86_64 | head -1)
@@ -30,12 +36,14 @@ services:
 
         echo "==> Starting ships..."
         ./$$VERE -t --loom 31 --http-port 8080 zod &
-        ./$$VERE -t --loom 31 --http-port 8081 ten
+        ./$$VERE -t --loom 31 --http-port 8081 ten &
+        ./$$VERE -t --loom 31 --http-port 8082 mug
     volumes:
       - ships-data:/data
     ports:
       - "8080:8080"
       - "8081:8081"
+      - "8082:8082"
 
   # OpenClaw gateway with plugin
   openclaw:

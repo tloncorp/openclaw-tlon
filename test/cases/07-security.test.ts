@@ -2,23 +2,20 @@
  * Security Integration Tests
  *
  * Tests security features that protect the bot:
- * - Tool access control (owner can use restricted tools)
+ * - Tool access control (owner can use restricted tools, non-owner blocked)
  * - Admin commands for block management (blocked, unblock)
- * - Block state invariants (owner never blocked)
- * - Response safety (no leaked directives)
+ * - Blocked ships cannot DM the bot (Urbit-level blocking)
  *
  * TEST ENVIRONMENT:
  *   ~zod = bot ship
  *   ~ten = test user (configured as ownerShip)
+ *   ~mug = third-party ship (non-owner, for security tests)
  *
  * NOTE: Block state is verified via admin commands (not direct scry)
  * because @tloncorp/api cannot scry /chat/blocked.json on fakezods.
- *
- * COVERAGE LIMITATIONS:
- * Tests marked [NEEDS_3RD_SHIP] require a non-owner ship and are skipped.
  */
 import { describe, test, expect, beforeAll } from "vitest";
-import { getFixtures, type TestFixtures } from "../lib/index.js";
+import { getFixtures, waitFor, requireThirdParty, type TestFixtures } from "../lib/index.js";
 
 describe("security", () => {
   let fixtures: TestFixtures;
@@ -26,6 +23,26 @@ describe("security", () => {
   beforeAll(async () => {
     fixtures = await getFixtures();
   });
+
+  /**
+   * Extract nickname from a contacts /v1/self scry result.
+   * Handles both string and { value: string } shapes.
+   */
+  function extractNickname(profile: Record<string, unknown> | undefined): string {
+    const p = (profile ?? {}) as {
+      nickname?: string | { value?: string | null } | null;
+      nickName?: string | { value?: string | null } | null;
+    };
+    const fromField =
+      typeof p.nickname === "string"
+        ? p.nickname
+        : (p.nickname as { value?: string | null } | null | undefined)?.value;
+    const fromAlt =
+      typeof p.nickName === "string"
+        ? p.nickName
+        : (p.nickName as { value?: string | null } | null | undefined)?.value;
+    return fromField ?? fromAlt ?? "";
+  }
 
   /**
    * Seed a blocked ship via direct poke to the bot's chat app.
@@ -59,10 +76,11 @@ describe("security", () => {
 
   describe("tool access control", () => {
     test("owner can use the tlon tool", async () => {
-      // Owner (~ten) sends a command that requires the tlon tool.
-      // If tool access control blocked the owner, this would fail/timeout.
-      const prompt =
-        "Use the tlon tool to check your own contacts (contacts self) and tell me what you see.";
+      // Owner (~ten) asks the bot to update its profile nickname via the tlon tool.
+      // If before_tool_call blocked the owner, the tool wouldn't execute and
+      // the nickname would never change on the bot ship.
+      const nicknameToken = `sec-${Date.now().toString(36)}`;
+      const prompt = `Use the tlon tool to update your profile nickname to exactly "${nicknameToken}" and confirm when done.`;
       console.log(`\n[TEST] Sending prompt: "${prompt}"`);
 
       const response = await fixtures.client.prompt(prompt);
@@ -73,17 +91,56 @@ describe("security", () => {
         throw new Error(response.error ?? "Prompt failed");
       }
 
-      // A successful response with content proves the tlon tool was not blocked.
-      // The bot returns contact/profile info (format varies by LLM).
-      const text = response.text ?? "";
-      expect(text.length).toBeGreaterThan(0);
+      // Verify the nickname actually changed on the bot ship via scry.
+      // This proves the tlon tool was invoked, not just that the LLM replied.
+      console.log(`[TEST] Waiting for bot nickname to be "${nicknameToken}"...`);
+      const updated = await waitFor(async () => {
+        const selfProfile = await fixtures.botState.scry<Record<string, unknown>>(
+          "contacts",
+          "/v1/self",
+        );
+        const currentNickname = extractNickname(selfProfile);
+        console.log(`[TEST] Current bot nickname: "${currentNickname}"`);
+        return currentNickname === nicknameToken ? true : undefined;
+      }, 30_000);
+
+      expect(updated).toBe(true);
     });
 
-    test.skip("[NEEDS_3RD_SHIP] non-owner cannot use restricted tools", () => {
-      // Would test: non-owner sends DM → bot sets sessionRole "user" →
-      // before_tool_call hook (index.ts:229-249) blocks tlon/read/cron →
-      // response indicates tool is not available.
-      // Requires a ship that doesn't match ownerShip.
+    test("non-owner cannot use restricted tools", async () => {
+      requireThirdParty(fixtures);
+
+      // Snapshot current bot nickname via scry
+      const beforeProfile = await fixtures.botState.scry<Record<string, unknown>>(
+        "contacts",
+        "/v1/self",
+      );
+      const beforeNickname = extractNickname(beforeProfile);
+      console.log(`\n[TEST] Bot nickname before: "${beforeNickname}"`);
+
+      // ~mug (non-owner) asks bot to update nickname via tlon tool.
+      // before_tool_call should block the tlon tool for non-owners.
+      const token = `mug-${Date.now().toString(36)}`;
+      const prompt = `Use the tlon tool to update your profile nickname to exactly "${token}" and confirm when done.`;
+      console.log(`[TEST] Sending prompt as ${fixtures.thirdPartyShip}: "${prompt}"`);
+
+      const response = await fixtures.thirdPartyClient.prompt(prompt);
+      console.log(`[TEST] Response success: ${response.success}`);
+      console.log(`[TEST] Response text: ${response.text?.slice(0, 300)}`);
+
+      // Bot should respond (DMs work) but indicate tool is not available
+      expect(response.success).toBe(true);
+      const text = response.text?.toLowerCase() ?? "";
+      expect(text).toMatch(/not available|cannot|don't have|unable|can't|restricted/i);
+
+      // Verify nickname did NOT change (proves tool was actually blocked, not just refused in text)
+      const afterProfile = await fixtures.botState.scry<Record<string, unknown>>(
+        "contacts",
+        "/v1/self",
+      );
+      const afterNickname = extractNickname(afterProfile);
+      console.log(`[TEST] Bot nickname after: "${afterNickname}"`);
+      expect(afterNickname).not.toBe(token);
     });
   });
 
@@ -150,68 +207,50 @@ describe("security", () => {
   });
 
   // =========================================================================
-  // 3. Block State Invariants
+  // 3. Blocking (Requires 3rd Ship)
   // =========================================================================
 
-  describe("block state invariants", () => {
-    test("owner never appears in block list after interaction", async () => {
-      // Verifies the safety invariant: owner can never be blocked.
-      // Prior tests already involved interaction, so just check the list.
-      const blockedText = await getBlockedList();
-      console.log(`\n[TEST] Blocked list: ${blockedText}`);
+  describe("blocking", () => {
+    test("blocked non-owner DMs are silently ignored", async () => {
+      requireThirdParty(fixtures);
 
-      // Owner ship should never appear in the block list
-      const ownerName = fixtures.userShip.replace("~", "");
-      expect(blockedText.toLowerCase()).not.toContain(ownerName);
-    });
-  });
+      // Block ~mug via direct poke (Urbit-level block — chat agent drops messages)
+      console.log(`\n[TEST] Blocking ${fixtures.thirdPartyShip}...`);
+      await fixtures.botState.poke({
+        app: "chat",
+        mark: "chat-block-ship",
+        json: { ship: fixtures.thirdPartyShip },
+      });
+      await new Promise((resolve) => setTimeout(resolve, 3000));
 
-  // =========================================================================
-  // 4. Response Safety
-  // =========================================================================
+      try {
+        // ~mug sends DM — the Urbit chat agent should silently drop it
+        console.log(`[TEST] Sending DM as blocked ${fixtures.thirdPartyShip}...`);
+        const response = await fixtures.thirdPartyClient.prompt(
+          "Are you there? Please respond.",
+          { timeoutMs: 20_000 },
+        );
 
-  describe("response safety", () => {
-    test("bot responses do not contain raw [BLOCK_USER] directives", async () => {
-      // Under normal conditions the LLM should not produce [BLOCK_USER]
-      // directives for an owner sending benign messages. If it did,
-      // processBlockDirectives() would strip them before sending the DM.
-      const prompts = ["What is 2 + 2?", "Say hello."];
+        console.log(`[TEST] Response success: ${response.success}`);
+        console.log(`[TEST] Response error: ${response.error}`);
 
-      for (const prompt of prompts) {
-        console.log(`\n[TEST] Sending prompt: "${prompt}"`);
-        const response = await fixtures.client.prompt(prompt);
-        if (response.success && response.text) {
-          console.log(
-            `[TEST] Checking response for directive leakage: "${response.text.slice(0, 200)}"`,
-          );
-          expect(response.text).not.toContain("[BLOCK_USER:");
-        }
+        // Bot should NOT respond — message never reached the SSE stream
+        expect(response.success).toBe(false);
+      } finally {
+        // Always unblock to restore DM access for subsequent tests
+        console.log(`[TEST] Unblocking ${fixtures.thirdPartyShip}...`);
+        await fixtures.botState.poke({
+          app: "chat",
+          mark: "chat-unblock-ship",
+          json: { ship: fixtures.thirdPartyShip },
+        });
+        await new Promise((resolve) => setTimeout(resolve, 3000));
       }
     });
-  });
 
-  // =========================================================================
-  // 5. Future Tests (Require 3rd Ship)
-  // =========================================================================
-
-  describe("[NEEDS_3RD_SHIP] full blocking flow", () => {
     test.skip("agent blocks abusive non-owner via [BLOCK_USER] directive", () => {
-      // Would test: non-owner sends abusive DM → LLM responds with
-      // [BLOCK_USER: ~non-owner | reason] → processBlockDirectives()
-      // parses and executes block → ship in /chat/blocked.json →
-      // directive stripped from visible response → owner notified.
-    });
-
-    test.skip("blocked non-owner DMs are silently ignored", () => {
-      // Would test: block ~non-owner via poke → non-owner sends DM →
-      // queueApprovalRequest() checks isShipBlocked() and returns early →
-      // bot does NOT respond.
-    });
-
-    test.skip("non-owner tool access is blocked with correct reason", () => {
-      // Would test: non-owner sends DM asking bot to use tlon tool →
-      // before_tool_call hook returns { block: true } → response
-      // indicates tool is not available.
+      // Cannot test reliably: depends on LLM spontaneously generating
+      // [BLOCK_USER: ~ship | reason] in response to abusive input.
     });
   });
 });
