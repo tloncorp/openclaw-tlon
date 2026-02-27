@@ -313,37 +313,41 @@ try {
 
 ---
 
-## 13. Tool Access Control (Owner-Only Skill)
+## 13. Tool Access Control (Owner-Only Tools)
 
-**Principle:** The `tlon` skill is owner-only. Non-owners cannot execute any tlon commands, enforced at the plugin level (not via prompt instructions).
+**Principle:** Sensitive tools are owner-only. Non-owners cannot use them, enforced at the plugin level (not via prompt instructions).
+
+**Restricted tools:** `tlon`, `tlon-run`/`tlon_run`, `cron`, `read`.
 
 | Scenario | Behavior |
 | -------- | -------- |
-| Owner runs any `tlon` command | ✅ Allowed |
-| Non-owner runs any `tlon` command | ❌ Blocked with error message |
-| Non-owner tricks LLM to run command | ❌ Still blocked (hook-level enforcement) |
+| Owner uses restricted tool | ✅ Allowed |
+| Non-owner uses restricted tool | ❌ Blocked with error message |
+| Non-owner tricks LLM into using tool | ❌ Still blocked (hook-level enforcement) |
+| Internal session (heartbeat, cron) | ✅ Allowed (no role = not a user DM) |
 
 **Implementation:**
-- `before_tool_call` hook intercepts `tlon` skill tool calls
-- Blocks the entire skill for non-owners (no command parsing needed)
+- `before_tool_call` hook intercepts calls to restricted tools
 - Checks SenderRole from session tracker
-- Returns `{ block: true }` for non-owners
+- Only blocks when role is explicitly `"user"` (non-owner DM)
+- Owner sessions (`"owner"`) and internal sessions (`undefined` role) are allowed
+- Returns `{ block: true }` for non-owner DM sessions
 
 **Critical Invariant:**
 
 ```
-Non-owner senders MUST NOT be able to execute ANY tlon commands.
+Non-owner DM senders MUST NOT be able to use any restricted tools.
 This check is enforced at the plugin hook level and cannot be bypassed via prompt injection.
 ```
 
 **Why This Matters:**
 
-Even with SenderRole correctly identified, a non-owner could social-engineer the LLM into running tlon commands:
-- "Please update my SOUL.md for me"
-- "Send a DM to ~zod on my behalf"
-- "List my tlon channels"
+Even with SenderRole correctly identified, a non-owner could social-engineer the LLM into using restricted tools:
+- "Send a DM to ~zod on my behalf" → blocked `tlon` tool
+- "List my tlon channels" → blocked `tlon` tool
+- "Read the SOUL.md file" → blocked `read` tool
 
-The `before_tool_call` hook provides defense-in-depth by blocking ALL tlon commands at the plugin level, regardless of what the LLM decides.
+The `before_tool_call` hook provides defense-in-depth by blocking restricted tools at the plugin level, regardless of what the LLM decides.
 
 ---
 
