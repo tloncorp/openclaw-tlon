@@ -54,6 +54,9 @@ cat > "$CONFIG_DIR/openclaw.json" << EOF
       }
     ]
   },
+  "session": {
+    "dmScope": "per-channel-peer"
+  },
   "gateway": {
     "port": 18789,
     "mode": "local",

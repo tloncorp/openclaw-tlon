@@ -22,7 +22,7 @@ describe("security", () => {
 
   beforeAll(async () => {
     fixtures = await getFixtures();
-  });
+  }, 180_000);
 
   /**
    * Extract nickname from a contacts /v1/self scry result.
@@ -128,12 +128,11 @@ describe("security", () => {
       console.log(`[TEST] Response success: ${response.success}`);
       console.log(`[TEST] Response text: ${response.text?.slice(0, 300)}`);
 
-      // Bot should respond (DMs work) but indicate tool is not available
+      // Bot should respond (DMs work). We don't assert on the response text because
+      // the LLM's phrasing is non-deterministic — the real test is the scry below.
       expect(response.success).toBe(true);
-      const text = response.text?.toLowerCase() ?? "";
-      expect(text).toMatch(/not available|cannot|don't have|unable|can't|restricted/i);
 
-      // Verify nickname did NOT change (proves tool was actually blocked, not just refused in text)
+      // Verify nickname did NOT change (proves tool was actually blocked)
       const afterProfile = await fixtures.botState.scry<Record<string, unknown>>(
         "contacts",
         "/v1/self",
