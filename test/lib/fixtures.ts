@@ -7,6 +7,7 @@
 
 import {
   createTestClient,
+  createTlonClient,
   createStateClient,
   getTestConfig,
   type TestClient,
@@ -30,6 +31,12 @@ export interface TestFixtures {
     title: string;
     chatChannel: string;
   } | null;
+  /** Third-party (non-owner) client for security tests */
+  thirdPartyClient?: TestClient;
+  /** Third-party ship state client */
+  thirdPartyState?: StateClient;
+  /** Third-party ship name (with ~) */
+  thirdPartyShip?: string;
 }
 
 let cachedFixtures: TestFixtures | null = null;
@@ -156,6 +163,56 @@ async function setupFixtures(): Promise<TestFixtures> {
     console.log(`[FIXTURES] Warning: DM setup failed: ${err}`);
   }
 
+  // 4. Set up third-party (non-owner) ship if configured
+  let thirdPartyClient: TestClient | undefined;
+  let thirdPartyState: StateClient | undefined;
+  let thirdPartyShip: string | undefined;
+
+  if (config.thirdParty) {
+    thirdPartyShip = config.thirdParty.shipName.startsWith("~")
+      ? config.thirdParty.shipName
+      : `~${config.thirdParty.shipName}`;
+    thirdPartyState = createStateClient(config.thirdParty);
+    thirdPartyClient = createTlonClient({
+      testUser: config.thirdParty,
+      bot: config.bot,
+    });
+
+    console.log(`[FIXTURES] Establishing DM access for ${thirdPartyShip} via approval flow...`);
+    try {
+      // ~mug sends DM (not on allowlist, triggers approval request to owner)
+      const mugPromise = thirdPartyClient.prompt(
+        "Hello, requesting DM access for integration tests.",
+        { timeoutMs: 90_000 },
+      );
+
+      // Wait for the approval notification to reach the owner
+      await sleep(8000);
+
+      // Owner (~ten) approves the DM request
+      const approvalResponse = await client.prompt("approve");
+      console.log(
+        `[FIXTURES] Approval response: ${approvalResponse.text?.slice(0, 200)}`,
+      );
+
+      // Wait for ~mug's original message to be processed
+      const mugResponse = await mugPromise;
+      console.log(
+        `[FIXTURES] ${thirdPartyShip} DM response: ${mugResponse.text?.slice(0, 200)}`,
+      );
+
+      if (mugResponse.success) {
+        console.log(`[FIXTURES] ✓ ${thirdPartyShip} DM access established via approval`);
+      } else {
+        console.log(
+          `[FIXTURES] Warning: ${thirdPartyShip} approval flow incomplete: ${mugResponse.error}`,
+        );
+      }
+    } catch (err) {
+      console.log(`[FIXTURES] Warning: ${thirdPartyShip} DM setup failed: ${String(err)}`);
+    }
+  }
+
   console.log("[FIXTURES] Setup complete!\n");
 
   return {
@@ -165,6 +222,9 @@ async function setupFixtures(): Promise<TestFixtures> {
     botShip,
     userShip,
     group,
+    thirdPartyClient,
+    thirdPartyState,
+    thirdPartyShip,
   };
 }
 
@@ -196,6 +256,25 @@ export function requireFixtureGroup(
     throw new Error(
       "Test requires fixture group but it was not created. " +
         "Check fixture setup logs for errors."
+    );
+  }
+}
+
+/**
+ * Asserts that third-party (non-owner) ship fixtures exist.
+ * Tests using this require TEST_THIRD_PARTY_* env vars (set by test/run.sh).
+ */
+export function requireThirdParty(
+  fixtures: TestFixtures
+): asserts fixtures is TestFixtures & {
+  thirdPartyClient: TestClient;
+  thirdPartyState: StateClient;
+  thirdPartyShip: string;
+} {
+  if (!fixtures.thirdPartyClient || !fixtures.thirdPartyState || !fixtures.thirdPartyShip) {
+    throw new Error(
+      "Test requires third-party ship but it was not configured. " +
+        "Set TEST_THIRD_PARTY_URL, TEST_THIRD_PARTY_SHIP, TEST_THIRD_PARTY_CODE env vars."
     );
   }
 }

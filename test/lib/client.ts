@@ -265,6 +265,8 @@ export interface TestClientConfig {
   testUser: ShipCredentials;
   /** Bot credentials (for checking state) */
   bot: ShipCredentials;
+  /** Third-party ship credentials (non-owner, for security tests) */
+  thirdParty?: ShipCredentials;
   /** Direct mode options */
   gatewayUrl?: string;
   sessionKey?: string;

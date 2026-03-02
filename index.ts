@@ -7,6 +7,7 @@ import { emptyPluginConfigSchema } from "openclaw/plugin-sdk";
 import { tlonPlugin } from "./src/channel.js";
 import { setTlonRuntime } from "./src/runtime.js";
 import { resolveTlonAccount } from "./src/types.js";
+import { getSessionRole } from "./src/session-roles.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -31,7 +32,9 @@ const ALLOWED_TLON_COMMANDS = new Set([
 function findTlonBinary(): string {
   // Check in node_modules/.bin
   const skillBin = join(__dirname, "node_modules", ".bin", "tlon");
-  console.log(`[tlon] Checking for binary at: ${skillBin}, exists: ${existsSync(skillBin)}`);
+  console.log(
+    `[tlon] Checking for binary at: ${skillBin}, exists: ${existsSync(skillBin)}`,
+  );
   if (existsSync(skillBin)) return skillBin;
 
   // Check for platform-specific binary directly
@@ -157,7 +160,9 @@ const plugin = {
     if (credentials) {
       api.logger.info(`[tlon] Credentials available for ${account.ship}`);
     } else {
-      api.logger.warn(`[tlon] No credentials configured - tlon tool will rely on env vars`);
+      api.logger.warn(
+        `[tlon] No credentials configured - tlon tool will rely on env vars`,
+      );
     }
 
     api.registerTool({
@@ -201,13 +206,49 @@ const plugin = {
             content: [{ type: "text" as const, text: output }],
             details: undefined,
           };
-        } catch (error: any) {
+        } catch (error: unknown) {
+          const message =
+            error instanceof Error ? error.message : String(error);
           return {
-            content: [{ type: "text" as const, text: `Error: ${error.message}` }],
+            content: [{ type: "text" as const, text: `Error: ${message}` }],
             details: { error: true },
           };
         }
       },
+    });
+
+    // Tool access control: block sensitive tools for non-owners
+    const ownerOnlyTools = new Set([
+      "tlon",
+      "tlon_run",
+      "tlon-run",
+      "cron",
+      "read",
+    ]);
+
+    api.on("before_tool_call", (event, ctx) => {
+      if (!ownerOnlyTools.has(event.toolName)) {
+        return;
+      }
+
+      const role = getSessionRole(ctx.sessionKey ?? "");
+
+      // Allow owner sessions and internal sessions (heartbeat, cron, etc.).
+      // Internal sessions have no role because they're not triggered by DMs.
+      // Only block when role is explicitly "user" (non-owner DM).
+      if (role === "user") {
+        api.logger.warn(
+          `[tlon] Blocked ${event.toolName} tool for non-owner. Session: ${ctx.sessionKey}, Role: ${role}`,
+        );
+        return {
+          block: true,
+          blockReason: `The ${event.toolName} tool is not available.`,
+        };
+      }
+
+      api.logger.info(
+        `[tlon] Allowed ${event.toolName} tool for ${role ?? "internal"} session. Session: ${ctx.sessionKey}`,
+      );
     });
   },
 };
