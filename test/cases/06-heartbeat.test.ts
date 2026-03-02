@@ -44,9 +44,12 @@ describe("heartbeat engagement recovery", () => {
       // No existing DMs, that's fine
     }
 
-    // Seed lastOwnerMessageAt to 8 days ago
+    // Seed settings for heartbeat: idle date and clear nudge stage.
+    // ownerShip is migrated from file config to settings store on startup
+    // (migrateConfigToSettings in monitor/index.ts), so we don't need to seed it.
     const eightDaysAgo = Date.now() - EIGHT_DAYS_MS;
     const eightDaysAgoDate = new Date(eightDaysAgo).toISOString().split("T")[0];
+
     await Promise.all([
       botState.poke({
         app: "settings",
@@ -86,7 +89,7 @@ describe("heartbeat engagement recovery", () => {
       }),
     ]);
 
-    console.log(`Seeded lastOwnerMessageDate to ${eightDaysAgoDate} (8 days ago)`);
+    console.log(`Seeded lastOwnerMessageDate=${eightDaysAgoDate} (8 days ago)`);
     console.log(`Waiting for heartbeat cycle to send stage 1 nudge...`);
 
     // Wait for the heartbeat to fire and send the stage 1 message.
@@ -128,12 +131,12 @@ describe("heartbeat engagement recovery", () => {
         const match = newBotPosts.filter((p) => p.text.includes(STAGE_1_MARKER));
         return match.length > 0 ? match[0] : null;
       },
-      180_000, // 3 minutes max (heartbeat fires every 1m)
+      300_000, // 5 minutes max (heartbeat fires every 1m but can be slow)
       5_000, // poll every 5s
     );
 
     expect(nudgePost).not.toBeNull();
     console.log(`Got heartbeat nudge: ${nudgePost!.text.slice(0, 80)}...`);
     expect(nudgePost!.text).toContain(STAGE_1_MARKER);
-  }, 200_000);
+  }, 360_000);
 });

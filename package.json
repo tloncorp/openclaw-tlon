@@ -12,7 +12,7 @@
     "test": "vitest run src/",
     "test:security": "vitest run src/security.test.ts",
     "test:watch": "vitest src/",
-    "test:integration": "./test/run.sh",
+    "test:integration": "bash ./test/run.sh",
     "test:integration:dev": "./test/run-dev.sh",
     "test:integration:watch": "./test/run-dev.sh --watch",
     "test:all": "vitest run"
@@ -25,7 +25,7 @@
   },
   "devDependencies": {
     "dotenv": "^17.2.4",
-    "openclaw": "2026.2.19-2",
+    "openclaw": "2026.2.25",
     "oxfmt": "0.27.0",
     "oxlint": "^1.42.0",
     "oxlint-tsgolint": "^0.12.2",
