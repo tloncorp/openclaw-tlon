@@ -1,0 +1,26 @@
+# Source files (dist is published instead)
+*.ts
+!*.d.ts
+tsconfig.json
+
+# Development
+.env
+.env.*
+dev/
+test/
+scripts/
+.github/
+.pnpm-store/
+
+# Config files
+.oxfmtrc.jsonc
+.oxlintrc.json
+.tool-versions
+vitest.config.ts
+pnpm-lock.yaml
+pnpm-workspace.yaml
+
+# Security docs (not needed in package)
+SECURITY*.md
+AGENTS.md
+CLAUDE.md
