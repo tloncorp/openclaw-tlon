@@ -28,7 +28,7 @@ export const tlonMessageActions: ChannelMessageActionAdapter = {
       return [];
     }
     const gate = createActionGate(
-      (cfg.channels?.tlon as { actions?: Record<string, unknown> })?.actions,
+      (cfg.channels?.tlon as { actions?: Record<string, boolean | undefined> })?.actions,
     );
     const actions: ChannelMessageActionName[] = [];
     if (gate("reactions")) actions.push("react");

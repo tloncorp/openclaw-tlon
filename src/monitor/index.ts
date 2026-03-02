@@ -110,6 +110,11 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     throw new Error("Tlon account not configured (ship/url/code required)");
   }
 
+  // Capture validated values for use in nested functions
+  const accountUrl = account.url;
+  const accountCode = account.code;
+
+
   const botShipName = normalizeShip(account.ship);
   runtime.log?.(`[tlon] Starting monitor for ${botShipName}`);
 
@@ -122,8 +127,8 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         throw new Error("Aborted while waiting to authenticate");
       }
       try {
-        runtime.log?.(`[tlon] Attempting authentication to ${account.url}...`);
-        return await authenticate(account.url, account.code, { ssrfPolicy });
+        runtime.log?.(`[tlon] Attempting authentication to ${accountUrl}...`);
+        return await authenticate(accountUrl, accountCode, { ssrfPolicy });
       } catch (error: any) {
         runtime.error?.(
           `[tlon] Failed to authenticate (attempt ${attempt}): ${error?.message ?? String(error)}`,

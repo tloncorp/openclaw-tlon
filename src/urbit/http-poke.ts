@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { authenticate } from "./auth.js";
-import { ssrfPolicyFromAllowPrivateNetwork, type SsrFPolicy } from "./context.js";
+import type { SsrFPolicy } from "openclaw/plugin-sdk";
+import { ssrfPolicyFromAllowPrivateNetwork } from "./context.js";
 import { urbitFetch } from "./fetch.js";
 
 export type HttpPokeApi = {

@@ -12,7 +12,7 @@ importers:
         specifier: github:tloncorp/api-beta#main
         version: https://codeload.github.com/tloncorp/api-beta/tar.gz/7eede1c1a756977b09f96aa14a92e2b06318ae87
       '@tloncorp/tlon-skill':
-        specifier: 0.1.11
+        specifier: ^0.1.11
         version: 0.1.11
       '@urbit/aura':
         specifier: ^3.0.0
@@ -26,7 +26,7 @@ importers:
         version: 17.2.4
       openclaw:
         specifier: 2026.2.19-2
-        version: 2026.2.19-2(@napi-rs/canvas@0.1.93)(@types/express@5.0.6)(hono@4.11.7)(node-llama-cpp@3.15.1)(signal-polyfill@0.2.2)
+        version: 2026.2.19-2(@napi-rs/canvas@0.1.93)(@types/express@5.0.6)(hono@4.11.7)(node-llama-cpp@3.15.1(typescript@5.9.3))(signal-polyfill@0.2.2)
       oxfmt:
         specifier: 0.27.0
         version: 0.27.0
@@ -36,6 +36,9 @@ importers:
       oxlint-tsgolint:
         specifier: ^0.12.2
         version: 0.12.2
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
       vitest:
         specifier: ^4.0.0
         version: 4.0.18(@types/node@25.3.0)(jiti@2.6.1)(yaml@2.8.2)
@@ -2000,6 +2003,7 @@ packages:
   basic-ftp@5.1.0:
     resolution: {integrity: sha512-RkaJzeJKDbaDWTIPiJwubyljaEPwpVWkm9Rt5h9Nd6h7tEXTJ3VB4qxdZBioV7JO5yLUaOKwz7vDOzlncUsegw==}
     engines: {node: '>=10.0.0'}
+    deprecated: Security vulnerability fixed in 5.2.0, please upgrade
 
   before-after-hook@4.0.0:
     resolution: {integrity: sha512-q6tR3RPqIB1pMiTRMFcZwuG5T8vwp+vUvEG0vuI6B+Rikh5BfPp2fQ82c925FOs+b0lcFQ8CFrL+KbilfZFhOQ==}
@@ -3573,6 +3577,11 @@ packages:
   type-is@2.0.1:
     resolution: {integrity: sha512-OZs6gsjF4vMp32qrCbiVSkrFmXtG/AZhY3t0iAMrMBiAZyV9oALtXO8hsrHbMXF9x6L3grlFuwW2oAz7cav+Gw==}
     engines: {node: '>= 0.6'}
+
+  typescript@5.9.3:
+    resolution: {integrity: sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw==}
+    engines: {node: '>=14.17'}
+    hasBin: true
 
   uc.micro@2.1.0:
     resolution: {integrity: sha512-ARDJmphmdvUk6Glw7y9DQ2bFkKBHwQHLi2lsaH6PPmz/Ka9sFOBsBluozhDltWmnv9u/cF6Rt87znRTPV+yp/A==}
@@ -7453,7 +7462,7 @@ snapshots:
       fetch-blob: 3.2.0
       formdata-polyfill: 4.0.10
 
-  node-llama-cpp@3.15.1:
+  node-llama-cpp@3.15.1(typescript@5.9.3):
     dependencies:
       '@huggingface/jinja': 0.5.5
       async-retry: 1.3.3
@@ -7498,6 +7507,7 @@ snapshots:
       '@node-llama-cpp/win-x64-cuda': 3.15.1
       '@node-llama-cpp/win-x64-cuda-ext': 3.15.1
       '@node-llama-cpp/win-x64-vulkan': 3.15.1
+      typescript: 5.9.3
     transitivePeerDependencies:
       - supports-color
 
@@ -7554,7 +7564,7 @@ snapshots:
       ws: 8.19.0
       zod: 4.3.6
 
-  openclaw@2026.2.19-2(@napi-rs/canvas@0.1.93)(@types/express@5.0.6)(hono@4.11.7)(node-llama-cpp@3.15.1)(signal-polyfill@0.2.2):
+  openclaw@2026.2.19-2(@napi-rs/canvas@0.1.93)(@types/express@5.0.6)(hono@4.11.7)(node-llama-cpp@3.15.1(typescript@5.9.3))(signal-polyfill@0.2.2):
     dependencies:
       '@agentclientprotocol/sdk': 0.14.1(zod@4.3.6)
       '@aws-sdk/client-bedrock': 3.994.0
@@ -7595,7 +7605,7 @@ snapshots:
       long: 5.3.2
       markdown-it: 14.1.1
       node-edge-tts: 1.2.10
-      node-llama-cpp: 3.15.1
+      node-llama-cpp: 3.15.1(typescript@5.9.3)
       osc-progress: 0.3.0
       pdfjs-dist: 5.4.624
       playwright-core: 1.58.2
@@ -8294,6 +8304,8 @@ snapshots:
       content-type: 1.0.5
       media-typer: 1.1.0
       mime-types: 3.0.2
+
+  typescript@5.9.3: {}
 
   uc.micro@2.1.0: {}
 
