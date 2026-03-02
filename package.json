@@ -57,9 +57,6 @@
     "zod": "^4.3.6"
   },
   "openclaw": {
-    "extensions": [
-      "./dist/index.js"
-    ],
     "channel": {
       "id": "tlon",
       "label": "Tlon",
