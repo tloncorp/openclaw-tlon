@@ -39,6 +39,7 @@ import {
   stripBotMention,
   isDmAllowed,
   isSummarizationRequest,
+  sanitizeMessageText,
   type ParsedCite,
 } from "./utils.js";
 
@@ -953,7 +954,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     // the reply is still delivered as a thread reply.
     const deliverParentId = params.replyParentId ?? parentId;
     const groupChannel = channelNest; // For compatibility
-    let messageText = params.messageText;
+    let messageText = sanitizeMessageText(params.messageText);
     const rawMessageText = messageText; // Preserve original before any modifications
 
     // Strip bot mention EARLY, before thread context is prepended.
@@ -1021,7 +1022,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         if (threadHistory.length > 0) {
           const threadContext = threadHistory
             .slice(-10) // Last 10 messages for context
-            .map((msg) => `${msg.author}: ${msg.content}`)
+            .map((msg) => `${msg.author}: ${sanitizeMessageText(msg.content)}`)
             .join("\n");
 
           // Prepend thread context to the message
@@ -1062,7 +1063,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
 
         const historyText = history
           .map(
-            (msg) => `[${new Date(msg.timestamp).toLocaleString()}] ${msg.author}: ${msg.content}`,
+            (msg) => `[${new Date(msg.timestamp).toLocaleString()}] ${msg.author}: ${sanitizeMessageText(msg.content)}`,
           )
           .join("\n");
 
