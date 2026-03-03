@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 /**
  * Approval system for managing DM, channel mention, and group invite approvals.
  *
@@ -32,7 +33,7 @@ export type CreateApprovalParams = {
  */
 export function generateApprovalId(type: ApprovalType): string {
   const timestamp = Date.now();
-  const randomPart = Math.random().toString(36).substring(2, 6);
+  const randomPart = randomUUID().slice(0, 8);
   return `${type}-${timestamp}-${randomPart}`;
 }
 
