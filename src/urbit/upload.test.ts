@@ -1,13 +1,19 @@
 import { describe, expect, it, vi, afterEach, beforeEach } from "vitest";
 
-// Mock urbitFetch
-vi.mock("./fetch.js", () => ({
-  urbitFetch: vi.fn(),
+// Mock openclaw/plugin-sdk fetchWithSsrFGuard
+vi.mock("openclaw/plugin-sdk", () => ({
+  fetchWithSsrFGuard: vi.fn(),
+  getDefaultSsrFPolicy: vi.fn(() => ({})),
 }));
 
 // Mock @tloncorp/api
 vi.mock("@tloncorp/api", () => ({
   uploadFile: vi.fn(),
+}));
+
+// Mock context to provide getDefaultSsrFPolicy
+vi.mock("./context.js", () => ({
+  getDefaultSsrFPolicy: vi.fn(() => ({})),
 }));
 
 describe("uploadImageFromUrl", () => {
@@ -20,15 +26,15 @@ describe("uploadImageFromUrl", () => {
   });
 
   it("fetches image and calls uploadFile, returns uploaded URL", async () => {
-    const { urbitFetch } = await import("./fetch.js");
-    const mockUrbitFetch = vi.mocked(urbitFetch);
+    const { fetchWithSsrFGuard } = await import("openclaw/plugin-sdk");
+    const mockFetch = vi.mocked(fetchWithSsrFGuard);
 
     const { uploadFile } = await import("@tloncorp/api");
     const mockUploadFile = vi.mocked(uploadFile);
 
-    // Mock urbitFetch to return a successful response with a blob
+    // Mock fetchWithSsrFGuard to return a successful response with a blob
     const mockBlob = new Blob(["fake-image"], { type: "image/png" });
-    mockUrbitFetch.mockResolvedValue({
+    mockFetch.mockResolvedValue({
       response: {
         ok: true,
         headers: new Headers({ "content-type": "image/png" }),
@@ -55,11 +61,11 @@ describe("uploadImageFromUrl", () => {
   });
 
   it("returns original URL if fetch fails", async () => {
-    const { urbitFetch } = await import("./fetch.js");
-    const mockUrbitFetch = vi.mocked(urbitFetch);
+    const { fetchWithSsrFGuard } = await import("openclaw/plugin-sdk");
+    const mockFetch = vi.mocked(fetchWithSsrFGuard);
 
-    // Mock urbitFetch to return a failed response
-    mockUrbitFetch.mockResolvedValue({
+    // Mock fetchWithSsrFGuard to return a failed response
+    mockFetch.mockResolvedValue({
       response: {
         ok: false,
         status: 404,
@@ -75,15 +81,15 @@ describe("uploadImageFromUrl", () => {
   });
 
   it("returns original URL if upload fails", async () => {
-    const { urbitFetch } = await import("./fetch.js");
-    const mockUrbitFetch = vi.mocked(urbitFetch);
+    const { fetchWithSsrFGuard } = await import("openclaw/plugin-sdk");
+    const mockFetch = vi.mocked(fetchWithSsrFGuard);
 
     const { uploadFile } = await import("@tloncorp/api");
     const mockUploadFile = vi.mocked(uploadFile);
 
-    // Mock urbitFetch to return a successful response
+    // Mock fetchWithSsrFGuard to return a successful response
     const mockBlob = new Blob(["fake-image"], { type: "image/png" });
-    mockUrbitFetch.mockResolvedValue({
+    mockFetch.mockResolvedValue({
       response: {
         ok: true,
         headers: new Headers({ "content-type": "image/png" }),
@@ -123,14 +129,14 @@ describe("uploadImageFromUrl", () => {
   });
 
   it("extracts filename from URL path", async () => {
-    const { urbitFetch } = await import("./fetch.js");
-    const mockUrbitFetch = vi.mocked(urbitFetch);
+    const { fetchWithSsrFGuard } = await import("openclaw/plugin-sdk");
+    const mockFetch = vi.mocked(fetchWithSsrFGuard);
 
     const { uploadFile } = await import("@tloncorp/api");
     const mockUploadFile = vi.mocked(uploadFile);
 
     const mockBlob = new Blob(["fake-image"], { type: "image/jpeg" });
-    mockUrbitFetch.mockResolvedValue({
+    mockFetch.mockResolvedValue({
       response: {
         ok: true,
         headers: new Headers({ "content-type": "image/jpeg" }),
@@ -153,14 +159,14 @@ describe("uploadImageFromUrl", () => {
   });
 
   it("uses default filename when URL has no path", async () => {
-    const { urbitFetch } = await import("./fetch.js");
-    const mockUrbitFetch = vi.mocked(urbitFetch);
+    const { fetchWithSsrFGuard } = await import("openclaw/plugin-sdk");
+    const mockFetch = vi.mocked(fetchWithSsrFGuard);
 
     const { uploadFile } = await import("@tloncorp/api");
     const mockUploadFile = vi.mocked(uploadFile);
 
     const mockBlob = new Blob(["fake-image"], { type: "image/png" });
-    mockUrbitFetch.mockResolvedValue({
+    mockFetch.mockResolvedValue({
       response: {
         ok: true,
         headers: new Headers({ "content-type": "image/png" }),
