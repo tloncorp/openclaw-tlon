@@ -38,7 +38,7 @@
     "test:all": "vitest run"
   },
   "dependencies": {
-    "@tloncorp/api": "github:tloncorp/api-beta#7eede1c1a756977b09f96aa14a92e2b06318ae87",
+    "@tloncorp/api": "github:tloncorp/api-beta#c5eb1720d94435b62503605acb294ef42a5440b3",
     "@tloncorp/tlon-skill": "^0.1.11",
     "@urbit/aura": "^3.0.0",
     "@urbit/http-api": "^3.0.0",
