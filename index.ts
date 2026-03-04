@@ -103,13 +103,12 @@ function runTlonCommand(
 ): Promise<string> {
   return new Promise((resolve, reject) => {
     // Build environment with Tlon credentials
-    // Only pass the ship name - let the skill use its cookie cache
-    // If no cache exists, the skill falls back to OpenClaw config for auth
+    // Pass all credentials - skill checks cache first, falls back to these if miss
     const env = { ...process.env };
     if (credentials) {
       env.URBIT_SHIP = credentials.ship;
-      // Don't pass URL/CODE - this lets the skill use cached cookies
-      // On cache miss, skill reads credentials from OpenClaw config
+      env.URBIT_URL = credentials.url;
+      env.URBIT_CODE = credentials.code;
     }
 
     const child = spawn(binary, args, { env });
