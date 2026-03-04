@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       '@tloncorp/api':
-        specifier: github:tloncorp/api-beta#7eede1c1a756977b09f96aa14a92e2b06318ae87
-        version: https://codeload.github.com/tloncorp/api-beta/tar.gz/7eede1c1a756977b09f96aa14a92e2b06318ae87
+        specifier: github:tloncorp/api-beta#c5eb1720d94435b62503605acb294ef42a5440b3
+        version: https://codeload.github.com/tloncorp/api-beta/tar.gz/c5eb1720d94435b62503605acb294ef42a5440b3
       '@tloncorp/tlon-skill':
         specifier: ^0.1.11
         version: 0.1.11
@@ -1986,8 +1986,8 @@ packages:
     resolution: {integrity: sha512-5Kc5CM2Ysn3vTTArBs2vESUt0AQiWZA86yc1TI3B+lxXmtEq133C1nxXNOgnzhrivdPZIh3zLj5gDnZjoLL5GA==}
     engines: {node: '>=12.17.0'}
 
-  '@tloncorp/api@https://codeload.github.com/tloncorp/api-beta/tar.gz/7eede1c1a756977b09f96aa14a92e2b06318ae87':
-    resolution: {tarball: https://codeload.github.com/tloncorp/api-beta/tar.gz/7eede1c1a756977b09f96aa14a92e2b06318ae87}
+  '@tloncorp/api@https://codeload.github.com/tloncorp/api-beta/tar.gz/c5eb1720d94435b62503605acb294ef42a5440b3':
+    resolution: {tarball: https://codeload.github.com/tloncorp/api-beta/tar.gz/c5eb1720d94435b62503605acb294ef42a5440b3}
     version: 0.0.2
 
   '@tloncorp/tlon-skill-darwin-arm64@0.1.11':
@@ -6835,7 +6835,7 @@ snapshots:
 
   '@tinyhttp/content-disposition@2.2.4': {}
 
-  '@tloncorp/api@https://codeload.github.com/tloncorp/api-beta/tar.gz/7eede1c1a756977b09f96aa14a92e2b06318ae87':
+  '@tloncorp/api@https://codeload.github.com/tloncorp/api-beta/tar.gz/c5eb1720d94435b62503605acb294ef42a5440b3':
     dependencies:
       '@aws-sdk/client-s3': 3.983.0
       '@aws-sdk/s3-request-presigner': 3.983.0
