@@ -18,6 +18,8 @@ export type PendingApproval = {
   requestingShip: string;
   channelNest?: string;
   groupFlag?: string;
+  /** Human-readable group title from invite preview */
+  groupTitle?: string;
   messagePreview?: string;
   /** Full message context for processing after approval */
   originalMessage?: {

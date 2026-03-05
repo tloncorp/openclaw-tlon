@@ -15,6 +15,7 @@ import { UrbitSSEClient } from "../urbit/sse-client.js";
 import {
   type PendingApproval,
   type AdminCommand,
+  type DisplayContext,
   createPendingApproval,
   formatApprovalRequest,
   formatApprovalConfirmation,
@@ -26,6 +27,7 @@ import {
   isAdminCommand,
   formatBlockedList,
   formatPendingList,
+  formatHelpText,
 } from "./approval.js";
 import { fetchAllChannels, fetchInitData } from "./discovery.js";
 import { cacheMessage, lookupCachedMessage, getChannelHistory, fetchThreadHistory } from "./history.js";
@@ -232,7 +234,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       botNickname = profile.nickname?.value || null;
       if (botNickname) {
         runtime.log?.(`[tlon] Bot nickname: ${botNickname}`);
-        nicknameCache.set(botShipName, botNickname);
+        nicknameCache.set(botShipName, sanitizeNickname(botNickname));
       }
     }
   } catch (error: any) {
@@ -246,7 +248,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       for (const [ship, contact] of Object.entries(allContacts)) {
         const nickname = contact?.nickname?.value ?? contact?.nickname;
         if (nickname && typeof nickname === "string") {
-          nicknameCache.set(normalizeShip(ship), nickname);
+          nicknameCache.set(normalizeShip(ship), sanitizeNickname(nickname));
         }
       }
       runtime.log?.(`[tlon] Loaded ${nicknameCache.size} contact nickname(s)`);
@@ -257,6 +259,25 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
 
   // Store init foreigns for processing after settings are loaded
   let initForeigns: Foreigns | null = null;
+
+  // Group name cache for human-readable display (flag -> title)
+  const groupNameCache = new Map<string, string>();
+
+  // Build display context for approval formatting
+  function buildDisplayContext(): DisplayContext {
+    const channelNames = new Map<string, string>();
+    for (const nest of watchedChannels) {
+      const parsed = parseChannelNest(nest);
+      if (parsed) {
+        channelNames.set(nest, parsed.channelName);
+      }
+    }
+    return {
+      shipNames: nicknameCache,
+      channelNames,
+      groupNames: groupNameCache,
+    };
+  }
 
   // Migrate file config to settings store (seed on first run)
   async function migrateConfigToSettings() {
@@ -312,7 +333,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       // Only migrate if file has a value and settings store doesn't
       const hasFileValue = Array.isArray(fileValue) ? fileValue.length > 0 : fileValue != null;
       const hasSettingsValue = Array.isArray(settingsValue)
-        ? settingsValue.length > 0
+        ? true // empty array = intentionally set in settings store
         : settingsValue != null;
 
       if (hasFileValue && !hasSettingsValue) {
@@ -357,10 +378,10 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         `[tlon] Using autoDiscoverChannels from settings store: ${effectiveAutoDiscoverChannels}`,
       );
     }
-    if (currentSettings.dmAllowlist?.length) {
+    if (currentSettings.dmAllowlist !== undefined) {
       effectiveDmAllowlist = currentSettings.dmAllowlist;
       runtime.log?.(
-        `[tlon] Using dmAllowlist from settings store: ${effectiveDmAllowlist.join(", ")}`,
+        `[tlon] Using dmAllowlist from settings store: ${effectiveDmAllowlist.length > 0 ? effectiveDmAllowlist.join(", ") : "(empty)"}`,
       );
     }
     if (currentSettings.showModelSig !== undefined) {
@@ -406,6 +427,10 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       // Populate channel-to-group mapping for member hint injection
       for (const [nest, groupFlag] of initData.channelToGroup) {
         channelToGroup.set(nest, groupFlag);
+      }
+      // Populate group name cache for human-readable display
+      for (const [flag, title] of initData.groupNames) {
+        groupNameCache.set(flag, title);
       }
       initForeigns = initData.foreigns;
     } catch (error: any) {
@@ -527,6 +552,33 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         },
       });
       runtime.log?.(`[tlon] Added ${normalizedShip} to dmAllowlist`);
+    } catch (err) {
+      runtime.error?.(`[tlon] Failed to update dmAllowlist: ${String(err)}`);
+    }
+  }
+
+  // Helper to remove ship from dmAllowlist in both memory and settings store
+  async function removeFromDmAllowlist(ship: string): Promise<void> {
+    const normalizedShip = normalizeShip(ship);
+    const before = effectiveDmAllowlist.length;
+    effectiveDmAllowlist = effectiveDmAllowlist.filter((s) => s !== normalizedShip);
+    if (effectiveDmAllowlist.length === before) {
+      return; // Ship wasn't on the list
+    }
+    try {
+      await api!.poke({
+        app: "settings",
+        mark: "settings-event",
+        json: {
+          "put-entry": {
+            desk: "moltbot",
+            "bucket-key": "tlon",
+            "entry-key": "dmAllowlist",
+            value: effectiveDmAllowlist,
+          },
+        },
+      });
+      runtime.log?.(`[tlon] Removed ${normalizedShip} from dmAllowlist`);
     } catch (err) {
       runtime.error?.(`[tlon] Failed to update dmAllowlist: ${String(err)}`);
     }
@@ -721,7 +773,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         `[tlon] Updated existing approval for ${approval.requestingShip} (${approval.type}) - re-sending notification`,
       );
       await savePendingApprovals();
-      const message = formatApprovalRequest(existing);
+      const message = formatApprovalRequest(existing, buildDisplayContext());
       await sendOwnerNotification(message);
       return;
     }
@@ -729,7 +781,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     pendingApprovals.push(approval);
     await savePendingApprovals();
 
-    const message = formatApprovalRequest(approval);
+    const message = formatApprovalRequest(approval, buildDisplayContext());
     await sendOwnerNotification(message);
     runtime.log?.(
       `[tlon] Queued approval request: ${approval.id} (${approval.type} from ${approval.requestingShip})`,
@@ -743,10 +795,15 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       return false;
     }
 
+    // Don't intercept common words (yes, no, ok, etc.) when nothing is pending
+    if (pendingApprovals.length === 0 && !parsed.id) {
+      return false;
+    }
+
     const approval = findPendingApproval(pendingApprovals, parsed.id);
     if (!approval) {
       await sendOwnerNotification(
-        "No pending approval found" + (parsed.id ? ` for ID: ${parsed.id}` : ""),
+        "No pending approval found" + (parsed.id ? ` for ID: #${parsed.id}` : ""),
       );
       return true; // Still consumed the message
     }
@@ -839,14 +896,18 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
           break;
       }
 
-      await sendOwnerNotification(formatApprovalConfirmation(approval, "approve"));
+      const ctx = buildDisplayContext();
+      await sendOwnerNotification(formatApprovalConfirmation(approval, "approve", ctx));
     } else if (parsed.action === "block") {
-      // Block the ship using Tlon's native blocking
+      // Block the ship using Tlon's native blocking AND remove from allowlist
       await blockShip(approval.requestingShip);
-      await sendOwnerNotification(formatApprovalConfirmation(approval, "block"));
+      await removeFromDmAllowlist(approval.requestingShip);
+      const ctx = buildDisplayContext();
+      await sendOwnerNotification(formatApprovalConfirmation(approval, "block", ctx));
     } else {
       // Denied - just remove from pending, no notification to requester
-      await sendOwnerNotification(formatApprovalConfirmation(approval, "deny"));
+      const ctx = buildDisplayContext();
+      await sendOwnerNotification(formatApprovalConfirmation(approval, "deny", ctx));
     }
 
     // Remove from pending
@@ -863,16 +924,24 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       return false;
     }
 
+    const ctx = buildDisplayContext();
+
     switch (command.type) {
+      case "help": {
+        await sendOwnerNotification(formatHelpText());
+        runtime.log?.("[tlon] Owner requested help text");
+        return true;
+      }
+
       case "blocked": {
         const blockedShips = await getBlockedShips();
-        await sendOwnerNotification(formatBlockedList(blockedShips));
+        await sendOwnerNotification(formatBlockedList(blockedShips, ctx));
         runtime.log?.(`[tlon] Owner requested blocked ships list (${blockedShips.length} ships)`);
         return true;
       }
 
       case "pending": {
-        await sendOwnerNotification(formatPendingList(pendingApprovals));
+        await sendOwnerNotification(formatPendingList(pendingApprovals, ctx));
         runtime.log?.(
           `[tlon] Owner requested pending approvals list (${pendingApprovals.length} pending)`,
         );
@@ -1473,7 +1542,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
                   parentId: parentId ?? undefined,
                   isThreadReply,
                 },
-              });
+              }, pendingApprovals.map((a) => a.id));
               await queueApprovalRequest(approval);
             } else {
               runtime.log?.(
@@ -1558,7 +1627,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
               type: "dm",
               requestingShip: ship,
               messagePreview: "(DM invite - no message yet)",
-            });
+            }, pendingApprovals.map((a) => a.id));
             await queueApprovalRequest(approval);
             processedDmInvites.add(ship); // Mark as processed to avoid duplicate notifications
           }
@@ -1751,7 +1820,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
               messageContent: dmContent.content,
               timestamp: dmContent.sent || Date.now(),
             },
-          });
+          }, pendingApprovals.map((a) => a.id));
           await queueApprovalRequest(approval);
         } else {
           runtime.log?.(`[tlon] Blocked DM from ${senderShip}: not in allowlist`);
@@ -1822,7 +1891,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
                 botNickname = newNickname;
                 runtime.log?.(`[tlon] Bot nickname updated: ${botNickname}`);
                 if (botNickname) {
-                  nicknameCache.set(botShipName, botNickname);
+                  nicknameCache.set(botShipName, sanitizeNickname(botNickname));
                 } else {
                   nicknameCache.delete(botShipName);
                 }
@@ -1835,7 +1904,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
             const nickname = event.peer.contact?.nickname?.value ?? event.peer.contact?.nickname;
             if (ship) {
               if (nickname && typeof nickname === "string") {
-                nicknameCache.set(ship, nickname);
+                nicknameCache.set(ship, sanitizeNickname(nickname));
               } else {
                 nicknameCache.delete(ship);
               }
@@ -1873,11 +1942,12 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         // during transitions. The authorization check handles access control.
       }
 
-      // Update DM allowlist
+      // Update DM allowlist — respect empty lists (don't fall back to file config)
       if (newSettings.dmAllowlist !== undefined) {
-        effectiveDmAllowlist =
-          newSettings.dmAllowlist.length > 0 ? newSettings.dmAllowlist : account.dmAllowlist;
-        runtime.log?.(`[tlon] Settings: dmAllowlist updated to ${effectiveDmAllowlist.join(", ")}`);
+        effectiveDmAllowlist = newSettings.dmAllowlist;
+        runtime.log?.(
+          `[tlon] Settings: dmAllowlist updated to ${effectiveDmAllowlist.length > 0 ? effectiveDmAllowlist.join(", ") : "(empty)"}`,
+        );
       }
 
       // Update model signature setting
@@ -2154,7 +2224,8 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
                 type: "group",
                 requestingShip: inviterShip,
                 groupFlag,
-              });
+                groupTitle: validInvite.preview?.meta?.title,
+              }, pendingApprovals.map((a) => a.id));
               await queueApprovalRequest(approval);
               processedGroupInvites.add(groupFlag);
             }
@@ -2176,7 +2247,8 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
                 type: "group",
                 requestingShip: inviterShip,
                 groupFlag,
-              });
+                groupTitle: validInvite.preview?.meta?.title,
+              }, pendingApprovals.map((a) => a.id));
               await queueApprovalRequest(approval);
               processedGroupInvites.add(groupFlag);
             } else {
@@ -2283,6 +2355,37 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       2 * 60 * 1000,
     );
 
+    // Periodically re-scry settings as a fallback for stale subscriptions.
+    // The settings subscription can silently die (SSE quit without reconnect),
+    // leaving the in-memory allowlist permanently stale.
+    const settingsRefreshInterval = setInterval(
+      async () => {
+        if (opts.abortSignal?.aborted) {
+          return;
+        }
+        try {
+          const refreshed = await settingsManager.load();
+
+          if (refreshed.dmAllowlist !== undefined) {
+            const newList = refreshed.dmAllowlist;
+            if (JSON.stringify(newList) !== JSON.stringify(effectiveDmAllowlist)) {
+              effectiveDmAllowlist = newList;
+              runtime.log?.(
+                `[tlon] Settings refresh: dmAllowlist updated to ${effectiveDmAllowlist.join(", ")}`,
+              );
+            }
+          }
+
+          if (refreshed.defaultAuthorizedShips !== undefined) {
+            currentSettings = { ...currentSettings, defaultAuthorizedShips: refreshed.defaultAuthorizedShips };
+          }
+        } catch (err) {
+          runtime.error?.(`[tlon] Settings refresh failed: ${String(err)}`);
+        }
+      },
+      5 * 60 * 1000,
+    );
+
     if (opts.abortSignal) {
       const signal = opts.abortSignal;
       await new Promise((resolve) => {
@@ -2290,6 +2393,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
           "abort",
           () => {
             clearInterval(pollInterval);
+            clearInterval(settingsRefreshInterval);
             resolve(null);
           },
           { once: true },

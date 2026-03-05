@@ -17,6 +17,7 @@ export type CreateApprovalParams = {
   requestingShip: string;
   channelNest?: string;
   groupFlag?: string;
+  groupTitle?: string;
   messagePreview?: string;
   originalMessage?: {
     messageId: string;
@@ -28,30 +29,96 @@ export type CreateApprovalParams = {
   };
 };
 
+// ============================================================================
+// Display Context — pass human-readable names without breaking purity
+// ============================================================================
+
+/** Display hints for human-readable formatting. Callers resolve these from caches/lookups. */
+export type DisplayContext = {
+  /** Map from ship name (~ship) to human-readable nickname */
+  shipNames?: Map<string, string>;
+  /** Map from channel nest (chat/~host/name) to human-readable channel display name */
+  channelNames?: Map<string, string>;
+  /** Map from group flag (~host/name) to human-readable group title */
+  groupNames?: Map<string, string>;
+};
+
+function displayShip(ship: string, ctx?: DisplayContext): string {
+  const name = ctx?.shipNames?.get(ship);
+  return name ? `${ship} (${name})` : ship;
+}
+
+function displayChannel(nest: string, ctx?: DisplayContext): string {
+  const name = ctx?.channelNames?.get(nest);
+  return name ? `${name} (${nest})` : nest;
+}
+
+function displayGroup(flag: string, ctx?: DisplayContext, titleOverride?: string): string {
+  const name = titleOverride || ctx?.groupNames?.get(flag);
+  return name ? `${name} (${flag})` : flag;
+}
+
+// ============================================================================
+// Approval ID Generation
+// ============================================================================
+
 /**
- * Generate a unique approval ID in the format: {type}-{timestamp}-{shortHash}
+ * Generate a short approval ID: type-prefix char + 4 hex chars.
+ * e.g. "da1b2" for dm, "cc3d4" for channel, "g5f6e" for group.
  */
-export function generateApprovalId(type: ApprovalType): string {
-  const timestamp = Date.now();
-  const randomPart = randomUUID().slice(0, 8);
-  return `${type}-${timestamp}-${randomPart}`;
+export function generateApprovalId(type: ApprovalType, existingIds: string[] = []): string {
+  const prefix = type[0]; // 'd', 'c', or 'g'
+  for (let attempt = 0; attempt < 10; attempt++) {
+    const shortId = randomUUID().slice(0, 4);
+    const id = `${prefix}${shortId}`;
+    if (!existingIds.includes(id)) {
+      return id;
+    }
+  }
+  // Fallback: use 8 chars to avoid collision
+  return `${prefix}${randomUUID().slice(0, 8)}`;
 }
 
 /**
  * Create a pending approval object.
  */
-export function createPendingApproval(params: CreateApprovalParams): PendingApproval {
+export function createPendingApproval(
+  params: CreateApprovalParams,
+  existingIds: string[] = [],
+): PendingApproval {
   return {
-    id: generateApprovalId(params.type),
+    id: generateApprovalId(params.type, existingIds),
     type: params.type,
     requestingShip: params.requestingShip,
     channelNest: params.channelNest,
     groupFlag: params.groupFlag,
+    groupTitle: params.groupTitle,
     messagePreview: params.messagePreview,
     originalMessage: params.originalMessage,
     timestamp: Date.now(),
   };
 }
+
+// ============================================================================
+// Command Aliases
+// ============================================================================
+
+/** Map of natural-language aliases to canonical approval actions. */
+export const APPROVAL_ALIASES: Record<string, "approve" | "deny" | "block"> = {
+  approve: "approve",
+  yes: "approve",
+  y: "approve",
+  ok: "approve",
+  accept: "approve",
+  allow: "approve",
+  deny: "deny",
+  no: "deny",
+  n: "deny",
+  reject: "deny",
+  decline: "deny",
+  block: "block",
+  ban: "block",
+};
 
 /**
  * Truncate text to a maximum length with ellipsis.
@@ -63,34 +130,72 @@ function truncate(text: string, maxLength: number): string {
   return text.substring(0, maxLength - 3) + "...";
 }
 
+// ============================================================================
+// Approval Request Formatting
+// ============================================================================
+
+const ACTION_HINTS_DM = [
+  "  yes - allow this ship to DM the bot",
+  "  no - decline (they can try again)",
+  "  block - permanently block this ship",
+].join("\n");
+
+const ACTION_HINTS_CHANNEL = [
+  "  yes - allow this ship in this channel",
+  "  no - decline (they can try again)",
+  "  block - permanently block this ship",
+].join("\n");
+
+const ACTION_HINTS_GROUP = [
+  "  yes - join this group",
+  "  no - decline the invite",
+  "  block - permanently block this ship",
+].join("\n");
+
 /**
  * Format a notification message for the owner about a pending approval.
  */
-export function formatApprovalRequest(approval: PendingApproval): string {
-  const preview = approval.messagePreview ? `\n"${truncate(approval.messagePreview, 100)}"` : "";
+export function formatApprovalRequest(approval: PendingApproval, ctx?: DisplayContext): string {
+  const preview = approval.messagePreview
+    ? `\n"${truncate(approval.messagePreview, 100)}"`
+    : "";
+  const idTag = `(#${approval.id})`;
 
   switch (approval.type) {
     case "dm":
-      return (
-        `New DM request from ${approval.requestingShip}:${preview}\n\n` +
-        `Reply "approve", "deny", or "block" (ID: ${approval.id})`
-      );
+      return [
+        `DM request from ${displayShip(approval.requestingShip, ctx)}`,
+        preview,
+        "",
+        ACTION_HINTS_DM,
+        "",
+        idTag,
+      ].join("\n");
 
     case "channel":
-      return (
-        `${approval.requestingShip} mentioned you in ${approval.channelNest}:${preview}\n\n` +
-        `Reply "approve", "deny", or "block"\n` +
-        `(ID: ${approval.id})`
-      );
+      return [
+        `${displayShip(approval.requestingShip, ctx)} mentioned the bot in ${displayChannel(approval.channelNest ?? "", ctx)}`,
+        preview,
+        "",
+        ACTION_HINTS_CHANNEL,
+        "",
+        idTag,
+      ].join("\n");
 
     case "group":
-      return (
-        `Group invite from ${approval.requestingShip} to join ${approval.groupFlag}\n\n` +
-        `Reply "approve", "deny", or "block"\n` +
-        `(ID: ${approval.id})`
-      );
+      return [
+        `Group invite from ${displayShip(approval.requestingShip, ctx)} to join ${displayGroup(approval.groupFlag ?? "", ctx, approval.groupTitle)}`,
+        "",
+        ACTION_HINTS_GROUP,
+        "",
+        idTag,
+      ].join("\n");
   }
 }
+
+// ============================================================================
+// Approval Response Parsing
+// ============================================================================
 
 export type ApprovalResponse = {
   action: "approve" | "deny" | "block";
@@ -99,44 +204,67 @@ export type ApprovalResponse = {
 
 /**
  * Parse an owner's response to an approval request.
- * Supports formats:
- *   - "approve" / "deny" / "block" (applies to most recent pending)
- *   - "approve dm-1234567890-abc" / "deny dm-1234567890-abc" (specific ID)
- *   - "block" permanently blocks the ship via Tlon's native blocking
+ * Supports natural-language aliases (yes/no/ok/accept/deny/reject/block/ban etc.)
+ * and optional #ID targeting.
  */
 export function parseApprovalResponse(text: string): ApprovalResponse | null {
   const trimmed = text.trim().toLowerCase();
-
-  // Match "approve", "deny", or "block" optionally followed by an ID
-  const match = trimmed.match(/^(approve|deny|block)(?:\s+(.+))?$/);
-  if (!match) {
+  if (!trimmed) {
     return null;
   }
 
-  const action = match[1] as "approve" | "deny" | "block";
-  const id = match[2]?.trim();
+  // Split into first word and remainder
+  const spaceIndex = trimmed.indexOf(" ");
+  const firstWord = spaceIndex === -1 ? trimmed : trimmed.substring(0, spaceIndex);
+  const remainder = spaceIndex === -1 ? undefined : trimmed.substring(spaceIndex + 1).trim();
 
-  return { action, id };
+  const action = APPROVAL_ALIASES[firstWord];
+  if (!action) {
+    return null;
+  }
+
+  // Strip leading '#' from ID if present; discard multi-word remainder
+  // (e.g. "yes I agree" should not treat "i agree" as an ID)
+  const rawId = remainder ? remainder.replace(/^#/, "").trim() : undefined;
+  const id = rawId && !rawId.includes(" ") ? rawId : undefined;
+
+  return { action, id: id || undefined };
 }
 
 /**
  * Check if a message text looks like an approval response.
- * Used to determine if we should intercept the message before normal processing.
+ * Uses exact first-word matching against aliases (not prefix matching).
  */
 export function isApprovalResponse(text: string): boolean {
   const trimmed = text.trim().toLowerCase();
-  return trimmed.startsWith("approve") || trimmed.startsWith("deny") || trimmed.startsWith("block");
+  if (!trimmed) {
+    return false;
+  }
+  const spaceIndex = trimmed.indexOf(" ");
+  const firstWord = spaceIndex === -1 ? trimmed : trimmed.substring(0, spaceIndex);
+  return firstWord in APPROVAL_ALIASES;
 }
 
 /**
  * Find a pending approval by ID, or return the most recent if no ID specified.
+ * Supports prefix matching for shortened IDs.
  */
 export function findPendingApproval(
   pendingApprovals: PendingApproval[],
   id?: string,
 ): PendingApproval | undefined {
   if (id) {
-    return pendingApprovals.find((a) => a.id === id);
+    // Exact match first
+    const exact = pendingApprovals.find((a) => a.id === id);
+    if (exact) {
+      return exact;
+    }
+    // Prefix match (for partial input or old-format IDs)
+    const prefixMatches = pendingApprovals.filter((a) => a.id.startsWith(id));
+    if (prefixMatches.length === 1) {
+      return prefixMatches[0];
+    }
+    return undefined;
   }
   // Return most recent
   return pendingApprovals[pendingApprovals.length - 1];
@@ -177,37 +305,46 @@ export function removePendingApproval(
   return pendingApprovals.filter((a) => a.id !== id);
 }
 
+// ============================================================================
+// Approval Confirmation Formatting
+// ============================================================================
+
 /**
  * Format a confirmation message after an approval action.
  */
 export function formatApprovalConfirmation(
   approval: PendingApproval,
   action: "approve" | "deny" | "block",
+  ctx?: DisplayContext,
 ): string {
-  if (action === "block") {
-    return `Blocked ${approval.requestingShip}. They will no longer be able to contact the bot.`;
-  }
+  const ship = displayShip(approval.requestingShip, ctx);
 
-  const actionText = action === "approve" ? "Approved" : "Denied";
+  if (action === "block") {
+    return `Blocked ${ship}. They will no longer be able to contact the bot.`;
+  }
 
   switch (approval.type) {
     case "dm":
       if (action === "approve") {
-        return `${actionText} DM access for ${approval.requestingShip}. They can now message the bot.`;
+        return `Approved DM access for ${ship}. They can now message the bot.`;
       }
-      return `${actionText} DM request from ${approval.requestingShip}.`;
+      return `Denied DM request from ${ship}.`;
 
-    case "channel":
+    case "channel": {
+      const channel = displayChannel(approval.channelNest ?? "", ctx);
       if (action === "approve") {
-        return `${actionText} ${approval.requestingShip} for ${approval.channelNest}. They can now interact in this channel.`;
+        return `Approved ${ship} for ${channel}. They can now interact in this channel.`;
       }
-      return `${actionText} ${approval.requestingShip} for ${approval.channelNest}.`;
+      return `Denied ${ship} for ${channel}.`;
+    }
 
-    case "group":
+    case "group": {
+      const group = displayGroup(approval.groupFlag ?? "", ctx, approval.groupTitle);
       if (action === "approve") {
-        return `${actionText} group invite from ${approval.requestingShip} to ${approval.groupFlag}. Joining group...`;
+        return `Approved group invite from ${ship} to ${group}. Joining group...`;
       }
-      return `${actionText} group invite from ${approval.requestingShip} to ${approval.groupFlag}.`;
+      return `Denied group invite from ${ship} to ${group}.`;
+    }
   }
 }
 
@@ -218,7 +355,8 @@ export function formatApprovalConfirmation(
 export type AdminCommand =
   | { type: "unblock"; ship: string }
   | { type: "blocked" }
-  | { type: "pending" };
+  | { type: "pending" }
+  | { type: "help" };
 
 /**
  * Parse an admin command from owner message.
@@ -226,16 +364,19 @@ export type AdminCommand =
  *   - "unblock ~ship" - unblock a specific ship
  *   - "blocked" - list all blocked ships
  *   - "pending" - list all pending approvals
+ *   - "help" / "commands" / "?" - show help
  */
 export function parseAdminCommand(text: string): AdminCommand | null {
   const trimmed = text.trim().toLowerCase();
 
-  // "blocked" - list blocked ships
+  if (trimmed === "help" || trimmed === "commands" || trimmed === "?") {
+    return { type: "help" };
+  }
+
   if (trimmed === "blocked") {
     return { type: "blocked" };
   }
 
-  // "pending" - list pending approvals
   if (trimmed === "pending") {
     return { type: "pending" };
   }
@@ -259,21 +400,69 @@ export function isAdminCommand(text: string): boolean {
 /**
  * Format the list of blocked ships for display to owner.
  */
-export function formatBlockedList(ships: string[]): string {
+export function formatBlockedList(ships: string[], ctx?: DisplayContext): string {
   if (ships.length === 0) {
     return "No ships are currently blocked.";
   }
-  return `Blocked ships (${ships.length}):\n${ships.map((s) => `• ${s}`).join("\n")}`;
+  const lines = ships.map((s) => `  ${displayShip(s, ctx)}`);
+  return [
+    `Blocked ships (${ships.length}):`,
+    ...lines,
+    "",
+    'To unblock: "unblock ~ship-name"',
+  ].join("\n");
 }
 
 /**
  * Format the list of pending approvals for display to owner.
  */
-export function formatPendingList(approvals: PendingApproval[]): string {
+export function formatPendingList(approvals: PendingApproval[], ctx?: DisplayContext): string {
   if (approvals.length === 0) {
     return "No pending approval requests.";
   }
-  return `Pending approvals (${approvals.length}):\n${approvals
-    .map((a) => `• ${a.id}: ${a.type} from ${a.requestingShip}`)
-    .join("\n")}`;
+
+  const entries = approvals.map((a) => {
+    const ship = displayShip(a.requestingShip, ctx);
+    const preview = a.messagePreview ? `\n    "${truncate(a.messagePreview, 80)}"` : "";
+
+    switch (a.type) {
+      case "dm":
+        return `  #${a.id} - DM from ${ship}${preview}`;
+      case "channel":
+        return `  #${a.id} - Mention in ${displayChannel(a.channelNest ?? "", ctx)} by ${ship}${preview}`;
+      case "group":
+        return `  #${a.id} - Group invite from ${ship} to ${displayGroup(a.groupFlag ?? "", ctx, a.groupTitle)}`;
+    }
+  });
+
+  return [
+    `Pending requests (${approvals.length}):`,
+    "",
+    ...entries,
+    "",
+    "Reply yes/no/block, optionally with a # ID.",
+  ].join("\n");
+}
+
+/**
+ * Format the help text for owner commands.
+ */
+export function formatHelpText(): string {
+  return [
+    "Available commands:",
+    "",
+    "Approval responses:",
+    "  yes / approve / ok / accept / allow - approve a request",
+    "  no / deny / reject / decline - deny a request",
+    "  block / ban - permanently block the ship",
+    "",
+    "  Add a # ID to target a specific request:",
+    "  e.g., yes #da1b2 or block #cc3d4",
+    "",
+    "Admin commands:",
+    "  pending - show pending approval requests",
+    "  blocked - show blocked ships",
+    "  unblock ~ship-name - unblock a ship",
+    "  help - show this message",
+  ].join("\n");
 }

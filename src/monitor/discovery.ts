@@ -27,6 +27,8 @@ export async function fetchGroupChanges(
 export interface InitData {
   channels: string[];
   channelToGroup: Map<string, string>;
+  /** Map from group flag to human-readable group title */
+  groupNames: Map<string, string>;
   foreigns: Foreigns | null;
 }
 
@@ -44,13 +46,21 @@ export async function fetchInitData(
 
     const channels: string[] = [];
     const channelToGroup = new Map<string, string>();
+    const groupNames = new Map<string, string>();
     if (initData?.groups) {
       for (const [groupFlag, groupData] of Object.entries(initData.groups as Record<string, any>)) {
-        if (groupData && typeof groupData === "object" && groupData.channels) {
-          for (const channelNest of Object.keys(groupData.channels)) {
-            if (channelNest.startsWith("chat/") || channelNest.startsWith("heap/") || channelNest.startsWith("diary/")) {
-              channels.push(channelNest);
-              channelToGroup.set(channelNest, groupFlag);
+        if (groupData && typeof groupData === "object") {
+          // Extract group title from metadata
+          const title = groupData.meta?.title;
+          if (title && typeof title === "string") {
+            groupNames.set(groupFlag, title);
+          }
+          if (groupData.channels) {
+            for (const channelNest of Object.keys(groupData.channels)) {
+              if (channelNest.startsWith("chat/") || channelNest.startsWith("heap/") || channelNest.startsWith("diary/")) {
+                channels.push(channelNest);
+                channelToGroup.set(channelNest, groupFlag);
+              }
             }
           }
         }
@@ -73,10 +83,10 @@ export async function fetchInitData(
       }
     }
 
-    return { channels, channelToGroup, foreigns };
+    return { channels, channelToGroup, groupNames, foreigns };
   } catch (error: any) {
     runtime.log?.(`[tlon] Init data fetch failed: ${error?.message ?? String(error)}`);
-    return { channels: [], channelToGroup: new Map(), foreigns: null };
+    return { channels: [], channelToGroup: new Map(), groupNames: new Map(), foreigns: null };
   }
 }
 
