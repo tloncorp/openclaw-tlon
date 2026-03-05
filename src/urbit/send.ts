@@ -48,7 +48,7 @@ function formatSentAt(sentAt: number): string {
 // --- DMs ---
 
 /** Optional bot profile for custom display name/avatar */
-type BotProfile = {
+export type BotProfile = {
   nickname?: string | null;
   avatar?: string | null;
 };
@@ -73,7 +73,7 @@ type SendStoryParams = {
 
 export async function sendDm(params: SendTextParams) {
   const story: Story = markdownToStory(params.text);
-  return sendDmWithStory({ ...params, story, botProfile: params.botProfile });
+  return sendDmWithStory({ ...params, story });
 }
 
 export async function sendDmWithStory({

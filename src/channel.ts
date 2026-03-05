@@ -29,20 +29,23 @@ import { uploadImageFromUrl } from "./urbit/upload.js";
 import { tlonMessageActions } from "./actions.js";
 import { markdownToStory } from "./urbit/story.js";
 import { scry } from "@tloncorp/api";
+import type { BotProfile } from "./urbit/send.js";
 
 const TLON_CHANNEL_ID = "tlon" as const;
 
-// Cache for bot's own profile (fetched on first send)
-let cachedBotProfile: { nickname: string | null; avatar: string | null } | null = null;
+// Cache for bot profiles per ship (supports multi-account setups)
+const profileCache = new Map<string, BotProfile | null>();
 
 /**
  * Get bot profile for outbound messages from the ship's Tlon profile.
+ * Caches per-ship to support multi-account configurations.
  */
-async function getBotProfile(): Promise<{ nickname: string | null; avatar: string | null } | undefined> {
-  // Try to use cached profile
-  if (cachedBotProfile !== null) {
-    if (cachedBotProfile.nickname || cachedBotProfile.avatar) {
-      return cachedBotProfile;
+async function getBotProfile(ship: string): Promise<BotProfile | undefined> {
+  // Try to use cached profile for this ship
+  if (profileCache.has(ship)) {
+    const cached = profileCache.get(ship);
+    if (cached && (cached.nickname || cached.avatar)) {
+      return cached;
     }
     return undefined; // Already fetched, nothing found
   }
@@ -54,18 +57,19 @@ async function getBotProfile(): Promise<{ nickname: string | null; avatar: strin
       avatar?: { value?: string };
     }>({ app: "contacts", path: "/v1/self" });
     
-    cachedBotProfile = {
+    const profile: BotProfile = {
       nickname: selfProfile?.nickname?.value ?? null,
       avatar: selfProfile?.avatar?.value ?? null,
     };
+    profileCache.set(ship, profile);
     
-    if (cachedBotProfile.nickname || cachedBotProfile.avatar) {
-      console.log(`[tlon] Using self profile for bot meta: ${cachedBotProfile.nickname ?? '(no nickname)'}`);
-      return cachedBotProfile;
+    if (profile.nickname || profile.avatar) {
+      console.log(`[tlon] Using self profile for bot meta (${ship}): ${profile.nickname ?? '(no nickname)'}`);
+      return profile;
     }
   } catch (err) {
     console.log(`[tlon] Could not fetch self profile for bot meta: ${err}`);
-    cachedBotProfile = { nickname: null, avatar: null }; // Mark as attempted
+    profileCache.set(ship, null); // Mark as attempted
   }
 
   return undefined;
@@ -170,7 +174,7 @@ const tlonOutbound: ChannelOutboundAdapter = {
         const fromShip = normalizeShip(account.ship!);
         const replyId = (replyToId ?? threadId) ? String(replyToId ?? threadId) : undefined;
         // Get bot profile (from config or self profile)
-        const botProfile = await getBotProfile();
+        const botProfile = await getBotProfile(fromShip);
         if (parsed.kind === "dm") {
           return await sendDm({ fromShip, toShip: parsed.ship, text, replyToId: replyId, botProfile });
         }
@@ -206,7 +210,7 @@ const tlonOutbound: ChannelOutboundAdapter = {
         const replyId = (replyToId ?? threadId) ? String(replyToId ?? threadId) : undefined;
 
         // Get bot profile (from config or self profile)
-        const botProfile = await getBotProfile();
+        const botProfile = await getBotProfile(fromShip);
         if (parsed.kind === "dm") {
           return await sendDmWithStory({ fromShip, toShip: parsed.ship, story, replyToId: replyId, botProfile });
         }
