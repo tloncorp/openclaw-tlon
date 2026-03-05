@@ -29,25 +29,16 @@ import { uploadImageFromUrl } from "./urbit/upload.js";
 import { tlonMessageActions } from "./actions.js";
 import { markdownToStory } from "./urbit/story.js";
 import { scry } from "@tloncorp/api";
-import type { TlonResolvedAccount } from "./types.js";
 
 const TLON_CHANNEL_ID = "tlon" as const;
 
-// Cache for bot's own profile (fetched on first send if not in config)
+// Cache for bot's own profile (fetched on first send)
 let cachedBotProfile: { nickname: string | null; avatar: string | null } | null = null;
 
 /**
- * Get bot profile for outbound messages.
- * Priority: config values > fetched self profile > undefined (no bot meta)
+ * Get bot profile for outbound messages from the ship's Tlon profile.
  */
-async function getBotProfile(
-  account: TlonResolvedAccount
-): Promise<{ nickname: string | null; avatar: string | null } | undefined> {
-  // If explicitly configured, use config values
-  if (account.botNickname || account.botAvatar) {
-    return { nickname: account.botNickname, avatar: account.botAvatar };
-  }
-
+async function getBotProfile(): Promise<{ nickname: string | null; avatar: string | null } | undefined> {
   // Try to use cached profile
   if (cachedBotProfile !== null) {
     if (cachedBotProfile.nickname || cachedBotProfile.avatar) {
@@ -179,7 +170,7 @@ const tlonOutbound: ChannelOutboundAdapter = {
         const fromShip = normalizeShip(account.ship!);
         const replyId = (replyToId ?? threadId) ? String(replyToId ?? threadId) : undefined;
         // Get bot profile (from config or self profile)
-        const botProfile = await getBotProfile(account);
+        const botProfile = await getBotProfile();
         if (parsed.kind === "dm") {
           return await sendDm({ fromShip, toShip: parsed.ship, text, replyToId: replyId, botProfile });
         }
@@ -215,7 +206,7 @@ const tlonOutbound: ChannelOutboundAdapter = {
         const replyId = (replyToId ?? threadId) ? String(replyToId ?? threadId) : undefined;
 
         // Get bot profile (from config or self profile)
-        const botProfile = await getBotProfile(account);
+        const botProfile = await getBotProfile();
         if (parsed.kind === "dm") {
           return await sendDmWithStory({ fromShip, toShip: parsed.ship, story, replyToId: replyId, botProfile });
         }
