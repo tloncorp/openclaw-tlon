@@ -102,11 +102,12 @@ function runTlonCommand(
   credentials?: { url: string; ship: string; code: string },
 ): Promise<string> {
   return new Promise((resolve, reject) => {
-    // Build environment with Tlon credentials if provided
+    // Build environment with Tlon credentials
+    // Pass all credentials - skill checks cache first, falls back to these if miss
     const env = { ...process.env };
     if (credentials) {
-      env.URBIT_URL = credentials.url;
       env.URBIT_SHIP = credentials.ship;
+      env.URBIT_URL = credentials.url;
       env.URBIT_CODE = credentials.code;
     }
 
