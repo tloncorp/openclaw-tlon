@@ -28,8 +28,57 @@ import {
 import { uploadImageFromUrl } from "./urbit/upload.js";
 import { tlonMessageActions } from "./actions.js";
 import { markdownToStory } from "./urbit/story.js";
+import { scry } from "@tloncorp/api";
+import type { TlonResolvedAccount } from "./types.js";
 
 const TLON_CHANNEL_ID = "tlon" as const;
+
+// Cache for bot's own profile (fetched on first send if not in config)
+let cachedBotProfile: { nickname: string | null; avatar: string | null } | null = null;
+
+/**
+ * Get bot profile for outbound messages.
+ * Priority: config values > fetched self profile > undefined (no bot meta)
+ */
+async function getBotProfile(
+  account: TlonResolvedAccount
+): Promise<{ nickname: string | null; avatar: string | null } | undefined> {
+  // If explicitly configured, use config values
+  if (account.botNickname || account.botAvatar) {
+    return { nickname: account.botNickname, avatar: account.botAvatar };
+  }
+
+  // Try to use cached profile
+  if (cachedBotProfile !== null) {
+    if (cachedBotProfile.nickname || cachedBotProfile.avatar) {
+      return cachedBotProfile;
+    }
+    return undefined; // Already fetched, nothing found
+  }
+
+  // Fetch self profile (runs inside authenticated context)
+  try {
+    const selfProfile = await scry<{
+      nickname?: { value?: string };
+      avatar?: { value?: string };
+    }>({ app: "contacts", path: "/v1/self" });
+    
+    cachedBotProfile = {
+      nickname: selfProfile?.nickname?.value ?? null,
+      avatar: selfProfile?.avatar?.value ?? null,
+    };
+    
+    if (cachedBotProfile.nickname || cachedBotProfile.avatar) {
+      console.log(`[tlon] Using self profile for bot meta: ${cachedBotProfile.nickname ?? '(no nickname)'}`);
+      return cachedBotProfile;
+    }
+  } catch (err) {
+    console.log(`[tlon] Could not fetch self profile for bot meta: ${err}`);
+    cachedBotProfile = { nickname: null, avatar: null }; // Mark as attempted
+  }
+
+  return undefined;
+}
 
 type TlonSetupInput = ChannelSetupInput & {
   ship?: string;
@@ -129,10 +178,8 @@ const tlonOutbound: ChannelOutboundAdapter = {
       async () => {
         const fromShip = normalizeShip(account.ship!);
         const replyId = (replyToId ?? threadId) ? String(replyToId ?? threadId) : undefined;
-        // Build bot profile if configured
-        const botProfile = (account.botNickname || account.botAvatar)
-          ? { nickname: account.botNickname, avatar: account.botAvatar }
-          : undefined;
+        // Get bot profile (from config or self profile)
+        const botProfile = await getBotProfile(account);
         if (parsed.kind === "dm") {
           return await sendDm({ fromShip, toShip: parsed.ship, text, replyToId: replyId, botProfile });
         }
@@ -167,10 +214,8 @@ const tlonOutbound: ChannelOutboundAdapter = {
         const story = buildMediaStory(text, uploadedUrl);
         const replyId = (replyToId ?? threadId) ? String(replyToId ?? threadId) : undefined;
 
-        // Build bot profile if configured
-        const botProfile = (account.botNickname || account.botAvatar)
-          ? { nickname: account.botNickname, avatar: account.botAvatar }
-          : undefined;
+        // Get bot profile (from config or self profile)
+        const botProfile = await getBotProfile(account);
         if (parsed.kind === "dm") {
           return await sendDmWithStory({ fromShip, toShip: parsed.ship, story, replyToId: replyId, botProfile });
         }
