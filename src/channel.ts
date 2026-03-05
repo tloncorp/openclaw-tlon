@@ -129,8 +129,12 @@ const tlonOutbound: ChannelOutboundAdapter = {
       async () => {
         const fromShip = normalizeShip(account.ship!);
         const replyId = (replyToId ?? threadId) ? String(replyToId ?? threadId) : undefined;
+        // Build bot profile if configured
+        const botProfile = (account.botNickname || account.botAvatar)
+          ? { nickname: account.botNickname, avatar: account.botAvatar }
+          : undefined;
         if (parsed.kind === "dm") {
-          return await sendDm({ fromShip, toShip: parsed.ship, text, replyToId: replyId });
+          return await sendDm({ fromShip, toShip: parsed.ship, text, replyToId: replyId, botProfile });
         }
         // Channel post (chat, heap, or diary)
         return await sendChannelPost({
@@ -138,6 +142,7 @@ const tlonOutbound: ChannelOutboundAdapter = {
           nest: parsed.nest,
           story: markdownToStory(text),
           replyToId: replyId,
+          botProfile,
         });
       },
     );
@@ -162,8 +167,12 @@ const tlonOutbound: ChannelOutboundAdapter = {
         const story = buildMediaStory(text, uploadedUrl);
         const replyId = (replyToId ?? threadId) ? String(replyToId ?? threadId) : undefined;
 
+        // Build bot profile if configured
+        const botProfile = (account.botNickname || account.botAvatar)
+          ? { nickname: account.botNickname, avatar: account.botAvatar }
+          : undefined;
         if (parsed.kind === "dm") {
-          return await sendDmWithStory({ fromShip, toShip: parsed.ship, story, replyToId: replyId });
+          return await sendDmWithStory({ fromShip, toShip: parsed.ship, story, replyToId: replyId, botProfile });
         }
         // Channel post (chat, heap, or diary)
         return await sendChannelPost({
@@ -171,6 +180,7 @@ const tlonOutbound: ChannelOutboundAdapter = {
           nest: parsed.nest,
           story,
           replyToId: replyId,
+          botProfile,
         });
       },
     );

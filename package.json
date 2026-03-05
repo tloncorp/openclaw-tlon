@@ -38,7 +38,7 @@
     "test:all": "vitest run"
   },
   "dependencies": {
-    "@tloncorp/api": "github:tloncorp/api-beta#c5eb1720d94435b62503605acb294ef42a5440b3",
+    "@tloncorp/api": "github:tloncorp/api-beta#feature/bot-profile-sendpost",
     "@tloncorp/tlon-skill": "^0.1.11",
     "@urbit/aura": "^3.0.0",
     "@urbit/http-api": "^3.0.0",

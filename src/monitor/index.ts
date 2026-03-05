@@ -202,6 +202,13 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
   // Track threads we've participated in (by parentId) - respond without mention requirement
   const participatedThreads = new Set<string>();
 
+  // Track consecutive bot responses per channel/DM for rate limiting
+  // Key: channel nest or dm partner ship, Value: count of consecutive bot messages
+  const consecutiveBotMessages = new Map<string, number>();
+  // Known bot ships (ships that have sent messages with BotProfile author)
+  const knownBotShips = new Set<string>();
+  const maxBotResponses = account.maxConsecutiveBotResponses ?? 3;
+
   // Track DM senders per session to detect shared sessions (security warning)
   const dmSendersBySession = new Map<string, Set<string>>();
   let sharedSessionWarningSent = false;
@@ -1423,9 +1430,35 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         id: messageId,
       });
 
+      // Check if sender is a bot (BotProfile object has ship, nickname, avatar)
+      const authorRaw = content?.author;
+      const isSenderBot = typeof authorRaw === 'object' && authorRaw !== null && 'ship' in authorRaw;
+      if (isSenderBot) {
+        knownBotShips.add(senderShip);
+      }
+
       // Skip processing bot's own messages (but they're already cached above)
       if (senderShip === botShipName) {
+        // Reset consecutive bot counter since we responded
+        consecutiveBotMessages.set(nest, 0);
         return;
+      }
+
+      // Track consecutive bot messages for rate limiting
+      const isKnownBot = isSenderBot || knownBotShips.has(senderShip);
+      if (isKnownBot) {
+        const count = (consecutiveBotMessages.get(nest) ?? 0) + 1;
+        consecutiveBotMessages.set(nest, count);
+        runtime.log?.(`[tlon] Bot message from ${senderShip} in ${nest}: consecutive count = ${count}`);
+        
+        // Check if we should skip responding due to rate limit
+        if (maxBotResponses > 0 && count > maxBotResponses) {
+          runtime.log?.(`[tlon] Rate limiting: skipping response to bot ${senderShip} (count ${count} > limit ${maxBotResponses})`);
+          return;
+        }
+      } else {
+        // Non-bot message resets the counter
+        consecutiveBotMessages.set(nest, 0);
       }
 
       // Get thread info early for participation check
@@ -1680,12 +1713,38 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         });
       }
 
+      // Check if sender is a bot (BotProfile object has ship, nickname, avatar)
+      const dmAuthorRaw = dmContent?.author;
+      const isDmSenderBot = typeof dmAuthorRaw === 'object' && dmAuthorRaw !== null && 'ship' in dmAuthorRaw;
+      if (isDmSenderBot) {
+        knownBotShips.add(senderShip);
+      }
+
       // Skip processing bot's own messages (but they're already cached above)
       if (authorShip === botShipName) {
+        // Reset consecutive bot counter since we responded
+        consecutiveBotMessages.set(dmCacheKey, 0);
         return;
       }
       if (!senderShip || senderShip === botShipName) {
         return;
+      }
+
+      // Track consecutive bot messages for rate limiting (DMs)
+      const isDmKnownBot = isDmSenderBot || knownBotShips.has(senderShip);
+      if (isDmKnownBot) {
+        const count = (consecutiveBotMessages.get(dmCacheKey) ?? 0) + 1;
+        consecutiveBotMessages.set(dmCacheKey, count);
+        runtime.log?.(`[tlon] Bot DM from ${senderShip}: consecutive count = ${count}`);
+        
+        // Check if we should skip responding due to rate limit
+        if (maxBotResponses > 0 && count > maxBotResponses) {
+          runtime.log?.(`[tlon] Rate limiting: skipping DM response to bot ${senderShip} (count ${count} > limit ${maxBotResponses})`);
+          return;
+        }
+      } else {
+        // Non-bot message resets the counter
+        consecutiveBotMessages.set(dmCacheKey, 0);
       }
 
       // Log mismatch between author and partner for debugging

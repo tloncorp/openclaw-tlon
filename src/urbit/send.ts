@@ -47,12 +47,19 @@ function formatSentAt(sentAt: number): string {
 
 // --- DMs ---
 
+/** Optional bot profile for custom display name/avatar */
+type BotProfile = {
+  nickname?: string | null;
+  avatar?: string | null;
+};
+
 type SendTextParams = {
   fromShip: string;
   toShip: string;
   text: string;
   replyToId?: string | null;
   parentAuthor?: string;
+  botProfile?: BotProfile;
 };
 
 type SendStoryParams = {
@@ -61,11 +68,12 @@ type SendStoryParams = {
   story: Story;
   replyToId?: string | null;
   parentAuthor?: string;
+  botProfile?: BotProfile;
 };
 
 export async function sendDm(params: SendTextParams) {
   const story: Story = markdownToStory(params.text);
-  return sendDmWithStory({ ...params, story });
+  return sendDmWithStory({ ...params, story, botProfile: params.botProfile });
 }
 
 export async function sendDmWithStory({
@@ -74,6 +82,7 @@ export async function sendDmWithStory({
   story,
   replyToId,
   parentAuthor,
+  botProfile,
 }: SendStoryParams) {
   const sentAt = Date.now();
   const messageId = `${fromShip}/${formatSentAt(sentAt)}`;
@@ -90,6 +99,7 @@ export async function sendDmWithStory({
       content: story,
       sentAt,
       authorId: fromShip,
+      botProfile,
     });
     return { channel: "tlon", messageId };
   }
@@ -99,6 +109,7 @@ export async function sendDmWithStory({
     authorId: fromShip,
     sentAt,
     content: story,
+    botProfile,
   });
   return { channel: "tlon", messageId };
 }
@@ -113,6 +124,8 @@ type SendChannelPostParams = {
   replyToId?: string | null;
   /** Optional title for heap/diary posts */
   title?: string;
+  /** Optional bot profile for custom display name/avatar */
+  botProfile?: BotProfile;
 };
 
 /**
@@ -125,6 +138,7 @@ export async function sendChannelPost({
   story,
   replyToId,
   title,
+  botProfile,
 }: SendChannelPostParams) {
   const sentAt = Date.now();
 
@@ -137,6 +151,7 @@ export async function sendChannelPost({
       content: story,
       sentAt,
       authorId: fromShip,
+      botProfile,
     });
     return { channel: "tlon", messageId: `${fromShip}/${sentAt}` };
   }
@@ -147,6 +162,7 @@ export async function sendChannelPost({
     sentAt,
     content: story,
     metadata: title ? { title } : undefined,
+    botProfile,
   });
   return { channel: "tlon", messageId: `${fromShip}/${sentAt}` };
 }

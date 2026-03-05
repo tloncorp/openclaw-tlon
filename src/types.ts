@@ -22,6 +22,12 @@ export type TlonResolvedAccount = {
   ownerShip: string | null;
   /** Controls agent reaction behavior: off | ack | minimal | extensive (default: minimal) */
   reactionLevel: string | null;
+  /** Bot display name - shown in UI instead of ship name */
+  botNickname: string | null;
+  /** Bot avatar URL - shown in UI instead of ship avatar */
+  botAvatar: string | null;
+  /** Max consecutive responses to another bot before stopping (default: 3) */
+  maxConsecutiveBotResponses: number | null;
 };
 
 export function resolveTlonAccount(
@@ -45,6 +51,9 @@ export function resolveTlonAccount(
         autoAcceptGroupInvites?: boolean;
         ownerShip?: string;
         reactionLevel?: string;
+        botNickname?: string;
+        botAvatar?: string;
+        maxConsecutiveBotResponses?: number;
         accounts?: Record<string, Record<string, unknown>>;
       }
     | undefined;
@@ -69,6 +78,9 @@ export function resolveTlonAccount(
       defaultAuthorizedShips: [],
       ownerShip: null,
       reactionLevel: null,
+      botNickname: null,
+      botAvatar: null,
+      maxConsecutiveBotResponses: null,
     };
   }
 
@@ -100,6 +112,11 @@ export function resolveTlonAccount(
     null) as boolean | null;
   const ownerShip = (account?.ownerShip ?? base.ownerShip ?? null) as string | null;
   const reactionLevel = (account?.reactionLevel ?? base.reactionLevel ?? null) as string | null;
+  const botNickname = ((account as Record<string, unknown>)?.botNickname ?? base.botNickname ?? null) as string | null;
+  const botAvatar = ((account as Record<string, unknown>)?.botAvatar ?? base.botAvatar ?? null) as string | null;
+  const maxConsecutiveBotResponses = ((account as Record<string, unknown>)?.maxConsecutiveBotResponses ??
+    base.maxConsecutiveBotResponses ??
+    null) as number | null;
   const defaultAuthorizedShips = ((account as Record<string, unknown>)?.defaultAuthorizedShips ??
     (base as Record<string, unknown>)?.defaultAuthorizedShips ??
     []) as string[];
@@ -124,6 +141,9 @@ export function resolveTlonAccount(
     defaultAuthorizedShips,
     ownerShip,
     reactionLevel,
+    botNickname,
+    botAvatar,
+    maxConsecutiveBotResponses,
   };
 }
 

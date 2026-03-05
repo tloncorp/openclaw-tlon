@@ -33,6 +33,11 @@ export const TlonAccountSchema = z.object({
   ownerShip: ShipSchema.optional(), // Ship that receives approval requests and can approve/deny
   // Reaction level: off (no reactions), ack (notify only), minimal (react sparingly), extensive (react freely)
   reactionLevel: ReactionLevelSchema.optional(),
+  // Bot profile - displayed in UI instead of ship name/avatar
+  botNickname: z.string().optional(), // Display name for the bot
+  botAvatar: z.string().url().optional(), // Avatar URL for the bot
+  // Rate limiting for bot-to-bot responses
+  maxConsecutiveBotResponses: z.number().int().min(0).optional(), // Max consecutive responses to another bot (default: 3)
 });
 
 export const TlonConfigSchema = z.object({
@@ -56,6 +61,11 @@ export const TlonConfigSchema = z.object({
   ownerShip: ShipSchema.optional(), // Ship that receives approval requests and can approve/deny
   // Reaction level: off (no reactions), ack (notify only), minimal (react sparingly), extensive (react freely)
   reactionLevel: ReactionLevelSchema.optional(),
+  // Bot profile - displayed in UI instead of ship name/avatar
+  botNickname: z.string().optional(), // Display name for the bot
+  botAvatar: z.string().url().optional(), // Avatar URL for the bot
+  // Rate limiting for bot-to-bot responses
+  maxConsecutiveBotResponses: z.number().int().min(0).optional(), // Max consecutive responses to another bot (default: 3)
 });
 
 export const tlonChannelConfigSchema = buildChannelConfigSchema(TlonConfigSchema);
