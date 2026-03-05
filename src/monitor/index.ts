@@ -1716,29 +1716,12 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         });
       }
 
-      // Check if sender is a bot (BotProfile object has ship, nickname, avatar)
-      const dmAuthorRaw = dmContent?.author;
-      const isDmSenderBot = typeof dmAuthorRaw === 'object' && dmAuthorRaw !== null && 'ship' in dmAuthorRaw;
-      if (isDmSenderBot) {
-        knownBotShips.add(senderShip);
-      }
-
       // Skip processing bot's own messages (but they're already cached above)
       if (authorShip === botShipName) {
-        // Reset consecutive bot counter since we responded
-        consecutiveBotMessages.set(dmCacheKey, 0);
         return;
       }
       if (!senderShip || senderShip === botShipName) {
         return;
-      }
-
-      // Check if sender is a known bot (for rate limiting later)
-      const isDmKnownBot = isDmSenderBot || knownBotShips.has(senderShip);
-      
-      // Non-bot messages reset the consecutive bot counter
-      if (!isDmKnownBot) {
-        consecutiveBotMessages.set(dmCacheKey, 0);
       }
 
       // Log mismatch between author and partner for debugging
@@ -1810,18 +1793,6 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
           runtime.log?.(`[tlon] Blocked DM from ${senderShip}: not in allowlist`);
         }
         return;
-      }
-
-      // Rate limit consecutive bot DMs (only for messages we'd actually respond to)
-      if (isDmKnownBot) {
-        const count = (consecutiveBotMessages.get(dmCacheKey) ?? 0) + 1;
-        consecutiveBotMessages.set(dmCacheKey, count);
-        runtime.log?.(`[tlon] Bot DM from ${senderShip}: consecutive count = ${count}`);
-        
-        if (maxBotResponses > 0 && count > maxBotResponses) {
-          runtime.log?.(`[tlon] Rate limiting: skipping DM response to bot ${senderShip} (count ${count} > limit ${maxBotResponses})`);
-          return;
-        }
       }
 
       await processMessage({
