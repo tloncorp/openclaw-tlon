@@ -12,8 +12,8 @@ importers:
         specifier: github:tloncorp/api-beta#c5eb1720d94435b62503605acb294ef42a5440b3
         version: https://codeload.github.com/tloncorp/api-beta/tar.gz/c5eb1720d94435b62503605acb294ef42a5440b3
       '@tloncorp/tlon-skill':
-        specifier: ^0.2.1
-        version: 0.2.1
+        specifier: ^0.2.2
+        version: 0.2.2
       '@urbit/aura':
         specifier: ^3.0.0
         version: 3.0.0
@@ -1990,32 +1990,32 @@ packages:
     resolution: {tarball: https://codeload.github.com/tloncorp/api-beta/tar.gz/c5eb1720d94435b62503605acb294ef42a5440b3}
     version: 0.0.2
 
-  '@tloncorp/tlon-skill-darwin-arm64@0.2.1':
-    resolution: {integrity: sha512-Os/Z9nOG2vcqk5eLyWwIxKR78CkNn7yVuiamdgGH0CHj7reXGvScP5Tsh+WT/01DZjAxOkzq1rD9FY1TOLOlLA==}
+  '@tloncorp/tlon-skill-darwin-arm64@0.2.2':
+    resolution: {integrity: sha512-R6RPBZKwOlhJm8BkPCbnhLJ9XKPCCp0a3nq1QUCT2bN4orp/IbKFaqGK2mjZsxzKT8aPPPnRqviqpGioDdItuA==}
     cpu: [arm64]
     os: [darwin]
     hasBin: true
 
-  '@tloncorp/tlon-skill-darwin-x64@0.2.1':
-    resolution: {integrity: sha512-XDlcoTkEXCH3CqftedoFTB/1fs1SXY7UtbLnMJOS/ijEiXQ/ZhwuhHMx8svU7IEjpYAWlTA25B0rXo4hQWMiGg==}
+  '@tloncorp/tlon-skill-darwin-x64@0.2.2':
+    resolution: {integrity: sha512-KdhoF/V4sBty4vKXMljpjSp8YBUyFSOTkxlxoe4qqK3NiNSEADp5VwGEv+2BkmaG68xtfoSnOKoQIDog17S0Fw==}
     cpu: [x64]
     os: [darwin]
     hasBin: true
 
-  '@tloncorp/tlon-skill-linux-arm64@0.2.1':
-    resolution: {integrity: sha512-5+h7m7+H5CFikL3Xw/nJUCXOJnHDxJIyAClWtdgZX3FgDXKUika5STY3XVojdQvco54vSR6oVP1Z5z05dsJSnw==}
+  '@tloncorp/tlon-skill-linux-arm64@0.2.2':
+    resolution: {integrity: sha512-h1ih72PCEWZUuJx0ugmJgB934wzhKqSd0Qa1/UGgCJJoIr7JPxZEIBoM4QJ8mBo+8nBbYWb1tCacL20lSGgKjw==}
     cpu: [arm64]
     os: [linux]
     hasBin: true
 
-  '@tloncorp/tlon-skill-linux-x64@0.2.1':
-    resolution: {integrity: sha512-vjn93YUeZDYMmEipLy5bIeqpUfgQ3GYsa8ZiA0f3ho6a3ZFbPCn/zbRyj48OLtsphtEkKQNPDTIsq+tbjJnz8A==}
+  '@tloncorp/tlon-skill-linux-x64@0.2.2':
+    resolution: {integrity: sha512-kV295YRWiAxMX15zaLv9sdDp/4lKZl7zxKNln3pCaLYKOCDsbL/7fc8xgzaLIvumWsv8Hs8ShzmxSDjlXpS8Nw==}
     cpu: [x64]
     os: [linux]
     hasBin: true
 
-  '@tloncorp/tlon-skill@0.2.1':
-    resolution: {integrity: sha512-HCsg2vFW2UCjoRjL8/WEuIBhmLKr2IqXVHzT8gQnDt1N5ImrwTB00zcCkoX56SjywLFHQMY7mribEgCOgvxOjw==}
+  '@tloncorp/tlon-skill@0.2.2':
+    resolution: {integrity: sha512-2rxi9HdnwMGMTrqstDDwLDk9jB8vWGaVSL8Nh/kT8DTq3F6FA+6TiNmNMWBEWPdnPGLpGpf4ywoxq9/9vobv+w==}
     hasBin: true
 
   '@tokenizer/inflate@0.4.1':
@@ -6855,24 +6855,24 @@ snapshots:
     transitivePeerDependencies:
       - aws-crt
 
-  '@tloncorp/tlon-skill-darwin-arm64@0.2.1':
+  '@tloncorp/tlon-skill-darwin-arm64@0.2.2':
     optional: true
 
-  '@tloncorp/tlon-skill-darwin-x64@0.2.1':
+  '@tloncorp/tlon-skill-darwin-x64@0.2.2':
     optional: true
 
-  '@tloncorp/tlon-skill-linux-arm64@0.2.1':
+  '@tloncorp/tlon-skill-linux-arm64@0.2.2':
     optional: true
 
-  '@tloncorp/tlon-skill-linux-x64@0.2.1':
+  '@tloncorp/tlon-skill-linux-x64@0.2.2':
     optional: true
 
-  '@tloncorp/tlon-skill@0.2.1':
+  '@tloncorp/tlon-skill@0.2.2':
     optionalDependencies:
-      '@tloncorp/tlon-skill-darwin-arm64': 0.2.1
-      '@tloncorp/tlon-skill-darwin-x64': 0.2.1
-      '@tloncorp/tlon-skill-linux-arm64': 0.2.1
-      '@tloncorp/tlon-skill-linux-x64': 0.2.1
+      '@tloncorp/tlon-skill-darwin-arm64': 0.2.2
+      '@tloncorp/tlon-skill-darwin-x64': 0.2.2
+      '@tloncorp/tlon-skill-linux-arm64': 0.2.2
+      '@tloncorp/tlon-skill-linux-x64': 0.2.2
 
   '@tokenizer/inflate@0.4.1':
     dependencies:
