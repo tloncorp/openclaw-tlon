@@ -39,7 +39,7 @@
   },
   "dependencies": {
     "@tloncorp/api": "github:tloncorp/api-beta#749f93b",
-    "@tloncorp/tlon-skill": "^0.1.11",
+    "@tloncorp/tlon-skill": "^0.2.2",
     "@urbit/aura": "^3.0.0",
     "@urbit/http-api": "^3.0.0",
     "zod": "^4.3.6"
@@ -52,7 +52,7 @@
     "openclaw": "2026.2.25",
     "oxfmt": "0.27.0",
     "oxlint": "^1.42.0",
-    "oxlint-tsgolint": "^0.12.2",
+    "oxlint-tsgolint": "^0.16.0",
     "typescript": "^5.7.0",
     "vitest": "^4.0.0",
     "zod": "^4.3.6"
