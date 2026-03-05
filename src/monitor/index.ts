@@ -208,8 +208,6 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
   // Known bot ships (ships that have sent messages with BotProfile author)
   const knownBotShips = new Set<string>();
   const maxBotResponses = account.maxConsecutiveBotResponses ?? 3;
-  // When we hit the bot response limit, store info for the addendum message
-  let botLimitAddendum: { nest: string; botShip: string } | null = null;
 
   // Track DM senders per session to detect shared sessions (security warning)
   const dmSendersBySession = new Map<string, Set<string>>();
@@ -1271,10 +1269,12 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
           }
 
           // Add addendum if this is the last response before bot rate limit
-          if (botLimitAddendum && isGroup && groupChannel === botLimitAddendum.nest) {
-            const otherBot = formatShipWithNickname(botLimitAddendum.botShip);
-            replyText += `\n\n---\n_This is my last response to ${otherBot} for now. To continue our conversation, someone will need to mention me._`;
-            botLimitAddendum = null; // Clear after use
+          if (isGroup && groupChannel && knownBotShips.has(senderShip)) {
+            const count = consecutiveBotMessages.get(groupChannel) ?? 0;
+            if (maxBotResponses > 0 && count === maxBotResponses) {
+              const otherBot = formatShipWithNickname(senderShip);
+              replyText += `\n\n---\n_This is my last response to ${otherBot} for now. To continue our conversation, someone will need to mention me._`;
+            }
           }
 
           if (isGroup && groupChannel) {
@@ -1488,16 +1488,10 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
           runtime.log?.(`[tlon] Rate limiting: skipping response to bot ${senderShip} (count ${count} > limit ${maxBotResponses})`);
           return;
         }
-        
-        // If this is the last response before limit, set up addendum
-        if (maxBotResponses > 0 && count === maxBotResponses) {
-          botLimitAddendum = { nest, botShip: senderShip };
-        }
       } else {
         // Human mention resets the consecutive bot counter
         // (requires explicit engagement, not just any human message)
         consecutiveBotMessages.set(nest, 0);
-        botLimitAddendum = null; // Clear any pending addendum
         runtime.log?.(`[tlon] Human mention from ${senderShip} in ${nest}: reset bot counter`);
       }
 
