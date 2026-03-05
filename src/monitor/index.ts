@@ -1446,11 +1446,6 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
 
       // Check if sender is a known bot (for rate limiting later)
       const isKnownBot = isSenderBot || knownBotShips.has(senderShip);
-      
-      // Non-bot messages reset the consecutive bot counter (even if not mentioning us)
-      if (!isKnownBot) {
-        consecutiveBotMessages.set(nest, 0);
-      }
 
       // Get thread info early for participation check
       const seal = isThreadReply
@@ -1474,7 +1469,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         runtime.log?.(`[tlon] Responding to thread we participated in (no mention): ${parentId}`);
       }
 
-      // Rate limit consecutive bot responses (only for messages we'd actually respond to)
+      // Rate limit consecutive bot responses (only in group channels)
       if (isKnownBot) {
         const count = (consecutiveBotMessages.get(nest) ?? 0) + 1;
         consecutiveBotMessages.set(nest, count);
@@ -1484,6 +1479,11 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
           runtime.log?.(`[tlon] Rate limiting: skipping response to bot ${senderShip} (count ${count} > limit ${maxBotResponses})`);
           return;
         }
+      } else {
+        // Human mention resets the consecutive bot counter
+        // (requires explicit engagement, not just any human message)
+        consecutiveBotMessages.set(nest, 0);
+        runtime.log?.(`[tlon] Human mention from ${senderShip} in ${nest}: reset bot counter`);
       }
 
       // Owner is always allowed
