@@ -9,21 +9,17 @@
  * The current test environment only has one bot, so loop scenarios are skipped.
  */
 import { describe, test, expect, beforeAll } from "vitest";
-import { getFixtures, type TestFixtures } from "../lib/index.js";
+import { getFixtures, requireFixtureGroup, type TestFixtures } from "../lib/index.js";
 
 describe("loop protection", () => {
   let fixtures: TestFixtures;
-  let hasGroup: boolean;
   let hasThirdParty: boolean;
 
   beforeAll(async () => {
     fixtures = await getFixtures();
-    hasGroup = !!fixtures.group;
+    requireFixtureGroup(fixtures);
     hasThirdParty = !!fixtures.thirdPartyClient;
-    
-    if (!hasGroup) {
-      console.log("[LOOP-PROTECTION] Skipping channel tests - fixture group not available");
-    }
+
     if (!hasThirdParty) {
       console.log("[LOOP-PROTECTION] Skipping third-party tests - not configured");
     }
@@ -31,11 +27,6 @@ describe("loop protection", () => {
 
   describe("human interactions", () => {
     test("human mention resets consecutive bot counter", async () => {
-      if (!hasGroup) {
-        console.log("[TEST] Skipped - no fixture group");
-        return;
-      }
-
       // Owner sends a message in the channel
       // This should reset any consecutive bot counter for this channel
       const response = await fixtures.client.prompt(
@@ -49,11 +40,6 @@ describe("loop protection", () => {
     });
 
     test("consecutive human mentions all get responses", async () => {
-      if (!hasGroup) {
-        console.log("[TEST] Skipped - no fixture group");
-        return;
-      }
-
       // Send multiple messages as the owner (human)
       // All should get responses since humans aren't rate-limited
       for (let i = 1; i <= 3; i++) {
@@ -93,7 +79,7 @@ describe("loop protection", () => {
     /**
      * These tests require two OpenClaw bots in the same channel.
      * The current test environment only has one bot (~zod).
-     * 
+     *
      * To test properly, you would need:
      * 1. Two ships running OpenClaw bots
      * 2. Both bots in the same group channel
