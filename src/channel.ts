@@ -69,7 +69,7 @@ async function getBotProfile(ship: string): Promise<BotProfile | undefined> {
     }
   } catch (err) {
     console.log(`[tlon] Could not fetch self profile for bot meta: ${err}`);
-    profileCache.set(ship, null); // Mark as attempted
+    // Don't cache failures - allow retry on next send
   }
 
   return undefined;
