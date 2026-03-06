@@ -117,36 +117,17 @@ async function setupFixtures(): Promise<TestFixtures> {
         chatChannel: chatChannel ?? `chat/${existing.id}/general`,
       };
     } else {
-      // Create new group via the agent
+      // Create new group directly via API (more reliable than prompting agent)
       const suffix = Date.now().toString(36);
       const groupTitle = `OpenClaw Test Fixtures ${suffix}`;
 
-      const createResponse = await client.prompt(
-        `Create a private group with title "${groupTitle}". After creating it, tell me the group id.`,
-        { timeoutMs: 90_000 }
-      );
-
-      if (createResponse.success) {
-        // Wait for group to appear
-        const created = await waitFor(async () => {
-          const groups = await botState.groups();
-          return (groups ?? []).find((g) => {
-            const gr = g as { title?: string };
-            return gr.title === groupTitle;
-          }) as { id?: string; title?: string; channels?: Array<{ id?: string }> } | undefined;
-        }, 45_000);
-
-        if (created?.id) {
-          const channels = created.channels ?? [];
-          const chatChannel = channels.find((c) => c.id?.includes("chat"))?.id;
-          group = {
-            id: created.id,
-            title: groupTitle,
-            chatChannel: chatChannel ?? `chat/${created.id}/general`,
-          };
-          console.log(`[FIXTURES] ✓ Created group: ${created.id}`);
-        }
-      }
+      const { groupId, chatChannel } = await botState.createGroup(groupTitle);
+      group = {
+        id: groupId,
+        title: groupTitle,
+        chatChannel,
+      };
+      console.log(`[FIXTURES] ✓ Created group: ${groupId}`);
     }
   } catch (err) {
     console.log(`[FIXTURES] Warning: Failed to create group: ${err}`);
