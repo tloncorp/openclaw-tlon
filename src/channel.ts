@@ -58,13 +58,13 @@ async function getBotProfile(ship: string): Promise<BotProfile | undefined> {
     }>({ app: "contacts", path: "/v1/self" });
     
     const profile: BotProfile = {
-      nickname: selfProfile?.nickname?.value ?? null,
-      avatar: selfProfile?.avatar?.value ?? null,
+      nickname: selfProfile?.nickname?.value ?? "",
+      avatar: selfProfile?.avatar?.value ?? "",
     };
     profileCache.set(ship, profile);
     
     if (profile.nickname || profile.avatar) {
-      console.log(`[tlon] Using self profile for bot meta (${ship}): ${profile.nickname ?? '(no nickname)'}`);
+      console.log(`[tlon] Using self profile for bot meta (${ship}): ${profile.nickname || "(no nickname)"}`);
       return profile;
     }
   } catch (err) {

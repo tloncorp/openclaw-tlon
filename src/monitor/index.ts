@@ -9,7 +9,7 @@ import { resolveTlonAccount } from "../types.js";
 import { authenticate } from "../urbit/auth.js";
 import { ssrfPolicyFromAllowPrivateNetwork } from "../urbit/context.js";
 import { configureTlonApiWithPoke } from "../urbit/api-client.js";
-import { sendDm, sendChannelPost } from "../urbit/send.js";
+import { sendDm, sendChannelPost, type BotProfile } from "../urbit/send.js";
 import { markdownToStory } from "../urbit/story.js";
 import { UrbitSSEClient } from "../urbit/sse-client.js";
 import {
@@ -184,9 +184,9 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
   let botAvatar: string | null = null;
 
   // Helper to get bot profile for outbound messages
-  const getBotProfile = () =>
+  const getBotProfile = (): BotProfile | undefined =>
     botNickname || botAvatar
-      ? { nickname: botNickname, avatar: botAvatar }
+      ? { nickname: botNickname || "", avatar: botAvatar || "" }
       : undefined;
 
   // Settings store manager for hot-reloading config
