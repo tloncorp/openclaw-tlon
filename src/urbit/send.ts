@@ -49,8 +49,9 @@ function formatSentAt(sentAt: number): string {
 
 /** Optional bot profile for custom display name/avatar */
 export type BotProfile = {
-  nickname?: string | null;
-  avatar?: string | null;
+  // Use empty string instead of undefined to ensure consistent serialization
+  nickname: string;
+  avatar: string;
 };
 
 type SendTextParams = {

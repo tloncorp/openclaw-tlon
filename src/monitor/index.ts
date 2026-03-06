@@ -9,7 +9,7 @@ import { resolveTlonAccount } from "../types.js";
 import { authenticate } from "../urbit/auth.js";
 import { ssrfPolicyFromAllowPrivateNetwork } from "../urbit/context.js";
 import { configureTlonApiWithPoke } from "../urbit/api-client.js";
-import { sendDm, sendChannelPost } from "../urbit/send.js";
+import { sendDm, sendChannelPost, type BotProfile } from "../urbit/send.js";
 import { markdownToStory } from "../urbit/story.js";
 import { UrbitSSEClient } from "../urbit/sse-client.js";
 import {
@@ -181,6 +181,13 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
   let groupChannels: string[] = [];
   const channelToGroup = new Map<string, string>();
   let botNickname: string | null = null;
+  let botAvatar: string | null = null;
+
+  // Helper to get bot profile for outbound messages
+  const getBotProfile = (): BotProfile | undefined =>
+    botNickname || botAvatar
+      ? { nickname: botNickname || "", avatar: botAvatar || "" }
+      : undefined;
 
   // Settings store manager for hot-reloading config
   const settingsManager = createSettingsManager(api, {
@@ -237,8 +244,9 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
   try {
     const selfProfile = await api.scry("/contacts/v1/self.json");
     if (selfProfile && typeof selfProfile === "object") {
-      const profile = selfProfile as { nickname?: { value?: string } };
+      const profile = selfProfile as { nickname?: { value?: string }; avatar?: { value?: string } };
       botNickname = profile.nickname?.value || null;
+      botAvatar = profile.avatar?.value || null;
       if (botNickname) {
         runtime.log?.(`[tlon] Bot nickname: ${botNickname}`);
         nicknameCache.set(botShipName, sanitizeNickname(botNickname));
@@ -692,6 +700,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     }
     try {
       await sendDm({
+        botProfile: getBotProfile(),
         fromShip: botShipName,
         toShip: effectiveOwnerShip,
         text: message,
@@ -1123,12 +1132,14 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
             "I couldn't fetch any messages for this channel. It might be empty or there might be a permissions issue.";
           if (isGroup && groupChannel) {
             await sendChannelPost({
+              botProfile: getBotProfile(),
               fromShip: botShipName,
               nest: groupChannel,
               story: markdownToStory(noHistoryMsg),
             });
           } else {
             await sendDm({
+              botProfile: getBotProfile(),
               fromShip: botShipName,
               toShip: senderShip,
               text: noHistoryMsg,
@@ -1154,12 +1165,13 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         const errorMsg = `Sorry, I encountered an error while fetching the channel history: ${error?.message ?? String(error)}`;
         if (isGroup && groupChannel) {
           await sendChannelPost({
+            botProfile: getBotProfile(),
             fromShip: botShipName,
             nest: groupChannel,
             story: markdownToStory(errorMsg),
           });
         } else {
-          await sendDm({ fromShip: botShipName, toShip: senderShip, text: errorMsg });
+          await sendDm({ botProfile: getBotProfile(), fromShip: botShipName, toShip: senderShip, text: errorMsg });
         }
         return;
       }
@@ -1201,6 +1213,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
 
           // Send async, don't block message processing
           sendDm({
+            botProfile: getBotProfile(),
             fromShip: botShipName,
             toShip: effectiveOwnerShip,
             text: warningMsg,
@@ -1349,6 +1362,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
           if (isGroup && groupChannel) {
             // Send to any channel type (chat, heap, diary) using the nest directly
             await sendChannelPost({
+              botProfile: getBotProfile(),
               fromShip: botShipName,
               nest: groupChannel,
               story: markdownToStory(replyText),
@@ -1360,7 +1374,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
               runtime.log?.(`[tlon] Now tracking thread for future replies: ${deliverParentId}`);
             }
           } else {
-            await sendDm({ fromShip: botShipName, toShip: senderShip, text: replyText, replyToId: deliverParentId ? String(deliverParentId) : undefined });
+            await sendDm({ botProfile: getBotProfile(), fromShip: botShipName, toShip: senderShip, text: replyText, replyToId: deliverParentId ? String(deliverParentId) : undefined });
           }
         },
         onError: (err, info) => {
@@ -1930,7 +1944,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
           // Look for self profile updates
           if (event?.self) {
             const selfUpdate = event.self;
-            if (selfUpdate?.contact?.nickname?.value !== undefined) {
+            if (selfUpdate?.contact?.nickname?.value !== undefined || selfUpdate?.contact?.avatar?.value !== undefined) {
               const newNickname = selfUpdate.contact.nickname.value || null;
               if (newNickname !== botNickname) {
                 botNickname = newNickname;
@@ -1940,6 +1954,11 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
                 } else {
                   nicknameCache.delete(botShipName);
                 }
+              }
+              const newAvatar = selfUpdate.contact?.avatar?.value || null;
+              if (newAvatar !== botAvatar) {
+                botAvatar = newAvatar;
+                runtime.log?.(`[tlon] Bot avatar updated: ${botAvatar ? "set" : "cleared"}`);
               }
             }
           }
