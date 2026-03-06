@@ -55,7 +55,7 @@ async function getBotProfile(ship: string): Promise<BotProfile | undefined> {
     const selfProfile = await scry<{
       nickname?: { value?: string };
       avatar?: { value?: string };
-    }>({ app: "contacts", path: "/v1/self" });
+    }>({ app: "contacts", path: "/v1/self.json" });
     
     const profile: BotProfile = {
       nickname: selfProfile?.nickname?.value ?? null,

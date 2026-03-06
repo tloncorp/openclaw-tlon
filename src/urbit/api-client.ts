@@ -76,7 +76,7 @@ export async function withAuthenticatedTlonApi<T>(
 
   // Build a scry function using the authenticated cookie
   const scryFn: ScryFn = async ({ app, path }) => {
-    const scryPath = `/~/scry/${app}${path}.json`;
+    const scryPath = `/~/scry/${app}${path}`;
     const { response, release } = await urbitFetch({
       baseUrl: params.url,
       path: scryPath,
