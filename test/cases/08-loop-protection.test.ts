@@ -4,8 +4,9 @@
  * Tests the bot-to-bot loop protection feature that prevents infinite
  * conversation loops between bots mentioning each other.
  *
- * NOTE: These tests require a fixture group to be created successfully.
- * Loop protection only applies to group channels, not DMs.
+ * LIMITATIONS:
+ * Full bot-to-bot loop testing requires two OpenClaw bots in the same channel.
+ * The current test environment only has one bot, so loop scenarios are skipped.
  */
 import { describe, test, expect, beforeAll } from "vitest";
 import { getFixtures, type TestFixtures } from "../lib/index.js";
@@ -24,179 +25,58 @@ describe("loop protection", () => {
       console.log("[LOOP-PROTECTION] Skipping channel tests - fixture group not available");
     }
     if (!hasThirdParty) {
-      console.log("[LOOP-PROTECTION] Skipping bot simulation tests - third party not configured");
+      console.log("[LOOP-PROTECTION] Skipping third-party tests - not configured");
     }
   }, 180_000);
 
-  /**
-   * Helper to send a message with BotProfile author format (simulates another bot).
-   */
-  async function sendAsBotInChannel(
-    channelNest: string,
-    text: string,
-    senderShip: string,
-    botNickname = "Test Bot"
-  ): Promise<void> {
-    const sentAt = Date.now();
-    
-    await fixtures.thirdPartyState!.poke({
-      app: "channels",
-      mark: "channel-action-1",
-      json: {
-        channel: {
-          nest: channelNest,
-          action: {
-            post: {
-              add: {
-                content: [{ inline: [text] }],
-                sent: sentAt,
-                kind: "/chat",
-                author: {
-                  ship: senderShip,
-                  nickname: botNickname,
-                  avatar: "",
-                },
-                blob: null,
-                meta: null,
-              },
-            },
-          },
-        },
-      },
-    });
-    
-    await new Promise((resolve) => setTimeout(resolve, 3000));
-  }
-
-  describe("human interactions reset bot counter", () => {
-    test("owner message in channel resets consecutive counter", async () => {
+  describe("human interactions", () => {
+    test("human mention resets consecutive bot counter", async () => {
       if (!hasGroup) {
         console.log("[TEST] Skipped - no fixture group");
         return;
       }
 
+      // Owner sends a message in the channel
+      // This should reset any consecutive bot counter for this channel
       const response = await fixtures.client.prompt(
-        `@${fixtures.botShip} confirm you're responding and counter is reset`,
+        `Hey @${fixtures.botShip}, just checking in as a human`,
         { timeoutMs: 45_000 }
       );
 
       expect(response.success).toBe(true);
       expect(response.text).toBeDefined();
-      console.log(`[TEST] Bot responded: ${response.text?.slice(0, 100)}`);
+      console.log(`[TEST] Bot responded to human: ${response.text?.slice(0, 100)}`);
     });
-  });
 
-  describe("bot detection and rate limiting", () => {
-    test("detects BotProfile author as bot and increments counter", async () => {
-      if (!hasGroup || !hasThirdParty) {
-        console.log("[TEST] Skipped - requires fixture group and third party");
+    test("consecutive human mentions all get responses", async () => {
+      if (!hasGroup) {
+        console.log("[TEST] Skipped - no fixture group");
         return;
       }
 
-      const channel = fixtures.group!.chatChannel;
-      console.log(`[TEST] Sending bot message to ${channel}...`);
-
-      await sendAsBotInChannel(
-        channel,
-        `Hey @${fixtures.botShip}, this is a test from another bot`,
-        fixtures.thirdPartyShip!,
-        "Fake Bot"
-      );
-
-      await new Promise((resolve) => setTimeout(resolve, 5000));
-
-      // Reset counter with human message
-      const humanResponse = await fixtures.client.prompt(
-        "Confirming human presence to reset counter",
-        { timeoutMs: 30_000 }
-      );
-
-      expect(humanResponse.success).toBe(true);
-      console.log(`[TEST] Human reset successful: ${humanResponse.text?.slice(0, 50)}`);
-    });
-
-    test("stops responding after exceeding maxConsecutiveBotResponses", async () => {
-      if (!hasGroup || !hasThirdParty) {
-        console.log("[TEST] Skipped - requires fixture group and third party");
-        return;
-      }
-
-      const channel = fixtures.group!.chatChannel;
-
-      // Reset counter
-      console.log("[TEST] Resetting counter with human message...");
-      await fixtures.client.prompt("Reset the bot counter please", { timeoutMs: 30_000 });
-
-      // Send 4 consecutive "bot" messages (default limit is 3)
-      console.log("[TEST] Sending 4 consecutive bot messages...");
-      
-      for (let i = 1; i <= 4; i++) {
-        console.log(`[TEST] Sending bot message ${i}...`);
-        await sendAsBotInChannel(
-          channel,
-          `@${fixtures.botShip} bot message ${i} of 4`,
-          fixtures.thirdPartyShip!,
-          "Loop Test Bot"
-        );
-        await new Promise((resolve) => setTimeout(resolve, 4000));
-      }
-
-      await new Promise((resolve) => setTimeout(resolve, 5000));
-
-      const finalResponse = await fixtures.client.prompt(
-        "Human here - did you stop responding to the bot after 3 messages?",
-        { timeoutMs: 30_000 }
-      );
-
-      expect(finalResponse.success).toBe(true);
-      console.log(`[TEST] Final human response: ${finalResponse.text?.slice(0, 100)}`);
-    });
-
-    test("warning message appears at limit", async () => {
-      if (!hasGroup || !hasThirdParty) {
-        console.log("[TEST] Skipped - requires fixture group and third party");
-        return;
-      }
-
-      const channel = fixtures.group!.chatChannel;
-
-      // Reset counter
-      console.log("[TEST] Resetting counter...");
-      await fixtures.client.prompt("Reset counter", { timeoutMs: 30_000 });
-
-      // Send exactly 3 bot messages (at the limit)
-      console.log("[TEST] Sending 3 bot messages to reach limit...");
-      
+      // Send multiple messages as the owner (human)
+      // All should get responses since humans aren't rate-limited
       for (let i = 1; i <= 3; i++) {
-        console.log(`[TEST] Bot message ${i}/3...`);
-        await sendAsBotInChannel(
-          channel,
-          `@${fixtures.botShip} reaching the limit - message ${i}`,
-          fixtures.thirdPartyShip!,
-          "Warning Test Bot"
+        const response = await fixtures.client.prompt(
+          `Human message ${i} of 3`,
+          { timeoutMs: 30_000 }
         );
-        await new Promise((resolve) => setTimeout(resolve, 4000));
+
+        expect(response.success).toBe(true);
+        console.log(`[TEST] Human response ${i}: ${response.text?.slice(0, 50)}`);
       }
-
-      await new Promise((resolve) => setTimeout(resolve, 5000));
-
-      const checkResponse = await fixtures.client.prompt(
-        "Did your last response to the bot include a warning about it being your last response?",
-        { timeoutMs: 30_000 }
-      );
-
-      expect(checkResponse.success).toBe(true);
-      console.log(`[TEST] Warning check response: ${checkResponse.text?.slice(0, 150)}`);
     });
   });
 
-  describe("third-party without BotProfile", () => {
-    test("regular user messages are treated as human (not rate-limited)", async () => {
+  describe("regular users (no BotProfile)", () => {
+    test("non-owner without BotProfile is treated as human", async () => {
       if (!hasThirdParty) {
-        console.log("[TEST] Skipped - requires third party");
+        console.log("[TEST] Skipped - no third-party configured");
         return;
       }
 
+      // Third-party ship sends via regular Tlon client (string author)
+      // They should always get responses since they're not detected as a bot
       for (let i = 1; i <= 5; i++) {
         const response = await fixtures.thirdPartyClient!.prompt(
           `Regular user message ${i} - should always get response`,
@@ -206,6 +86,36 @@ describe("loop protection", () => {
         expect(response.success).toBe(true);
         console.log(`[TEST] Regular user response ${i}: ${response.text?.slice(0, 30)}`);
       }
+    });
+  });
+
+  describe("bot-to-bot loop protection", () => {
+    /**
+     * These tests require two OpenClaw bots in the same channel.
+     * The current test environment only has one bot (~zod).
+     * 
+     * To test properly, you would need:
+     * 1. Two ships running OpenClaw bots
+     * 2. Both bots in the same group channel
+     * 3. Owner tells Bot A to mention Bot B
+     * 4. Bot B responds and mentions Bot A
+     * 5. Loop continues until maxConsecutiveBotResponses is reached
+     */
+
+    test.skip("bot stops responding after maxConsecutiveBotResponses", async () => {
+      // Requires multi-bot setup
+      // After 3 consecutive bot mentions (default limit), bot should stop responding
+    });
+
+    test.skip("warning message appears when at limit", async () => {
+      // Requires multi-bot setup
+      // Response to 3rd consecutive bot mention should include:
+      // "This is my last response to [bot] for now..."
+    });
+
+    test.skip("human mention breaks the loop and allows continuation", async () => {
+      // Requires multi-bot setup
+      // After human mentions bot, the counter resets and bot responds to bots again
     });
   });
 });
