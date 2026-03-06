@@ -9,11 +9,11 @@ importers:
   .:
     dependencies:
       '@tloncorp/api':
-        specifier: github:tloncorp/api-beta#7eede1c1a756977b09f96aa14a92e2b06318ae87
-        version: https://codeload.github.com/tloncorp/api-beta/tar.gz/7eede1c1a756977b09f96aa14a92e2b06318ae87
+        specifier: github:tloncorp/api-beta#749f93b
+        version: https://codeload.github.com/tloncorp/api-beta/tar.gz/749f93b
       '@tloncorp/tlon-skill':
-        specifier: ^0.1.11
-        version: 0.1.11
+        specifier: ^0.2.2
+        version: 0.2.2
       '@urbit/aura':
         specifier: ^3.0.0
         version: 3.0.0
@@ -35,10 +35,10 @@ importers:
         version: 0.27.0
       oxlint:
         specifier: ^1.42.0
-        version: 1.43.0(oxlint-tsgolint@0.12.2)
+        version: 1.43.0(oxlint-tsgolint@0.16.0)
       oxlint-tsgolint:
-        specifier: ^0.12.2
-        version: 0.12.2
+        specifier: ^0.16.0
+        version: 0.16.0
       typescript:
         specifier: ^5.7.0
         version: 5.9.3
@@ -1200,33 +1200,33 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@oxlint-tsgolint/darwin-arm64@0.12.2':
-    resolution: {integrity: sha512-XIfavTqkJPGYi/98z7ZCkZvXq2AccMAAB0iwvKDRTQqiweMXVUyeUdx46phCHHH1PgmIVJtVfysThkHq2xCyrw==}
+  '@oxlint-tsgolint/darwin-arm64@0.16.0':
+    resolution: {integrity: sha512-WQt5lGwRPJBw7q2KNR0mSPDAaMmZmVvDlEEti96xLO7ONhyomQc6fBZxxwZ4qTFedjJnrHX94sFelZ4OKzS7UQ==}
     cpu: [arm64]
     os: [darwin]
 
-  '@oxlint-tsgolint/darwin-x64@0.12.2':
-    resolution: {integrity: sha512-tytsvP6zmNShRNDo4GgQartOXmd4GPd+TylCUMdO/iWl9PZVOgRyswWbYVTNgn85Cib/aY2q3Uu+jOw+QlbxvQ==}
+  '@oxlint-tsgolint/darwin-x64@0.16.0':
+    resolution: {integrity: sha512-VJo29XOzdkalvCTiE2v6FU3qZlgHaM8x8hUEVJGPU2i5W+FlocPpmn00+Ld2n7Q0pqIjyD5EyvZ5UmoIEJMfqg==}
     cpu: [x64]
     os: [darwin]
 
-  '@oxlint-tsgolint/linux-arm64@0.12.2':
-    resolution: {integrity: sha512-3W38yJuF7taEquhEuD6mYQyCeWNAlc1pNPjFkspkhLKZVgbrhDA4V6fCxLDDRvrTHde0bXPmFvuPlUq5pSePgA==}
+  '@oxlint-tsgolint/linux-arm64@0.16.0':
+    resolution: {integrity: sha512-MPfqRt1+XRHv9oHomcBMQ3KpTE+CSkZz14wUxDQoqTNdUlV0HWdzwIE9q65I3D9YyxEnqpM7j4qtDQ3apqVvbQ==}
     cpu: [arm64]
     os: [linux]
 
-  '@oxlint-tsgolint/linux-x64@0.12.2':
-    resolution: {integrity: sha512-EjcEspeeV0NmaopEp4wcN5ntQP9VCJJDrTvzOjMP4W6ajz18M+pni9vkKvmcPIpRa/UmWobeFgKoVd/KGueeuQ==}
+  '@oxlint-tsgolint/linux-x64@0.16.0':
+    resolution: {integrity: sha512-XQSwVUsnwLokMhe1TD6IjgvW5WMTPzOGGkdFDtXWQmlN2YeTw94s/NN0KgDrn2agM1WIgAenEkvnm0u7NgwEyw==}
     cpu: [x64]
     os: [linux]
 
-  '@oxlint-tsgolint/win32-arm64@0.12.2':
-    resolution: {integrity: sha512-a9L7iA5K/Ht/i8d9+7RTp6hbPa4cyXP0MdySVXAO6vczpL/4ildfY9Hr2m2wqL12uK6xe/uVABpVTrqay/wV+g==}
+  '@oxlint-tsgolint/win32-arm64@0.16.0':
+    resolution: {integrity: sha512-EWdlspQiiFGsP2AiCYdhg5dTYyAlj6y1nRyNI2dQWq4Q/LITFHiSRVPe+7m7K7lcsZCEz2icN/bCeSkZaORqIg==}
     cpu: [arm64]
     os: [win32]
 
-  '@oxlint-tsgolint/win32-x64@0.12.2':
-    resolution: {integrity: sha512-Cvt40UbTf5ib12DjGN+mMGOnjWa4Bc6Y7KEaXXp9qzckvs3HpNk2wSwMV3gnuR8Ipx4hkzkzrgzD0BAUsySAfA==}
+  '@oxlint-tsgolint/win32-x64@0.16.0':
+    resolution: {integrity: sha512-1ufk8cgktXJuJZHKF63zCHAkaLMwZrEXnZ89H2y6NO85PtOXqu4zbdNl0VBpPP3fCUuUBu9RvNqMFiv0VsbXWA==}
     cpu: [x64]
     os: [win32]
 
@@ -1986,36 +1986,36 @@ packages:
     resolution: {integrity: sha512-5Kc5CM2Ysn3vTTArBs2vESUt0AQiWZA86yc1TI3B+lxXmtEq133C1nxXNOgnzhrivdPZIh3zLj5gDnZjoLL5GA==}
     engines: {node: '>=12.17.0'}
 
-  '@tloncorp/api@https://codeload.github.com/tloncorp/api-beta/tar.gz/7eede1c1a756977b09f96aa14a92e2b06318ae87':
-    resolution: {tarball: https://codeload.github.com/tloncorp/api-beta/tar.gz/7eede1c1a756977b09f96aa14a92e2b06318ae87}
+  '@tloncorp/api@https://codeload.github.com/tloncorp/api-beta/tar.gz/749f93b':
+    resolution: {tarball: https://codeload.github.com/tloncorp/api-beta/tar.gz/749f93b}
     version: 0.0.2
 
-  '@tloncorp/tlon-skill-darwin-arm64@0.1.11':
-    resolution: {integrity: sha512-JNvEKUXSs9rAPbBj0v/SM3KwaafDOOJ+YDpbKMuimDoeFomnAvM8BlsNCQuxbClCGWK8f4YttnMT9mIXBFljAA==}
+  '@tloncorp/tlon-skill-darwin-arm64@0.2.2':
+    resolution: {integrity: sha512-R6RPBZKwOlhJm8BkPCbnhLJ9XKPCCp0a3nq1QUCT2bN4orp/IbKFaqGK2mjZsxzKT8aPPPnRqviqpGioDdItuA==}
     cpu: [arm64]
     os: [darwin]
     hasBin: true
 
-  '@tloncorp/tlon-skill-darwin-x64@0.1.11':
-    resolution: {integrity: sha512-nEQNgcu3gFhPD+VBc5bBsLBjEtsWL8BgT+f0M3JzKM6YSu0OocqcD4nLrfXS1j1iHNXUqFvpzBXvNMW+KEMnOg==}
+  '@tloncorp/tlon-skill-darwin-x64@0.2.2':
+    resolution: {integrity: sha512-KdhoF/V4sBty4vKXMljpjSp8YBUyFSOTkxlxoe4qqK3NiNSEADp5VwGEv+2BkmaG68xtfoSnOKoQIDog17S0Fw==}
     cpu: [x64]
     os: [darwin]
     hasBin: true
 
-  '@tloncorp/tlon-skill-linux-arm64@0.1.11':
-    resolution: {integrity: sha512-5G9XYG/K4Z/MJsI4fbZjoBpLRmq/W/kBe4n4hqjqTPSCWkrCPIOfL3UGc9xdDWYta1d9adtGRVc+0oLma9hYKg==}
+  '@tloncorp/tlon-skill-linux-arm64@0.2.2':
+    resolution: {integrity: sha512-h1ih72PCEWZUuJx0ugmJgB934wzhKqSd0Qa1/UGgCJJoIr7JPxZEIBoM4QJ8mBo+8nBbYWb1tCacL20lSGgKjw==}
     cpu: [arm64]
     os: [linux]
     hasBin: true
 
-  '@tloncorp/tlon-skill-linux-x64@0.1.11':
-    resolution: {integrity: sha512-rziMbG0DPJTOXizXxFMqtLjfskI/7xuPNlgbCna4kMo996DlV8tcQ0SiKPpW2wG3e1NswAenFTv37Y7sxO7yDA==}
+  '@tloncorp/tlon-skill-linux-x64@0.2.2':
+    resolution: {integrity: sha512-kV295YRWiAxMX15zaLv9sdDp/4lKZl7zxKNln3pCaLYKOCDsbL/7fc8xgzaLIvumWsv8Hs8ShzmxSDjlXpS8Nw==}
     cpu: [x64]
     os: [linux]
     hasBin: true
 
-  '@tloncorp/tlon-skill@0.1.11':
-    resolution: {integrity: sha512-x2ExRNrtuI9CE8a7Ol+A1VdH7+HfmUSgUeJsKHJQlJYxOD7UYGibFkVfYhenjxfkfgol9KzO133VT8nn9fgIbw==}
+  '@tloncorp/tlon-skill@0.2.2':
+    resolution: {integrity: sha512-2rxi9HdnwMGMTrqstDDwLDk9jB8vWGaVSL8Nh/kT8DTq3F6FA+6TiNmNMWBEWPdnPGLpGpf4ywoxq9/9vobv+w==}
     hasBin: true
 
   '@tokenizer/inflate@0.4.1':
@@ -3361,8 +3361,8 @@ packages:
     engines: {node: ^20.19.0 || >=22.12.0}
     hasBin: true
 
-  oxlint-tsgolint@0.12.2:
-    resolution: {integrity: sha512-IFiOhYZfSgiHbBznTZOhFpEHpsZFSP0j7fVRake03HEkgH0YljnTFDNoRkGWsTrnrHr7nRIomSsF4TnCI/O+kQ==}
+  oxlint-tsgolint@0.16.0:
+    resolution: {integrity: sha512-4RuJK2jP08XwqtUu+5yhCbxEauCm6tv2MFHKEMsjbosK2+vy5us82oI3VLuHwbNyZG7ekZA26U2LLHnGR4frIA==}
     hasBin: true
 
   oxlint@1.43.0:
@@ -5922,22 +5922,22 @@ snapshots:
   '@oxfmt/win32-x64@0.27.0':
     optional: true
 
-  '@oxlint-tsgolint/darwin-arm64@0.12.2':
+  '@oxlint-tsgolint/darwin-arm64@0.16.0':
     optional: true
 
-  '@oxlint-tsgolint/darwin-x64@0.12.2':
+  '@oxlint-tsgolint/darwin-x64@0.16.0':
     optional: true
 
-  '@oxlint-tsgolint/linux-arm64@0.12.2':
+  '@oxlint-tsgolint/linux-arm64@0.16.0':
     optional: true
 
-  '@oxlint-tsgolint/linux-x64@0.12.2':
+  '@oxlint-tsgolint/linux-x64@0.16.0':
     optional: true
 
-  '@oxlint-tsgolint/win32-arm64@0.12.2':
+  '@oxlint-tsgolint/win32-arm64@0.16.0':
     optional: true
 
-  '@oxlint-tsgolint/win32-x64@0.12.2':
+  '@oxlint-tsgolint/win32-x64@0.16.0':
     optional: true
 
   '@oxlint/darwin-arm64@1.43.0':
@@ -6835,7 +6835,7 @@ snapshots:
 
   '@tinyhttp/content-disposition@2.2.4': {}
 
-  '@tloncorp/api@https://codeload.github.com/tloncorp/api-beta/tar.gz/7eede1c1a756977b09f96aa14a92e2b06318ae87':
+  '@tloncorp/api@https://codeload.github.com/tloncorp/api-beta/tar.gz/749f93b':
     dependencies:
       '@aws-sdk/client-s3': 3.983.0
       '@aws-sdk/s3-request-presigner': 3.983.0
@@ -6855,24 +6855,24 @@ snapshots:
     transitivePeerDependencies:
       - aws-crt
 
-  '@tloncorp/tlon-skill-darwin-arm64@0.1.11':
+  '@tloncorp/tlon-skill-darwin-arm64@0.2.2':
     optional: true
 
-  '@tloncorp/tlon-skill-darwin-x64@0.1.11':
+  '@tloncorp/tlon-skill-darwin-x64@0.2.2':
     optional: true
 
-  '@tloncorp/tlon-skill-linux-arm64@0.1.11':
+  '@tloncorp/tlon-skill-linux-arm64@0.2.2':
     optional: true
 
-  '@tloncorp/tlon-skill-linux-x64@0.1.11':
+  '@tloncorp/tlon-skill-linux-x64@0.2.2':
     optional: true
 
-  '@tloncorp/tlon-skill@0.1.11':
+  '@tloncorp/tlon-skill@0.2.2':
     optionalDependencies:
-      '@tloncorp/tlon-skill-darwin-arm64': 0.1.11
-      '@tloncorp/tlon-skill-darwin-x64': 0.1.11
-      '@tloncorp/tlon-skill-linux-arm64': 0.1.11
-      '@tloncorp/tlon-skill-linux-x64': 0.1.11
+      '@tloncorp/tlon-skill-darwin-arm64': 0.2.2
+      '@tloncorp/tlon-skill-darwin-x64': 0.2.2
+      '@tloncorp/tlon-skill-linux-arm64': 0.2.2
+      '@tloncorp/tlon-skill-linux-x64': 0.2.2
 
   '@tokenizer/inflate@0.4.1':
     dependencies:
@@ -8416,16 +8416,16 @@ snapshots:
       '@oxfmt/win32-arm64': 0.27.0
       '@oxfmt/win32-x64': 0.27.0
 
-  oxlint-tsgolint@0.12.2:
+  oxlint-tsgolint@0.16.0:
     optionalDependencies:
-      '@oxlint-tsgolint/darwin-arm64': 0.12.2
-      '@oxlint-tsgolint/darwin-x64': 0.12.2
-      '@oxlint-tsgolint/linux-arm64': 0.12.2
-      '@oxlint-tsgolint/linux-x64': 0.12.2
-      '@oxlint-tsgolint/win32-arm64': 0.12.2
-      '@oxlint-tsgolint/win32-x64': 0.12.2
+      '@oxlint-tsgolint/darwin-arm64': 0.16.0
+      '@oxlint-tsgolint/darwin-x64': 0.16.0
+      '@oxlint-tsgolint/linux-arm64': 0.16.0
+      '@oxlint-tsgolint/linux-x64': 0.16.0
+      '@oxlint-tsgolint/win32-arm64': 0.16.0
+      '@oxlint-tsgolint/win32-x64': 0.16.0
 
-  oxlint@1.43.0(oxlint-tsgolint@0.12.2):
+  oxlint@1.43.0(oxlint-tsgolint@0.16.0):
     optionalDependencies:
       '@oxlint/darwin-arm64': 1.43.0
       '@oxlint/darwin-x64': 1.43.0
@@ -8435,7 +8435,7 @@ snapshots:
       '@oxlint/linux-x64-musl': 1.43.0
       '@oxlint/win32-arm64': 1.43.0
       '@oxlint/win32-x64': 1.43.0
-      oxlint-tsgolint: 0.12.2
+      oxlint-tsgolint: 0.16.0
 
   p-finally@1.0.0: {}
 

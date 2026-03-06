@@ -22,6 +22,8 @@ export type TlonResolvedAccount = {
   ownerShip: string | null;
   /** Controls agent reaction behavior: off | ack | minimal | extensive (default: minimal) */
   reactionLevel: string | null;
+  /** Max consecutive responses to another bot before stopping (default: 3) */
+  maxConsecutiveBotResponses: number | null;
 };
 
 export function resolveTlonAccount(
@@ -45,6 +47,7 @@ export function resolveTlonAccount(
         autoAcceptGroupInvites?: boolean;
         ownerShip?: string;
         reactionLevel?: string;
+        maxConsecutiveBotResponses?: number;
         accounts?: Record<string, Record<string, unknown>>;
       }
     | undefined;
@@ -69,6 +72,7 @@ export function resolveTlonAccount(
       defaultAuthorizedShips: [],
       ownerShip: null,
       reactionLevel: null,
+      maxConsecutiveBotResponses: null,
     };
   }
 
@@ -100,6 +104,9 @@ export function resolveTlonAccount(
     null) as boolean | null;
   const ownerShip = (account?.ownerShip ?? base.ownerShip ?? null) as string | null;
   const reactionLevel = (account?.reactionLevel ?? base.reactionLevel ?? null) as string | null;
+  const maxConsecutiveBotResponses = ((account as Record<string, unknown>)?.maxConsecutiveBotResponses ??
+    base.maxConsecutiveBotResponses ??
+    null) as number | null;
   const defaultAuthorizedShips = ((account as Record<string, unknown>)?.defaultAuthorizedShips ??
     (base as Record<string, unknown>)?.defaultAuthorizedShips ??
     []) as string[];
@@ -124,6 +131,7 @@ export function resolveTlonAccount(
     defaultAuthorizedShips,
     ownerShip,
     reactionLevel,
+    maxConsecutiveBotResponses,
   };
 }
 
