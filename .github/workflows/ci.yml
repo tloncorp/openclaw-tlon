@@ -69,16 +69,19 @@ jobs:
           mkdir -p "$HOME/.kube"
           echo "${{ secrets.KUBECONFIG_B64 }}" | base64 -d > "$HOME/.kube/config"
 
-      - name: Install kubectl and jq
+      - name: Install tools
         run: |
           curl -LO "https://dl.k8s.io/release/$(curl -sL https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
           chmod +x kubectl
           sudo mv kubectl /usr/local/bin/
-          sudo apt-get update -qq && sudo apt-get install -y -qq jq
+          sudo apt-get update -qq && sudo apt-get install -y -qq jq apt-transport-https ca-certificates gnupg
+          echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main" | sudo tee /etc/apt/sources.list.d/google-cloud-sdk.list
+          curl -fsSL https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo gpg --dearmor -o /usr/share/keyrings/cloud.google.gpg
+          sudo apt-get update -qq && sudo apt-get install -y -qq google-cloud-cli-gke-gcloud-auth-plugin
 
       - name: Restart internal ships
         run: |
-          for ctx in gke_prod-f0181862_us-east5_us-east5-cluster1 ovh-oregon-1; do
+          for ctx in gke_prod-f0181862_us-east5_us-east5-cluster1 admin@ovh-oregon-1; do
             echo "=== Restarting internal ships in context: $ctx ==="
             kubectl --context "$ctx" get ships -n tlon -ojson \
               | jq -r '.items[] | select(.spec.internal == true) | .metadata.name' \
