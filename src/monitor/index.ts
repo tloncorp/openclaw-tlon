@@ -1310,7 +1310,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       // Include downloaded media attachments
       ...(attachments.length > 0 && { Attachments: attachments }),
       OriginatingChannel: "tlon",
-      OriginatingTo: `tlon:${isGroup ? groupChannel : botShipName}`,
+      OriginatingTo: `tlon:${isGroup ? groupChannel : senderShip}`,
       // Include thread context for automatic reply routing
       ...(parentId && { MessageThreadId: String(parentId), ReplyToId: String(parentId) }),
     });
