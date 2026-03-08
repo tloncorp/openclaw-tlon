@@ -1,4 +1,14 @@
 import type { RuntimeEnv, ReplyPayload, OpenClawConfig } from "openclaw/plugin-sdk";
+import type {
+  Author,
+  BotProfile as ApiBotProfile,
+  ChannelResponse,
+  PostEssay,
+  Memo,
+  Story,
+  WritResponse,
+  WritResponseDelta,
+} from "@tloncorp/api";
 import { format } from "node:util";
 import type { Foreigns, DmInvite } from "../urbit/foreigns.js";
 import { getTlonRuntime } from "../runtime.js";
@@ -55,6 +65,29 @@ type ChannelAuthorization = {
   mode?: "restricted" | "open";
   allowedShips?: string[];
 };
+
+/**
+ * Channel firehose event structure (subscription to /v2 on channels agent)
+ */
+interface ChannelFirehoseEvent {
+  nest: string;
+  response: ChannelResponse;
+}
+
+/**
+ * Chat/DM firehose can be an array of DM invites or a WritResponse
+ */
+type ChatFirehoseEvent = DmInvite[] | WritResponse;
+
+/**
+ * Extract ship from author field, handling both string (ship) and object (bot-meta) formats.
+ */
+function extractAuthorShip(author: Author | undefined | null): string {
+  if (typeof author === "object" && author !== null && "ship" in author) {
+    return author.ship;
+  }
+  return typeof author === "string" ? author : "";
+}
 
 /**
  * Resolve channel authorization by merging file config with settings store.
@@ -1392,7 +1425,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
   const _watchedDMs = new Set<string>();
 
   // Firehose handler for all channel messages (/v2)
-  const handleChannelsFirehose = async (event: any) => {
+  const handleChannelsFirehose = async (event: ChannelFirehoseEvent) => {
     try {
       const nest = event?.nest;
 
@@ -1489,11 +1522,11 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       const essay = response?.post?.["r-post"]?.set?.essay;
       const memo = response?.post?.["r-post"]?.reply?.["r-reply"]?.set?.memo;
 
-      if (!essay && !memo) {
+      const content = memo || essay;
+      if (!content) {
         return;
       }
 
-      const content = memo || essay;
       const isThreadReply = Boolean(memo);
       const messageId = isThreadReply ? response?.post?.["r-post"]?.reply?.id : response?.post?.id;
 
@@ -1501,7 +1534,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         return;
       }
 
-      const senderShip = normalizeShip(content?.author ?? "");
+      const senderShip = normalizeShip(extractAuthorShip(content?.author));
       if (!senderShip) {
         return;
       }
@@ -1638,7 +1671,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
   // Track which DM invites we've already processed to avoid duplicate accepts
   const processedDmInvites = new Set<string>();
 
-  const handleChatFirehose = async (event: any) => {
+  const handleChatFirehose = async (event: ChatFirehoseEvent) => {
     try {
       // Handle DM invite lists (arrays)
       if (Array.isArray(event)) {
@@ -1711,8 +1744,8 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       if (dmAddReact || dmDelReact) {
         const isAdd = Boolean(dmAddReact);
         const reactData = dmAddReact || dmDelReact;
-        const reactAuthor = normalizeShip(reactData?.author ?? reactData?.ship ?? "");
-        const reactEmoji = reactData?.react ?? "";
+        const reactAuthor = normalizeShip(extractAuthorShip(reactData?.author) || reactData?.ship || "");
+        const reactEmoji = dmAddReact?.react ?? "";
         if (reactAuthor && reactAuthor !== botShipName) {
           try {
             const partnerShip = extractDmPartnerShip(whom);
@@ -1777,7 +1810,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         dmReplyOwnId = dmReply.id ?? dmReply.delta?.add?.id;
         // If no explicit reply ID, construct from author/sent (same format as our outbound)
         if (!dmReplyOwnId && dmReplyMemo?.author && dmReplyMemo?.sent) {
-          dmReplyOwnId = `${normalizeShip(dmReplyMemo.author)}/${dmReplyMemo.sent}`;
+          dmReplyOwnId = `${normalizeShip(extractAuthorShip(dmReplyMemo.author))}/${dmReplyMemo.sent}`;
         }
       }
 
@@ -1792,7 +1825,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         return;
       }
 
-      const authorShip = normalizeShip(dmContent?.author ?? "");
+      const authorShip = normalizeShip(extractAuthorShip(dmContent?.author));
       const partnerShip = extractDmPartnerShip(whom);
       const senderShip = partnerShip || authorShip;
 
@@ -1911,7 +1944,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     await api.subscribe({
       app: "channels",
       path: "/v2",
-      event: handleChannelsFirehose,
+      event: (data) => handleChannelsFirehose(data as ChannelFirehoseEvent),
       err: (error) => {
         runtime.error?.(`[tlon] Channels firehose error: ${String(error)}`);
       },
@@ -1925,7 +1958,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     await api.subscribe({
       app: "chat",
       path: "/v3",
-      event: handleChatFirehose,
+      event: (data) => handleChatFirehose(data as ChatFirehoseEvent),
       err: (error) => {
         runtime.error?.(`[tlon] Chat firehose error: ${String(error)}`);
       },
