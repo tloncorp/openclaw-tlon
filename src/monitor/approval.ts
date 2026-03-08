@@ -356,7 +356,8 @@ export type AdminCommand =
   | { type: "unblock"; ship: string }
   | { type: "blocked" }
   | { type: "pending" }
-  | { type: "help" };
+  | { type: "help" }
+  | { type: "version" };
 
 /**
  * Parse an admin command from owner message.
@@ -371,6 +372,10 @@ export function parseAdminCommand(text: string): AdminCommand | null {
 
   if (trimmed === "help" || trimmed === "commands" || trimmed === "?") {
     return { type: "help" };
+  }
+
+  if (trimmed === "version" || trimmed === "v") {
+    return { type: "version" };
   }
 
   if (trimmed === "blocked") {
@@ -463,6 +468,7 @@ export function formatHelpText(): string {
     "  pending - show pending approval requests",
     "  blocked - show blocked ships",
     "  unblock ~ship-name - unblock a ship",
+    "  version - show plugin version",
     "  help - show this message",
   ].join("\n");
 }

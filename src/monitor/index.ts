@@ -1,5 +1,10 @@
 import type { RuntimeEnv, ReplyPayload, OpenClawConfig } from "openclaw/plugin-sdk";
 import { format } from "node:util";
+import { createRequire } from "node:module";
+
+// Get package version at runtime
+const require = createRequire(import.meta.url);
+const { version: PLUGIN_VERSION } = require("../../package.json") as { version: string };
 import type { Foreigns, DmInvite } from "../urbit/foreigns.js";
 import { getTlonRuntime } from "../runtime.js";
 import { setSessionRole } from "../session-roles.js";
@@ -977,6 +982,12 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         } else {
           await sendOwnerNotification(`Failed to unblock ${shipToUnblock}.`);
         }
+        return true;
+      }
+
+      case "version": {
+        await sendOwnerNotification(`Tlon plugin v${PLUGIN_VERSION}`);
+        runtime.log?.("[tlon] Owner requested plugin version");
         return true;
       }
     }
