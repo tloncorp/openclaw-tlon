@@ -1,8 +1,13 @@
 import { spawn } from "node:child_process";
+import { createRequire } from "node:module";
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
+
+// Get package version at runtime
+const require = createRequire(import.meta.url);
+const { version: PLUGIN_VERSION } = require("./package.json") as { version: string };
 import { emptyPluginConfigSchema } from "openclaw/plugin-sdk";
 import { tlonPlugin } from "./src/channel.js";
 import { setTlonRuntime } from "./src/runtime.js";
@@ -146,6 +151,15 @@ const plugin = {
   register(api: OpenClawPluginApi) {
     setTlonRuntime(api.runtime);
     api.registerChannel({ plugin: tlonPlugin });
+
+    // Register /tlon-version command
+    api.registerCommand({
+      name: "tlon-version",
+      description: "Show Tlon plugin version.",
+      handler: async () => {
+        return { text: `Tlon plugin v${PLUGIN_VERSION}` };
+      },
+    });
 
     // Register the tlon tool
     const tlonBinary = findTlonBinary();
