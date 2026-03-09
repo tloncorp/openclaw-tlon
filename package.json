@@ -21,6 +21,7 @@
     "README.md"
   ],
   "scripts": {
+    "prebuild": "node scripts/generate-version.js",
     "build": "tsc",
     "clean": "rm -rf dist",
     "prepublishOnly": "npm run clean && npm run build",
