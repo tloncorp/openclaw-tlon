@@ -4,6 +4,7 @@ import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
+import { PLUGIN_COMMIT } from "./src/version.generated.js";
 
 // Get package version at runtime
 const require = createRequire(import.meta.url);
@@ -157,7 +158,7 @@ const plugin = {
       name: "tlon-version",
       description: "Show Tlon plugin version.",
       handler: async () => {
-        return { text: `Tlon plugin v${PLUGIN_VERSION}` };
+        return { text: `Tlon plugin v${PLUGIN_VERSION} (${PLUGIN_COMMIT})` };
       },
     });
 

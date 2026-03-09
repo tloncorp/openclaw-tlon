@@ -6,3 +6,4 @@ dist/
 .vscode
 WORKLOG.md
 .pnpm-store/
+src/version.generated.ts
