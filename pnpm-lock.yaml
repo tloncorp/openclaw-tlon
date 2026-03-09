@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       '@tloncorp/api':
-        specifier: github:tloncorp/api-beta#bd5e435
-        version: https://codeload.github.com/tloncorp/api-beta/tar.gz/bd5e435
+        specifier: github:tloncorp/api-beta#c121deb
+        version: https://codeload.github.com/tloncorp/api-beta/tar.gz/c121deb
       '@tloncorp/tlon-skill':
         specifier: ^0.2.2
         version: 0.2.2
@@ -1986,8 +1986,8 @@ packages:
     resolution: {integrity: sha512-5Kc5CM2Ysn3vTTArBs2vESUt0AQiWZA86yc1TI3B+lxXmtEq133C1nxXNOgnzhrivdPZIh3zLj5gDnZjoLL5GA==}
     engines: {node: '>=12.17.0'}
 
-  '@tloncorp/api@https://codeload.github.com/tloncorp/api-beta/tar.gz/bd5e435':
-    resolution: {tarball: https://codeload.github.com/tloncorp/api-beta/tar.gz/bd5e435}
+  '@tloncorp/api@https://codeload.github.com/tloncorp/api-beta/tar.gz/c121deb':
+    resolution: {tarball: https://codeload.github.com/tloncorp/api-beta/tar.gz/c121deb}
     version: 0.0.2
 
   '@tloncorp/tlon-skill-darwin-arm64@0.2.2':
@@ -6835,7 +6835,7 @@ snapshots:
 
   '@tinyhttp/content-disposition@2.2.4': {}
 
-  '@tloncorp/api@https://codeload.github.com/tloncorp/api-beta/tar.gz/bd5e435':
+  '@tloncorp/api@https://codeload.github.com/tloncorp/api-beta/tar.gz/c121deb':
     dependencies:
       '@aws-sdk/client-s3': 3.983.0
       '@aws-sdk/s3-request-presigner': 3.983.0
