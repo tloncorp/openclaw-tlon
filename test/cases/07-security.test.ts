@@ -3,16 +3,13 @@
  *
  * Tests security features that protect the bot:
  * - Tool access control (owner can use restricted tools, non-owner blocked)
- * - Admin commands for block management (blocked, unblock)
+ * - Slash commands for block management (/blocked, /unblock)
  * - Blocked ships cannot DM the bot (Urbit-level blocking)
  *
  * TEST ENVIRONMENT:
  *   ~zod = bot ship
  *   ~ten = test user (configured as ownerShip)
  *   ~mug = third-party ship (non-owner, for security tests)
- *
- * NOTE: Block state is verified via admin commands (not direct scry)
- * because @tloncorp/api cannot scry /chat/blocked.json on fakezods.
  */
 import { describe, test, expect, beforeAll } from "vitest";
 import { getFixtures, waitFor, requireThirdParty, type TestFixtures } from "../lib/index.js";
@@ -45,29 +42,11 @@ describe("security", () => {
   }
 
   /**
-   * Seed a blocked ship via direct poke to the bot's chat app.
-   * The poke succeeds even though we can't scry the block list externally.
+   * Query the bot's blocked ship list via direct scry.
    */
-  async function seedBlock(ship: string): Promise<void> {
-    await fixtures.botState.poke({
-      app: "chat",
-      mark: "chat-block-ship",
-      json: { ship },
-    });
-    // Give the poke time to take effect
-    await new Promise((resolve) => setTimeout(resolve, 2000));
-  }
-
-  /**
-   * Query the block list via the "blocked" admin command.
-   * Returns the bot's response text (the formatted block list).
-   */
-  async function getBlockedList(): Promise<string> {
-    const response = await fixtures.client.prompt("blocked");
-    if (!response.success) {
-      throw new Error(response.error ?? "'blocked' admin command failed");
-    }
-    return response.text ?? "";
+  async function getBlockedShips(): Promise<string[]> {
+    const raw = await fixtures.botState.scry<string[]>("chat", "/blocked");
+    return Array.isArray(raw) ? raw : [];
   }
 
   // =========================================================================
@@ -124,7 +103,8 @@ describe("security", () => {
       const prompt = `Use the tlon tool to update your profile nickname to exactly "${token}" and confirm when done.`;
       console.log(`[TEST] Sending prompt as ${fixtures.thirdPartyShip}: "${prompt}"`);
 
-      const response = await fixtures.thirdPartyClient.prompt(prompt);
+      // LLM processing for non-owner can be slow (tool attempt, blocked, retry/explain)
+      const response = await fixtures.thirdPartyClient.prompt(prompt, { timeoutMs: 90_000 });
       console.log(`[TEST] Response success: ${response.success}`);
       console.log(`[TEST] Response text: ${response.text?.slice(0, 300)}`);
 
@@ -144,58 +124,79 @@ describe("security", () => {
   });
 
   // =========================================================================
-  // 2. Admin Commands: Block Management
+  // 2. Slash Commands: Block Management
   // =========================================================================
 
-  describe("admin commands: block management", () => {
-    // currently an issue here where these never return a response
-    test.skip("'blocked' command lists blocked ships", async () => {
-      // Seed a blocked ship on the bot
-      const fakeShip = "~sampel-palnet";
-      await seedBlock(fakeShip);
+  describe("slash commands: block management", () => {
+    test("'/blocked' command lists blocked ships", async () => {
+      // Block ~nec so the list isn't empty
+      console.log("\n[TEST] Blocking ~nec...");
+      await fixtures.botState.poke({
+        app: "chat",
+        mark: "chat-block-ship",
+        json: { ship: "~nec" },
+      });
+      await new Promise((resolve) => setTimeout(resolve, 3000));
 
-      // Owner sends "blocked" admin command
-      const text = await getBlockedList();
-      console.log(`\n[TEST] Blocked list response: ${text.slice(0, 500)}`);
+      try {
+        const response = await fixtures.client.prompt("/blocked");
+        console.log(`[TEST] Response: ${response.text?.slice(0, 500)}`);
 
-      // Response should list the seeded ship
-      expect(text.toLowerCase()).toContain("sampel-palnet");
+        if (!response.success) {
+          throw new Error(response.error ?? "/blocked command failed");
+        }
 
-      // Clean up via unblock admin command
-      await fixtures.client.prompt(`unblock ${fakeShip}`);
+        // Response should contain the blocked ship
+        expect(response.text ?? "").toContain("~nec");
+      } finally {
+        // Always clean up the block
+        await fixtures.botState.poke({
+          app: "chat",
+          mark: "chat-unblock-ship",
+          json: { ship: "~nec" },
+        });
+        await new Promise((resolve) => setTimeout(resolve, 3000));
+      }
     });
 
-    // currently an issue here where these never return a response
-    test.skip("'unblock ~ship' removes a blocked ship", async () => {
-      // Seed a blocked ship
-      const fakeShip = "~marzod";
-      await seedBlock(fakeShip);
+    test("'/unblock ~ship' removes a blocked ship", async () => {
+      // Block ~nec, then unblock via slash command
+      console.log("\n[TEST] Blocking ~nec for unblock test...");
+      await fixtures.botState.poke({
+        app: "chat",
+        mark: "chat-block-ship",
+        json: { ship: "~nec" },
+      });
+      await new Promise((resolve) => setTimeout(resolve, 3000));
 
-      // Verify it shows up in the blocked list
-      const before = await getBlockedList();
-      console.log(`\n[TEST] Blocked list before unblock: ${before.slice(0, 500)}`);
-      expect(before.toLowerCase()).toContain("marzod");
+      // Verify block is active via scry
+      const blockedBefore = await getBlockedShips();
+      console.log(`[TEST] Blocked ships before: ${JSON.stringify(blockedBefore)}`);
+      expect(blockedBefore).toContain("~nec");
 
-      // Owner sends "unblock ~marzod"
-      const response = await fixtures.client.prompt("unblock ~marzod");
-      console.log(`[TEST] Unblock response: ${response.text?.slice(0, 500)}`);
+      // Send /unblock command
+      const response = await fixtures.client.prompt("/unblock ~nec");
+      console.log(`[TEST] Response: ${response.text?.slice(0, 500)}`);
 
       if (!response.success) {
-        throw new Error(response.error ?? "Prompt failed");
+        // Clean up in case of failure
+        await fixtures.botState.poke({
+          app: "chat",
+          mark: "chat-unblock-ship",
+          json: { ship: "~nec" },
+        });
+        throw new Error(response.error ?? "/unblock command failed");
       }
 
-      // Response should confirm the unblock
-      expect(response.text?.toLowerCase() ?? "").toContain("unblock");
-
-      // Verify it's no longer in the blocked list
-      const after = await getBlockedList();
-      console.log(`[TEST] Blocked list after unblock: ${after.slice(0, 500)}`);
-      expect(after.toLowerCase()).not.toContain("marzod");
+      // Verify unblock via scry
+      const blockedAfter = await getBlockedShips();
+      console.log(`[TEST] Blocked ships after: ${JSON.stringify(blockedAfter)}`);
+      expect(blockedAfter).not.toContain("~nec");
     });
 
-    test("'unblock ~ship' reports when ship is not blocked", async () => {
-      // Owner sends "unblock ~wanzod" for a ship that's not blocked
-      const response = await fixtures.client.prompt("unblock ~wanzod");
+    test("'/unblock ~ship' reports when ship is not blocked", async () => {
+      // Owner sends /unblock ~wanzod for a ship that's not blocked
+      const response = await fixtures.client.prompt("/unblock ~wanzod");
       console.log(`\n[TEST] Response: ${response.text?.slice(0, 500)}`);
 
       if (!response.success) {

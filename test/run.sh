@@ -192,19 +192,27 @@ echo ""
 # Run test cases sequentially to avoid overlapping DM prompts
 # Strip leading "--" that pnpm passes through
 if [ "${1:-}" = "--" ]; then shift; fi
+TEST_EXIT=0
 if [ $# -gt 0 ]; then
   # Specific test files passed as arguments
   for test_file in "$@"; do
     echo "Running $test_file..."
-    pnpm vitest run "$test_file" || exit $?
+    pnpm vitest run "$test_file" || TEST_EXIT=$?
   done
 else
   # Default: run all test cases
   for test_file in test/cases/*.test.ts; do
     echo "Running $test_file..."
-    pnpm vitest run "$test_file" || exit $?
+    pnpm vitest run "$test_file" || TEST_EXIT=$?
   done
 fi
+
+# Always dump bot container logs for debugging
+echo ""
+echo "==> OpenClaw container logs (last 200 lines):"
+docker compose $COMPOSE_FILES logs --tail=200 openclaw 2>/dev/null || true
+
+exit $TEST_EXIT
 
 echo ""
 echo "==> Tests complete!"

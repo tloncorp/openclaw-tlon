@@ -11,6 +11,7 @@ const require = createRequire(import.meta.url);
 const { version: PLUGIN_VERSION } = require("./package.json") as { version: string };
 import { emptyPluginConfigSchema } from "openclaw/plugin-sdk";
 import { tlonPlugin } from "./src/channel.js";
+import { getBridge } from "./src/monitor/command-bridge.js";
 import { setTlonRuntime } from "./src/runtime.js";
 import { resolveTlonAccount } from "./src/types.js";
 import { getSessionRole } from "./src/session-roles.js";
@@ -265,6 +266,91 @@ const plugin = {
       api.logger.info(
         `[tlon] Allowed ${event.toolName} tool for ${role ?? "internal"} session. Session: ${ctx.sessionKey}`,
       );
+    });
+
+    // ── Slash commands for approval & admin ────────────────────────────
+    // These bypass the LLM and call the monitor's command bridge directly.
+
+    const NOT_CONNECTED = "Bot is not connected yet.";
+
+    api.registerCommand({
+      name: "approve",
+      description: "Approve a pending DM/channel/group request",
+      acceptsArgs: true,
+      handler: async (ctx) => {
+        const bridge = getBridge();
+        if (!bridge) {
+          return { text: NOT_CONNECTED };
+        }
+        return { text: await bridge.handleAction("approve", ctx.args?.trim() || undefined) };
+      },
+    });
+
+    api.registerCommand({
+      name: "deny",
+      description: "Deny a pending DM/channel/group request",
+      acceptsArgs: true,
+      handler: async (ctx) => {
+        const bridge = getBridge();
+        if (!bridge) {
+          return { text: NOT_CONNECTED };
+        }
+        return { text: await bridge.handleAction("deny", ctx.args?.trim() || undefined) };
+      },
+    });
+
+    api.registerCommand({
+      name: "block",
+      description: "Block a ship and deny its pending request",
+      acceptsArgs: true,
+      handler: async (ctx) => {
+        const bridge = getBridge();
+        if (!bridge) {
+          return { text: NOT_CONNECTED };
+        }
+        return { text: await bridge.handleAction("block", ctx.args?.trim() || undefined) };
+      },
+    });
+
+    api.registerCommand({
+      name: "pending",
+      description: "List pending approval requests",
+      handler: async () => {
+        const bridge = getBridge();
+        if (!bridge) {
+          return { text: NOT_CONNECTED };
+        }
+        return { text: await bridge.getPendingList() };
+      },
+    });
+
+    api.registerCommand({
+      name: "blocked",
+      description: "List blocked ships",
+      handler: async () => {
+        const bridge = getBridge();
+        if (!bridge) {
+          return { text: NOT_CONNECTED };
+        }
+        return { text: await bridge.getBlockedList() };
+      },
+    });
+
+    api.registerCommand({
+      name: "unblock",
+      description: "Unblock a ship (e.g. /unblock ~sampel-palnet)",
+      acceptsArgs: true,
+      handler: async (ctx) => {
+        const bridge = getBridge();
+        if (!bridge) {
+          return { text: NOT_CONNECTED };
+        }
+        const ship = ctx.args?.trim();
+        if (!ship) {
+          return { text: "Usage: /unblock ~ship-name" };
+        }
+        return { text: await bridge.handleUnblock(ship) };
+      },
     });
   },
 };

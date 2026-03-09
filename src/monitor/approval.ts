@@ -3,7 +3,8 @@ import { randomUUID } from "node:crypto";
  * Approval system for managing DM, channel mention, and group invite approvals.
  *
  * When an unknown ship tries to interact with the bot, the owner receives
- * a notification and can approve or deny the request.
+ * a notification and can approve or deny the request via slash commands
+ * (/approve, /deny, /block).
  */
 
 import type { PendingApproval } from "../settings.js";
@@ -59,6 +60,23 @@ function displayGroup(flag: string, ctx?: DisplayContext, titleOverride?: string
 }
 
 // ============================================================================
+// Approval Expiration
+// ============================================================================
+
+/** Pending approvals expire after 48 hours. */
+export const APPROVAL_TTL_MS = 48 * 60 * 60 * 1000;
+
+/** Check if a pending approval has expired. */
+export function isExpired(approval: PendingApproval): boolean {
+  return Date.now() - approval.timestamp > APPROVAL_TTL_MS;
+}
+
+/** Filter out expired approvals from a list. */
+export function pruneExpired(approvals: PendingApproval[]): PendingApproval[] {
+  return approvals.filter((a) => !isExpired(a));
+}
+
+// ============================================================================
 // Approval ID Generation
 // ============================================================================
 
@@ -99,27 +117,6 @@ export function createPendingApproval(
   };
 }
 
-// ============================================================================
-// Command Aliases
-// ============================================================================
-
-/** Map of natural-language aliases to canonical approval actions. */
-export const APPROVAL_ALIASES: Record<string, "approve" | "deny" | "block"> = {
-  approve: "approve",
-  yes: "approve",
-  y: "approve",
-  ok: "approve",
-  accept: "approve",
-  allow: "approve",
-  deny: "deny",
-  no: "deny",
-  n: "deny",
-  reject: "deny",
-  decline: "deny",
-  block: "block",
-  ban: "block",
-};
-
 /**
  * Truncate text to a maximum length with ellipsis.
  */
@@ -134,23 +131,29 @@ function truncate(text: string, maxLength: number): string {
 // Approval Request Formatting
 // ============================================================================
 
-const ACTION_HINTS_DM = [
-  "  yes - allow this ship to DM the bot",
-  "  no - decline (they can try again)",
-  "  block - permanently block this ship",
-].join("\n");
+function actionHintsDm(id: string): string {
+  return [
+    `  /approve ${id} — allow this ship to DM`,
+    `  /deny ${id} — decline (they can try again)`,
+    `  /block ${id} — block this ship`,
+  ].join("\n");
+}
 
-const ACTION_HINTS_CHANNEL = [
-  "  yes - allow this ship in this channel",
-  "  no - decline (they can try again)",
-  "  block - permanently block this ship",
-].join("\n");
+function actionHintsChannel(id: string): string {
+  return [
+    `  /approve ${id} — allow this ship in this channel`,
+    `  /deny ${id} — decline (they can try again)`,
+    `  /block ${id} — block this ship`,
+  ].join("\n");
+}
 
-const ACTION_HINTS_GROUP = [
-  "  yes - join this group",
-  "  no - decline the invite",
-  "  block - permanently block this ship",
-].join("\n");
+function actionHintsGroup(id: string): string {
+  return [
+    `  /approve ${id} — join this group`,
+    `  /deny ${id} — decline the invite`,
+    `  /block ${id} — block this ship`,
+  ].join("\n");
+}
 
 /**
  * Format a notification message for the owner about a pending approval.
@@ -159,7 +162,6 @@ export function formatApprovalRequest(approval: PendingApproval, ctx?: DisplayCo
   const preview = approval.messagePreview
     ? `\n"${truncate(approval.messagePreview, 100)}"`
     : "";
-  const idTag = `(#${approval.id})`;
 
   switch (approval.type) {
     case "dm":
@@ -167,9 +169,7 @@ export function formatApprovalRequest(approval: PendingApproval, ctx?: DisplayCo
         `DM request from ${displayShip(approval.requestingShip, ctx)}`,
         preview,
         "",
-        ACTION_HINTS_DM,
-        "",
-        idTag,
+        actionHintsDm(approval.id),
       ].join("\n");
 
     case "channel":
@@ -177,97 +177,47 @@ export function formatApprovalRequest(approval: PendingApproval, ctx?: DisplayCo
         `${displayShip(approval.requestingShip, ctx)} mentioned the bot in ${displayChannel(approval.channelNest ?? "", ctx)}`,
         preview,
         "",
-        ACTION_HINTS_CHANNEL,
-        "",
-        idTag,
+        actionHintsChannel(approval.id),
       ].join("\n");
 
     case "group":
       return [
         `Group invite from ${displayShip(approval.requestingShip, ctx)} to join ${displayGroup(approval.groupFlag ?? "", ctx, approval.groupTitle)}`,
         "",
-        ACTION_HINTS_GROUP,
-        "",
-        idTag,
+        actionHintsGroup(approval.id),
       ].join("\n");
   }
 }
 
 // ============================================================================
-// Approval Response Parsing
+// Approval Lookup & Removal
 // ============================================================================
-
-export type ApprovalResponse = {
-  action: "approve" | "deny" | "block";
-  id?: string;
-};
-
-/**
- * Parse an owner's response to an approval request.
- * Supports natural-language aliases (yes/no/ok/accept/deny/reject/block/ban etc.)
- * and optional #ID targeting.
- */
-export function parseApprovalResponse(text: string): ApprovalResponse | null {
-  const trimmed = text.trim().toLowerCase();
-  if (!trimmed) {
-    return null;
-  }
-
-  // Split into first word and remainder
-  const spaceIndex = trimmed.indexOf(" ");
-  const firstWord = spaceIndex === -1 ? trimmed : trimmed.substring(0, spaceIndex);
-  const remainder = spaceIndex === -1 ? undefined : trimmed.substring(spaceIndex + 1).trim();
-
-  const action = APPROVAL_ALIASES[firstWord];
-  if (!action) {
-    return null;
-  }
-
-  // Strip leading '#' from ID if present; discard multi-word remainder
-  // (e.g. "yes I agree" should not treat "i agree" as an ID)
-  const rawId = remainder ? remainder.replace(/^#/, "").trim() : undefined;
-  const id = rawId && !rawId.includes(" ") ? rawId : undefined;
-
-  return { action, id: id || undefined };
-}
-
-/**
- * Check if a message text looks like an approval response.
- * Uses exact first-word matching against aliases (not prefix matching).
- */
-export function isApprovalResponse(text: string): boolean {
-  const trimmed = text.trim().toLowerCase();
-  if (!trimmed) {
-    return false;
-  }
-  const spaceIndex = trimmed.indexOf(" ");
-  const firstWord = spaceIndex === -1 ? trimmed : trimmed.substring(0, spaceIndex);
-  return firstWord in APPROVAL_ALIASES;
-}
 
 /**
  * Find a pending approval by ID, or return the most recent if no ID specified.
  * Supports prefix matching for shortened IDs.
+ * Skips expired approvals.
  */
 export function findPendingApproval(
   pendingApprovals: PendingApproval[],
   id?: string,
 ): PendingApproval | undefined {
+  const active = pruneExpired(pendingApprovals);
   if (id) {
     // Exact match first
-    const exact = pendingApprovals.find((a) => a.id === id);
+    const exact = active.find((a) => a.id === id);
     if (exact) {
       return exact;
     }
     // Prefix match (for partial input or old-format IDs)
-    const prefixMatches = pendingApprovals.filter((a) => a.id.startsWith(id));
+    const prefixMatches = active.filter((a) => a.id.startsWith(id));
     if (prefixMatches.length === 1) {
       return prefixMatches[0];
     }
     return undefined;
   }
   // Return most recent
-  return pendingApprovals[pendingApprovals.length - 1];
+  return active[active.length - 1];
 }
 
 /**
@@ -349,53 +299,8 @@ export function formatApprovalConfirmation(
 }
 
 // ============================================================================
-// Admin Commands
+// List Formatting
 // ============================================================================
-
-export type AdminCommand =
-  | { type: "unblock"; ship: string }
-  | { type: "blocked" }
-  | { type: "pending" }
-  | { type: "help" };
-
-/**
- * Parse an admin command from owner message.
- * Supports:
- *   - "unblock ~ship" - unblock a specific ship
- *   - "blocked" - list all blocked ships
- *   - "pending" - list all pending approvals
- *   - "help" / "commands" / "?" - show help
- */
-export function parseAdminCommand(text: string): AdminCommand | null {
-  const trimmed = text.trim().toLowerCase();
-
-  if (trimmed === "help" || trimmed === "commands" || trimmed === "?") {
-    return { type: "help" };
-  }
-
-  if (trimmed === "blocked") {
-    return { type: "blocked" };
-  }
-
-  if (trimmed === "pending") {
-    return { type: "pending" };
-  }
-
-  // "unblock ~ship" - unblock a specific ship
-  const unblockMatch = trimmed.match(/^unblock\s+(~[\w-]+)$/);
-  if (unblockMatch) {
-    return { type: "unblock", ship: unblockMatch[1] };
-  }
-
-  return null;
-}
-
-/**
- * Check if a message text looks like an admin command.
- */
-export function isAdminCommand(text: string): boolean {
-  return parseAdminCommand(text) !== null;
-}
 
 /**
  * Format the list of blocked ships for display to owner.
@@ -409,7 +314,7 @@ export function formatBlockedList(ships: string[], ctx?: DisplayContext): string
     `Blocked ships (${ships.length}):`,
     ...lines,
     "",
-    'To unblock: "unblock ~ship-name"',
+    "To unblock: `/unblock ~ship-name`",
   ].join("\n");
 }
 
@@ -417,11 +322,12 @@ export function formatBlockedList(ships: string[], ctx?: DisplayContext): string
  * Format the list of pending approvals for display to owner.
  */
 export function formatPendingList(approvals: PendingApproval[], ctx?: DisplayContext): string {
-  if (approvals.length === 0) {
+  const active = pruneExpired(approvals);
+  if (active.length === 0) {
     return "No pending approval requests.";
   }
 
-  const entries = approvals.map((a) => {
+  const entries = active.map((a) => {
     const ship = displayShip(a.requestingShip, ctx);
     const preview = a.messagePreview ? `\n    "${truncate(a.messagePreview, 80)}"` : "";
 
@@ -436,33 +342,10 @@ export function formatPendingList(approvals: PendingApproval[], ctx?: DisplayCon
   });
 
   return [
-    `Pending requests (${approvals.length}):`,
+    `Pending requests (${active.length}):`,
     "",
     ...entries,
     "",
-    "Reply yes/no/block, optionally with a # ID.",
-  ].join("\n");
-}
-
-/**
- * Format the help text for owner commands.
- */
-export function formatHelpText(): string {
-  return [
-    "Available commands:",
-    "",
-    "Approval responses:",
-    "  yes / approve / ok / accept / allow - approve a request",
-    "  no / deny / reject / decline - deny a request",
-    "  block / ban - permanently block the ship",
-    "",
-    "  Add a # ID to target a specific request:",
-    "  e.g., yes #da1b2 or block #cc3d4",
-    "",
-    "Admin commands:",
-    "  pending - show pending approval requests",
-    "  blocked - show blocked ships",
-    "  unblock ~ship-name - unblock a ship",
-    "  help - show this message",
+    "Use /approve, /deny, or /block with the ID.",
   ].join("\n");
 }

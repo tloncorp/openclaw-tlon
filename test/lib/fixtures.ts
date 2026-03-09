@@ -170,8 +170,8 @@ async function setupFixtures(): Promise<TestFixtures> {
       // Wait for the approval notification to reach the owner
       await sleep(8000);
 
-      // Owner (~ten) approves the DM request
-      const approvalResponse = await client.prompt("approve");
+      // Owner (~ten) approves the DM request via slash command
+      const approvalResponse = await client.prompt("/approve");
       console.log(
         `[FIXTURES] Approval response: ${approvalResponse.text?.slice(0, 200)}`,
       );
