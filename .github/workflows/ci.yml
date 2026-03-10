@@ -62,7 +62,7 @@ jobs:
     name: Restart Internal Ships
     runs-on: ubuntu-latest
     needs: [unit-test, integration-test]
-    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
+    if: ${{ always() && github.event_name == 'push' && github.ref == 'refs/heads/master' }}
     steps:
       - name: Set up kubeconfig
         run: |
