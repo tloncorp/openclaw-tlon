@@ -13,6 +13,8 @@ import {
   hasDuplicatePending,
   isExpired,
   APPROVAL_TTL_MS,
+  emojiToApprovalAction,
+  normalizeNotificationId,
 } from "./approval.js";
 
 // ---------------------------------------------------------------------------
@@ -151,7 +153,7 @@ const ctx: DisplayContext = {
 };
 
 describe("formatApprovalRequest", () => {
-  it("DM request shows nickname and slash command hints", () => {
+  it("DM request shows nickname, reaction hints, and slash command hints", () => {
     const approval = createPendingApproval({
       type: "dm",
       requestingShip: "~sampel-palnet",
@@ -160,9 +162,11 @@ describe("formatApprovalRequest", () => {
     const text = formatApprovalRequest(approval, ctx);
     expect(text).toContain("~sampel-palnet (Sam)");
     expect(text).toContain('"Hello there"');
-    expect(text).toContain(`/approve ${approval.id}`);
-    expect(text).toContain(`/deny ${approval.id}`);
-    expect(text).toContain(`/block ${approval.id}`);
+    expect(text).toContain("React to this message: 👍 approve · 👎 deny · 🛑 block");
+    expect(text).toContain("Or use a slash command:");
+    expect(text).toContain(`/allow ${approval.id}`);
+    expect(text).toContain(`/reject ${approval.id}`);
+    expect(text).toContain(`/ban ${approval.id}`);
   });
 
   it("channel request shows channel name and nickname", () => {
@@ -175,7 +179,7 @@ describe("formatApprovalRequest", () => {
     const text = formatApprovalRequest(approval, ctx);
     expect(text).toContain("~sampel-palnet (Sam)");
     expect(text).toContain("general (chat/~host/general)");
-    expect(text).toContain(`/approve ${approval.id}`);
+    expect(text).toContain(`/allow ${approval.id}`);
   });
 
   it("group request shows group title", () => {
@@ -186,7 +190,7 @@ describe("formatApprovalRequest", () => {
     });
     const text = formatApprovalRequest(approval, ctx);
     expect(text).toContain("Cool Group (~host/cool-group)");
-    expect(text).toContain(`/approve ${approval.id}`);
+    expect(text).toContain(`/allow ${approval.id}`);
   });
 
   it("group request uses groupTitle field over context", () => {
@@ -260,7 +264,7 @@ describe("formatBlockedList", () => {
     expect(text).toContain("~sampel-palnet (Sam)");
     expect(text).toContain("~zod (Zod)");
     expect(text).toContain("Blocked ships (2):");
-    expect(text).toContain("`/unblock ~ship-name`");
+    expect(text).toContain("`/unban ~ship-name`");
   });
 
   it("works without context", () => {
@@ -320,9 +324,9 @@ describe("formatPendingList", () => {
       { id: "da1b2", type: "dm", requestingShip: "~zod", timestamp: Date.now() },
     ];
     const text = formatPendingList(approvals);
-    expect(text).toContain("/approve");
-    expect(text).toContain("/deny");
-    expect(text).toContain("/block");
+    expect(text).toContain("/allow");
+    expect(text).toContain("/reject");
+    expect(text).toContain("/ban");
   });
 
   it("filters out expired approvals", () => {
@@ -347,6 +351,52 @@ describe("removePendingApproval", () => {
     const result = removePendingApproval(approvals, "da1b2");
     expect(result).toHaveLength(1);
     expect(result[0].id).toBe("cc3d4");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Emoji Reaction Mapping
+// ---------------------------------------------------------------------------
+
+describe("emojiToApprovalAction", () => {
+  it("maps thumbs up to approve", () => {
+    expect(emojiToApprovalAction("👍")).toBe("approve");
+  });
+
+  it("maps thumbs down to deny", () => {
+    expect(emojiToApprovalAction("👎")).toBe("deny");
+  });
+
+  it("maps stop sign to block", () => {
+    expect(emojiToApprovalAction("🛑")).toBe("block");
+  });
+
+  it("returns undefined for unrecognized emoji", () => {
+    expect(emojiToApprovalAction("❤️")).toBeUndefined();
+    expect(emojiToApprovalAction("🎉")).toBeUndefined();
+    expect(emojiToApprovalAction("")).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Notification ID Normalization
+// ---------------------------------------------------------------------------
+
+describe("normalizeNotificationId", () => {
+  it("strips ship prefix and dots", () => {
+    expect(normalizeNotificationId("~zod/170.141.184.507")).toBe("170141184507");
+  });
+
+  it("strips dots from bare IDs (no ship prefix)", () => {
+    expect(normalizeNotificationId("170.141.184.507")).toBe("170141184507");
+  });
+
+  it("handles IDs without dots", () => {
+    expect(normalizeNotificationId("170141184507")).toBe("170141184507");
+  });
+
+  it("handles full writ-id format", () => {
+    expect(normalizeNotificationId("~sampel-palnet/170.141.184.507.799")).toBe("170141184507799");
   });
 });
 

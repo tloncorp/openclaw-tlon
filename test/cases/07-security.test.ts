@@ -3,7 +3,7 @@
  *
  * Tests security features that protect the bot:
  * - Tool access control (owner can use restricted tools, non-owner blocked)
- * - Slash commands for block management (/blocked, /unblock)
+ * - Slash commands for block management (/banned, /unban)
  * - Blocked ships cannot DM the bot (Urbit-level blocking)
  *
  * TEST ENVIRONMENT:
@@ -128,7 +128,7 @@ describe("security", () => {
   // =========================================================================
 
   describe("slash commands: block management", () => {
-    test("'/blocked' command lists blocked ships", async () => {
+    test("'/banned' command lists blocked ships", async () => {
       // Block ~nec so the list isn't empty
       console.log("\n[TEST] Blocking ~nec...");
       await fixtures.botState.poke({
@@ -139,11 +139,11 @@ describe("security", () => {
       await new Promise((resolve) => setTimeout(resolve, 3000));
 
       try {
-        const response = await fixtures.client.prompt("/blocked");
+        const response = await fixtures.client.prompt("/banned");
         console.log(`[TEST] Response: ${response.text?.slice(0, 500)}`);
 
         if (!response.success) {
-          throw new Error(response.error ?? "/blocked command failed");
+          throw new Error(response.error ?? "/banned command failed");
         }
 
         // Response should contain the blocked ship
@@ -159,9 +159,9 @@ describe("security", () => {
       }
     });
 
-    test("'/unblock ~ship' removes a blocked ship", async () => {
-      // Block ~nec, then unblock via slash command
-      console.log("\n[TEST] Blocking ~nec for unblock test...");
+    test("'/unban ~ship' removes a blocked ship", async () => {
+      // Block ~nec, then unban via slash command
+      console.log("\n[TEST] Blocking ~nec for unban test...");
       await fixtures.botState.poke({
         app: "chat",
         mark: "chat-block-ship",
@@ -174,8 +174,8 @@ describe("security", () => {
       console.log(`[TEST] Blocked ships before: ${JSON.stringify(blockedBefore)}`);
       expect(blockedBefore).toContain("~nec");
 
-      // Send /unblock command
-      const response = await fixtures.client.prompt("/unblock ~nec");
+      // Send /unban command
+      const response = await fixtures.client.prompt("/unban ~nec");
       console.log(`[TEST] Response: ${response.text?.slice(0, 500)}`);
 
       if (!response.success) {
@@ -185,7 +185,7 @@ describe("security", () => {
           mark: "chat-unblock-ship",
           json: { ship: "~nec" },
         });
-        throw new Error(response.error ?? "/unblock command failed");
+        throw new Error(response.error ?? "/unban command failed");
       }
 
       // Verify unblock via scry
@@ -194,9 +194,9 @@ describe("security", () => {
       expect(blockedAfter).not.toContain("~nec");
     });
 
-    test("'/unblock ~ship' reports when ship is not blocked", async () => {
-      // Owner sends /unblock ~wanzod for a ship that's not blocked
-      const response = await fixtures.client.prompt("/unblock ~wanzod");
+    test("'/unban ~ship' reports when ship is not blocked", async () => {
+      // Owner sends /unban ~wanzod for a ship that's not blocked
+      const response = await fixtures.client.prompt("/unban ~wanzod");
       console.log(`\n[TEST] Response: ${response.text?.slice(0, 500)}`);
 
       if (!response.success) {
@@ -336,22 +336,293 @@ describe("security", () => {
       }
     });
 
-    test.skip("removing ship from allowlist triggers approval instead of response", () => {
-      // Cannot test reliably: depends on settings subscription propagating
-      // the allowlist change to the bot's in-memory state within the test
-      // timeout. The 5-minute periodic refresh is too slow for tests, and
-      // the SSE subscription may not propagate external pokes reliably.
-      // The core security fix (blocked ships bypass allowlist) is validated
-      // by the "blocked ship on allowlist" test above.
-    });
+    test("emoji reaction on notification approves DM request", async () => {
+      requireThirdParty(fixtures);
 
-    test.skip("block action removes ship from allowlist", () => {
-      // Cannot test reliably: requires the bot's in-memory pendingApprovals
-      // to be updated via settings subscription after an external poke, which
-      // doesn't propagate reliably in the test environment. The code change
-      // (blockShip + removeFromDmAllowlist) is straightforward and verified
-      // by code review. The critical security fix is validated by the
-      // "blocked ship on allowlist" test above.
-    });
+      // 1. Remove third party from DM allowlist so their next DM triggers approval
+      const currentList = await getDmAllowlist();
+      if (currentList.includes(fixtures.thirdPartyShip)) {
+        await seedDmAllowlist(currentList.filter((s) => s !== fixtures.thirdPartyShip));
+        console.log(`\n[TEST] Removed ${fixtures.thirdPartyShip} from DM allowlist`);
+      }
+
+      // 2. Third party sends DM — should trigger an approval request to owner
+      console.log(`[TEST] ${fixtures.thirdPartyShip} sending DM to trigger approval...`);
+      const dmPromise = fixtures.thirdPartyClient.prompt(
+        "Hello, requesting approval via reaction test.",
+        { timeoutMs: 90_000 },
+      );
+
+      // 3. Wait for pending approval with notificationMessageId to appear
+      console.log("[TEST] Waiting for pending approval with notification message ID...");
+      const approval = await waitFor(async () => {
+        const settings = await fixtures.botState.scry<{
+          all?: Record<string, Record<string, { pendingApprovals?: string }>>;
+        }>("settings", "/all");
+        const raw = settings?.all?.moltbot?.tlon?.pendingApprovals;
+        if (!raw) return undefined;
+        const approvals = JSON.parse(raw) as Array<{
+          id: string;
+          requestingShip: string;
+          notificationMessageId?: string;
+        }>;
+        const match = approvals.find(
+          (a) => a.requestingShip === fixtures.thirdPartyShip && a.notificationMessageId,
+        );
+        if (match) {
+          console.log(`[TEST] Found pending approval #${match.id} with notif ID: ${match.notificationMessageId}`);
+        }
+        return match;
+      }, 30_000, 2000, "pending approval with notificationMessageId");
+
+      // 4. Find the notification message in owner's DM channel with the bot
+      // We need the post in writ-id format (~ship/ud-timestamp) for the react poke
+      console.log("[TEST] Looking up notification message in owner's DMs...");
+      const posts = await fixtures.userState.channelPosts(fixtures.botShip, 10);
+      const botPosts = (posts ?? [])
+        .filter((p: any) => {
+          const authorId = p.authorId ?? p.author;
+          return authorId === fixtures.botShip;
+        })
+        .sort((a: any, b: any) => (b.sentAt ?? 0) - (a.sentAt ?? 0));
+
+      // The most recent bot post should be the approval notification
+      const notifPost = botPosts[0] as { id?: string; sentAt?: number } | undefined;
+      expect(notifPost).toBeDefined();
+      console.log(`[TEST] Notification post ID: ${notifPost!.id}, sentAt: ${notifPost!.sentAt}`);
+
+      // 5. Owner reacts 👍 to the notification message
+      // The react poke goes to the owner's own chat agent, which relays via Ames
+      const postId = String(notifPost!.id);
+      // Construct writ-id: author/id — the chatAction format requires this
+      const writId = postId.includes("/") ? postId : `${fixtures.botShip}/${postId}`;
+      console.log(`[TEST] Owner reacting 👍 to message ${writId}...`);
+
+      await fixtures.userState.poke({
+        app: "chat",
+        mark: "chat-dm-action-1",
+        json: {
+          ship: fixtures.botShip,
+          diff: {
+            id: writId,
+            delta: {
+              "add-react": {
+                react: "👍",
+                author: fixtures.userShip,
+              },
+            },
+          },
+        },
+      });
+
+      // 6. Wait for the approval to be processed (removed from pending)
+      // Give ames time to relay the reaction from ~ten → ~zod
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+      console.log("[TEST] Waiting for approval to be processed...");
+      await waitFor(async () => {
+        const settings = await fixtures.botState.scry<{
+          all?: Record<string, Record<string, { pendingApprovals?: string }>>;
+        }>("settings", "/all");
+        const raw = settings?.all?.moltbot?.tlon?.pendingApprovals;
+        if (!raw) return true; // No approvals = processed
+        const approvals = JSON.parse(raw) as Array<{ requestingShip: string }>;
+        const still = approvals.find((a) => a.requestingShip === fixtures.thirdPartyShip);
+        if (!still) {
+          console.log("[TEST] Approval processed — no longer pending");
+          return true;
+        }
+        return undefined;
+      }, 40_000, 2000, "approval to be processed");
+
+      // 7. Verify the third party is now on the DM allowlist
+      const updatedList = await getDmAllowlist();
+      console.log(`[TEST] DM allowlist after reaction: ${JSON.stringify(updatedList)}`);
+      expect(updatedList).toContain(fixtures.thirdPartyShip);
+
+      // Wait for the third party's original DM to complete
+      try {
+        await dmPromise;
+      } catch {
+        // OK if it times out — the approval replay might not produce a response
+      }
+    }, 120_000);
+
+    test("removing ship from allowlist triggers approval instead of response", async () => {
+      requireThirdParty(fixtures);
+
+      // 1. Ensure third party IS on the allowlist
+      const currentList = await getDmAllowlist();
+      if (!currentList.includes(fixtures.thirdPartyShip)) {
+        await seedDmAllowlist([...currentList, fixtures.thirdPartyShip]);
+        console.log(`\n[TEST] Added ${fixtures.thirdPartyShip} to DM allowlist`);
+      }
+
+      // 2. Remove third party from allowlist via settings poke
+      const listBefore = await getDmAllowlist();
+      await seedDmAllowlist(listBefore.filter((s) => s !== fixtures.thirdPartyShip));
+      console.log(`[TEST] Removed ${fixtures.thirdPartyShip} from DM allowlist`);
+
+      // 3. Third party sends DM — should trigger approval, not a bot response
+      console.log(`[TEST] ${fixtures.thirdPartyShip} sending DM (should trigger approval)...`);
+      const dmPromise = fixtures.thirdPartyClient.prompt(
+        "Hello after allowlist removal test.",
+        { timeoutMs: 30_000 },
+      );
+
+      // 4. Wait for a pending approval to appear for this ship
+      const approval = await waitFor(async () => {
+        const settings = await fixtures.botState.scry<{
+          all?: Record<string, Record<string, { pendingApprovals?: string }>>;
+        }>("settings", "/all");
+        const raw = settings?.all?.moltbot?.tlon?.pendingApprovals;
+        if (!raw) return undefined;
+        const approvals = JSON.parse(raw) as Array<{
+          id: string;
+          requestingShip: string;
+        }>;
+        return approvals.find((a) => a.requestingShip === fixtures.thirdPartyShip);
+      }, 30_000, 2000, "pending approval after allowlist removal");
+
+      expect(approval).toBeDefined();
+      console.log(`[TEST] Approval created: #${approval!.id} — allowlist removal propagated correctly`);
+
+      // Clean up: re-add to allowlist and clear pending approvals
+      const afterList = await getDmAllowlist();
+      if (!afterList.includes(fixtures.thirdPartyShip)) {
+        await seedDmAllowlist([...afterList, fixtures.thirdPartyShip]);
+      }
+      // Clear the pending approval so it doesn't interfere with later tests
+      await fixtures.botState.poke({
+        app: "settings",
+        mark: "settings-event",
+        json: {
+          "put-entry": {
+            desk: "moltbot",
+            "bucket-key": "tlon",
+            "entry-key": "pendingApprovals",
+            value: "[]",
+          },
+        },
+      });
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+
+      try { await dmPromise; } catch { /* timeout OK */ }
+    }, 90_000);
+
+    test("block reaction removes ship from allowlist", async () => {
+      requireThirdParty(fixtures);
+
+      // 1. Ensure third party is on the allowlist but not blocked
+      const currentList = await getDmAllowlist();
+      if (!currentList.includes(fixtures.thirdPartyShip)) {
+        await seedDmAllowlist([...currentList, fixtures.thirdPartyShip]);
+        console.log(`\n[TEST] Added ${fixtures.thirdPartyShip} to DM allowlist`);
+      }
+
+      // 2. Remove from allowlist to trigger approval flow
+      const listBefore = await getDmAllowlist();
+      await seedDmAllowlist(listBefore.filter((s) => s !== fixtures.thirdPartyShip));
+      console.log(`[TEST] Removed ${fixtures.thirdPartyShip} from allowlist to trigger approval`);
+
+      // 3. Third party sends DM — triggers approval
+      console.log(`[TEST] ${fixtures.thirdPartyShip} sending DM to trigger approval...`);
+      const dmPromise = fixtures.thirdPartyClient.prompt(
+        "Hello, testing block reaction.",
+        { timeoutMs: 90_000 },
+      );
+
+      // 4. Wait for pending approval with notificationMessageId
+      await waitFor(async () => {
+        const settings = await fixtures.botState.scry<{
+          all?: Record<string, Record<string, { pendingApprovals?: string }>>;
+        }>("settings", "/all");
+        const raw = settings?.all?.moltbot?.tlon?.pendingApprovals;
+        if (!raw) return undefined;
+        const approvals = JSON.parse(raw) as Array<{
+          id: string;
+          requestingShip: string;
+          notificationMessageId?: string;
+        }>;
+        return approvals.find(
+          (a) => a.requestingShip === fixtures.thirdPartyShip && a.notificationMessageId,
+        );
+      }, 30_000, 2000, "pending approval with notificationMessageId");
+
+      // 5. Find notification message and react 🛑 (block)
+      const posts = await fixtures.userState.channelPosts(fixtures.botShip, 10);
+      const botPosts = (posts ?? [])
+        .filter((p: any) => {
+          const authorId = p.authorId ?? p.author;
+          return authorId === fixtures.botShip;
+        })
+        .sort((a: any, b: any) => (b.sentAt ?? 0) - (a.sentAt ?? 0));
+
+      const notifPost = botPosts[0] as { id?: string } | undefined;
+      expect(notifPost).toBeDefined();
+
+      const postId = String(notifPost!.id);
+      const writId = postId.includes("/") ? postId : `${fixtures.botShip}/${postId}`;
+      console.log(`[TEST] Owner reacting 🛑 to message ${writId}...`);
+
+      await fixtures.userState.poke({
+        app: "chat",
+        mark: "chat-dm-action-1",
+        json: {
+          ship: fixtures.botShip,
+          diff: {
+            id: writId,
+            delta: {
+              "add-react": {
+                react: "🛑",
+                author: fixtures.userShip,
+              },
+            },
+          },
+        },
+      });
+
+      // 6. Wait for approval to be processed
+      // Give ames time to relay the reaction from ~ten → ~zod
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+      await waitFor(async () => {
+        const settings = await fixtures.botState.scry<{
+          all?: Record<string, Record<string, { pendingApprovals?: string }>>;
+        }>("settings", "/all");
+        const raw = settings?.all?.moltbot?.tlon?.pendingApprovals;
+        if (!raw) return true;
+        const approvals = JSON.parse(raw) as Array<{ requestingShip: string }>;
+        return approvals.find((a) => a.requestingShip === fixtures.thirdPartyShip) ? undefined : true;
+      }, 40_000, 2000, "block approval to be processed");
+
+      // 7. Verify ship was removed from allowlist
+      const updatedList = await getDmAllowlist();
+      console.log(`[TEST] DM allowlist after block: ${JSON.stringify(updatedList)}`);
+      expect(updatedList).not.toContain(fixtures.thirdPartyShip);
+
+      // 8. Verify ship is blocked
+      const blocked = await waitFor(async () => {
+        try {
+          const list = await fixtures.botState.scry<string[]>("chat", "/blocked");
+          if (Array.isArray(list) && list.includes(fixtures.thirdPartyShip!)) return list;
+        } catch { /* scry may fail transiently */ }
+        return undefined;
+      }, 30_000, 2000, "ship to appear in blocked list");
+      console.log(`[TEST] Blocked ships: ${JSON.stringify(blocked)}`);
+      expect(blocked).toContain(fixtures.thirdPartyShip);
+
+      // Clean up: unblock the ship and re-add to allowlist for subsequent tests
+      await fixtures.botState.poke({
+        app: "chat",
+        mark: "chat-unblock-ship",
+        json: { ship: fixtures.thirdPartyShip },
+      });
+      const cleanList = await getDmAllowlist();
+      if (!cleanList.includes(fixtures.thirdPartyShip)) {
+        await seedDmAllowlist([...cleanList, fixtures.thirdPartyShip]);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+
+      try { await dmPromise; } catch { /* timeout OK */ }
+    }, 120_000);
   });
 });

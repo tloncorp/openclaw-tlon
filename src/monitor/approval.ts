@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
  *
  * When an unknown ship tries to interact with the bot, the owner receives
  * a notification and can approve or deny the request via slash commands
- * (/approve, /deny, /block).
+ * (/allow, /reject, /ban).
  */
 
 import type { PendingApproval } from "../settings.js";
@@ -57,6 +57,42 @@ function displayChannel(nest: string, ctx?: DisplayContext): string {
 function displayGroup(flag: string, ctx?: DisplayContext, titleOverride?: string): string {
   const name = titleOverride || ctx?.groupNames?.get(flag);
   return name ? `${name} (${flag})` : flag;
+}
+
+// ============================================================================
+// Emoji Reaction Mapping
+// ============================================================================
+
+/** Map a reaction emoji to an approval action. Returns undefined for unrecognized emoji. */
+export function emojiToApprovalAction(emoji: string): "approve" | "deny" | "block" | undefined {
+  switch (emoji) {
+    case "👍":
+      return "approve";
+    case "👎":
+      return "deny";
+    case "🛑":
+      return "block";
+    default:
+      return undefined;
+  }
+}
+
+// ============================================================================
+// Notification Message ID Normalization
+// ============================================================================
+
+/**
+ * Normalize a message ID for comparison between sendDm return values and SSE event IDs.
+ * sendDm returns "~ship/170.141.184.XXX", SSE events use "170.141.184.XXX" (bare timestamp).
+ * This strips the ship prefix and dots so both forms compare equal.
+ */
+export function normalizeNotificationId(id: string): string {
+  // Strip ship prefix: "~zod/170.141..." → "170.141..."
+  if (id.includes("/") && id.startsWith("~")) {
+    id = id.slice(id.indexOf("/") + 1);
+  }
+  // Strip dots: "170.141.184..." → "170141184..."
+  return id.replace(/\./g, "");
 }
 
 // ============================================================================
@@ -131,27 +167,38 @@ function truncate(text: string, maxLength: number): string {
 // Approval Request Formatting
 // ============================================================================
 
+const REACTION_HINT = "React to this message: 👍 approve · 👎 deny · 🛑 block";
+
 function actionHintsDm(id: string): string {
   return [
-    `  /approve ${id} — allow this ship to DM`,
-    `  /deny ${id} — decline (they can try again)`,
-    `  /block ${id} — block this ship`,
+    REACTION_HINT,
+    "",
+    "Or use a slash command:",
+    `  /allow ${id} — allow this ship to DM`,
+    `  /reject ${id} — decline (they can try again)`,
+    `  /ban ${id} — block this ship`,
   ].join("\n");
 }
 
 function actionHintsChannel(id: string): string {
   return [
-    `  /approve ${id} — allow this ship in this channel`,
-    `  /deny ${id} — decline (they can try again)`,
-    `  /block ${id} — block this ship`,
+    REACTION_HINT,
+    "",
+    "Or use a slash command:",
+    `  /allow ${id} — allow this ship in this channel`,
+    `  /reject ${id} — decline (they can try again)`,
+    `  /ban ${id} — block this ship`,
   ].join("\n");
 }
 
 function actionHintsGroup(id: string): string {
   return [
-    `  /approve ${id} — join this group`,
-    `  /deny ${id} — decline the invite`,
-    `  /block ${id} — block this ship`,
+    REACTION_HINT,
+    "",
+    "Or use a slash command:",
+    `  /allow ${id} — join this group`,
+    `  /reject ${id} — decline the invite`,
+    `  /ban ${id} — block this ship`,
   ].join("\n");
 }
 
@@ -314,7 +361,7 @@ export function formatBlockedList(ships: string[], ctx?: DisplayContext): string
     `Blocked ships (${ships.length}):`,
     ...lines,
     "",
-    "To unblock: `/unblock ~ship-name`",
+    "To unban: `/unban ~ship-name`",
   ].join("\n");
 }
 
@@ -346,6 +393,6 @@ export function formatPendingList(approvals: PendingApproval[], ctx?: DisplayCon
     "",
     ...entries,
     "",
-    "Use /approve, /deny, or /block with the ID.",
+    "Use /allow, /reject, or /ban with the ID.",
   ].join("\n");
 }
