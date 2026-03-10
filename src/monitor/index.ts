@@ -1583,8 +1583,6 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
 
       // Skip processing bot's own messages (but they're already cached above)
       if (senderShip === botShipName) {
-        // Reset consecutive bot counter since we responded
-        consecutiveBotMessages.set(nest, 0);
         return;
       }
 
@@ -1618,7 +1616,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         const count = (consecutiveBotMessages.get(nest) ?? 0) + 1;
         consecutiveBotMessages.set(nest, count);
         runtime.log?.(`[tlon] Bot mention from ${senderShip} in ${nest}: consecutive count = ${count}`);
-        
+
         if (maxBotResponses > 0 && count > maxBotResponses) {
           runtime.log?.(`[tlon] Rate limiting: skipping response to bot ${senderShip} (count ${count} > limit ${maxBotResponses})`);
           return;
