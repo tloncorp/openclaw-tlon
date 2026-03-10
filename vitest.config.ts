@@ -8,7 +8,7 @@ export default defineConfig({
   test: {
     // Increase timeout for integration tests (they hit real services)
     testTimeout: 120_000,
-    hookTimeout: 60_000,
+    hookTimeout: 120_000,
     // Run tests sequentially (not in parallel)
     sequence: { shuffle: false },
     pool: "forks",
