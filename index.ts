@@ -11,6 +11,7 @@ const require = createRequire(import.meta.url);
 const { version: PLUGIN_VERSION } = require("./package.json") as { version: string };
 import { emptyPluginConfigSchema } from "openclaw/plugin-sdk";
 import { tlonPlugin } from "./src/channel.js";
+import { resolveBridgeForCommand } from "./src/monitor/command-auth.js";
 import { setTlonRuntime } from "./src/runtime.js";
 import { resolveTlonAccount } from "./src/types.js";
 import { getSessionRole } from "./src/session-roles.js";
@@ -265,6 +266,79 @@ const plugin = {
       api.logger.info(
         `[tlon] Allowed ${event.toolName} tool for ${role ?? "internal"} session. Session: ${ctx.sessionKey}`,
       );
+    });
+
+    // ── Slash commands for approval & admin ────────────────────────────
+    // These bypass the LLM and call the monitor's command bridge directly.
+    // Each handler resolves the correct bridge (multi-account safe) and
+    // enforces owner-only access (default-deny).
+
+    api.registerCommand({
+      name: "allow",
+      description: "Allow a pending DM/channel/group request",
+      acceptsArgs: true,
+      handler: async (ctx) => {
+        const result = resolveBridgeForCommand(ctx);
+        if ("error" in result) return { text: result.error };
+        return { text: await result.bridge.handleAction("approve", ctx.args?.trim() || undefined) };
+      },
+    });
+
+    api.registerCommand({
+      name: "reject",
+      description: "Reject a pending DM/channel/group request",
+      acceptsArgs: true,
+      handler: async (ctx) => {
+        const result = resolveBridgeForCommand(ctx);
+        if ("error" in result) return { text: result.error };
+        return { text: await result.bridge.handleAction("deny", ctx.args?.trim() || undefined) };
+      },
+    });
+
+    api.registerCommand({
+      name: "ban",
+      description: "Ban a ship and deny its pending request",
+      acceptsArgs: true,
+      handler: async (ctx) => {
+        const result = resolveBridgeForCommand(ctx);
+        if ("error" in result) return { text: result.error };
+        return { text: await result.bridge.handleAction("block", ctx.args?.trim() || undefined) };
+      },
+    });
+
+    api.registerCommand({
+      name: "pending",
+      description: "List pending approval requests",
+      handler: async (ctx) => {
+        const result = resolveBridgeForCommand(ctx);
+        if ("error" in result) return { text: result.error };
+        return { text: await result.bridge.getPendingList() };
+      },
+    });
+
+    api.registerCommand({
+      name: "banned",
+      description: "List banned ships",
+      handler: async (ctx) => {
+        const result = resolveBridgeForCommand(ctx);
+        if ("error" in result) return { text: result.error };
+        return { text: await result.bridge.getBlockedList() };
+      },
+    });
+
+    api.registerCommand({
+      name: "unban",
+      description: "Unban a ship (e.g. /unban ~sampel-palnet)",
+      acceptsArgs: true,
+      handler: async (ctx) => {
+        const result = resolveBridgeForCommand(ctx);
+        if ("error" in result) return { text: result.error };
+        const ship = ctx.args?.trim();
+        if (!ship) {
+          return { text: "Usage: /unban ~ship-name" };
+        }
+        return { text: await result.bridge.handleUnblock(ship) };
+      },
     });
   },
 };

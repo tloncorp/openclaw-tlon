@@ -285,7 +285,17 @@ export class UrbitSSEClient {
     }
 
     try {
-      const parsed = JSON.parse(data) as { id?: number; json?: unknown; response?: string };
+      const parsed = JSON.parse(data) as { id?: number; json?: unknown; response?: string; ok?: string; err?: unknown };
+
+      // Log poke ack/nack responses (normally silent — critical for debugging DM delivery issues)
+      if (parsed.response === "poke") {
+        if (parsed.err) {
+          this.logger.error?.(`[SSE] Poke NACK id=${parsed.id}: ${JSON.stringify(parsed.err)}`);
+        } else {
+          this.logger.log?.(`[SSE] Poke ack id=${parsed.id}`);
+        }
+        return;
+      }
 
       if (parsed.response === "quit") {
         if (parsed.id) {

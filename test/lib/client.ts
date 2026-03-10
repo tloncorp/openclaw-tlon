@@ -220,6 +220,20 @@ export function createTlonClient(config: TlonClientConfig): TestClient {
               .filter((post) => typeof post.sentAt === "number" && post.sentAt > baselineBotSentAt)
               .filter((post) => post.text.length > 0);
 
+            // Diagnostic: log poll state on first and every 5th attempt
+            if (attempts === 1 || attempts % 5 === 0) {
+              const allBotPosts = (dmPosts ?? [])
+                .map((post) => {
+                  const p = post as { authorId?: string; sentAt?: number; textContent?: string | null; content?: unknown };
+                  return { authorId: p.authorId, sentAt: p.sentAt, text: ((p.textContent ?? getTextContent(p.content)) ?? "").trim().slice(0, 40) };
+                })
+                .filter((p) => p.authorId === botShipNorm);
+              console.log(`[poll #${attempts}] baseline=${baselineBotSentAt} totalPosts=${(dmPosts ?? []).length} botPosts=${allBotPosts.length} newBotPosts=${botDmPosts.length} latestBotSentAt=${allBotPosts.length > 0 ? Math.max(...allBotPosts.map(p => p.sentAt ?? 0)) : "none"}`);
+              if (allBotPosts.length > 0) {
+                console.log(`[poll #${attempts}] last 3 bot posts: ${JSON.stringify(allBotPosts.slice(-3))}`);
+              }
+            }
+
             if (botDmPosts.length > 0) {
               const latest = botDmPosts.sort((a, b) => (b.sentAt ?? 0) - (a.sentAt ?? 0))[0];
               return {

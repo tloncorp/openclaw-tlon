@@ -1,14 +1,33 @@
 import type { RuntimeEnv, ReplyPayload, OpenClawConfig } from "openclaw/plugin-sdk";
-import type {
-  Author,
-  BotProfile as ApiBotProfile,
-  ChannelResponse,
-  PostEssay,
-  Memo,
-  Story,
-  WritResponse,
-  WritResponseDelta,
-} from "@tloncorp/api";
+import type { Memo, Story } from "@tloncorp/api";
+
+// Local structural types — @tloncorp/api defines these internally but
+// does not export them from its public entrypoint.
+type Author = string | { ship: string };
+type PostEssay = { content: Story; author: Author; sent: number };
+type Seal = { "parent-id"?: string; parent?: string; [k: string]: unknown };
+type ChannelResponse = {
+  post?: {
+    id?: string;
+    "r-post"?: {
+      set?: { essay?: PostEssay; seal?: Seal } | null;
+      reply?: {
+        id?: string;
+        "r-reply"?: {
+          set?: { memo?: Memo; seal?: Seal };
+          reacts?: Record<string, unknown>;
+        };
+      };
+      reacts?: Record<string, unknown>;
+    };
+  };
+};
+type WritResponseDelta =
+  | { add?: { essay?: PostEssay }; reply?: never; "add-react"?: never; "del-react"?: never }
+  | { reply?: { id?: string; delta?: { add?: { memo?: Memo; id?: string } } }; add?: never; "add-react"?: never; "del-react"?: never }
+  | { "add-react"?: { react: string; author: string; ship?: string }; add?: never; reply?: never; "del-react"?: never }
+  | { "del-react"?: { author?: string; ship?: string }; add?: never; reply?: never; "add-react"?: never };
+type WritResponse = { whom: string; id: string; response: WritResponseDelta };
 import { format } from "node:util";
 import type { Foreigns, DmInvite } from "../urbit/foreigns.js";
 import { getTlonRuntime } from "../runtime.js";
@@ -24,21 +43,20 @@ import { markdownToStory } from "../urbit/story.js";
 import { UrbitSSEClient } from "../urbit/sse-client.js";
 import {
   type PendingApproval,
-  type AdminCommand,
   type DisplayContext,
   createPendingApproval,
   formatApprovalRequest,
   formatApprovalConfirmation,
-  parseApprovalResponse,
-  isApprovalResponse,
   findPendingApproval,
   removePendingApproval,
-  parseAdminCommand,
-  isAdminCommand,
+  pruneExpired,
   formatBlockedList,
   formatPendingList,
-  formatHelpText,
+  isExpired,
+  emojiToApprovalAction,
+  normalizeNotificationId,
 } from "./approval.js";
+import { setBridge, removeBridge, type ApprovalCommandBridge } from "./command-bridge.js";
 import { fetchAllChannels, fetchInitData } from "./discovery.js";
 import { cacheMessage, lookupCachedMessage, getChannelHistory, fetchThreadHistory } from "./history.js";
 import { downloadMessageImages } from "./media.js";
@@ -685,12 +703,30 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     }
   }
 
+  /**
+   * Scry the chat agent's blocked ship list with an explicit timeout.
+   * The urbitFetch timeout (30s) may not fire if the underlying connection
+   * stalls (e.g. after a chat-block-ship poke causes the agent to restart).
+   * This wrapper guarantees resolution within SCRY_TIMEOUT_MS.
+   */
+  const SCRY_TIMEOUT_MS = 15_000;
+
+  async function scryBlockedShips(): Promise<string[]> {
+    const blocked = await Promise.race([
+      api!.scry("/chat/blocked.json"),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("blocked list scry timeout")), SCRY_TIMEOUT_MS),
+      ),
+    ]) as string[] | undefined;
+    return Array.isArray(blocked) ? blocked : [];
+  }
+
   // Check if a ship is blocked using Tlon's native block list
   async function isShipBlocked(ship: string): Promise<boolean> {
     const normalizedShip = normalizeShip(ship);
     try {
-      const blocked = (await api!.scry("/chat/blocked.json")) as string[] | undefined;
-      return Array.isArray(blocked) && blocked.some((s) => normalizeShip(s) === normalizedShip);
+      const blocked = await scryBlockedShips();
+      return blocked.some((s) => normalizeShip(s) === normalizedShip);
     } catch (err) {
       runtime.log?.(`[tlon] Failed to check blocked list: ${String(err)}`);
       return false;
@@ -700,8 +736,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
   // Get all blocked ships
   async function getBlockedShips(): Promise<string[]> {
     try {
-      const blocked = (await api!.scry("/chat/blocked.json")) as string[] | undefined;
-      return Array.isArray(blocked) ? blocked : [];
+      return await scryBlockedShips();
     } catch (err) {
       runtime.log?.(`[tlon] Failed to get blocked list: ${String(err)}`);
       return [];
@@ -725,22 +760,24 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     }
   }
 
-  // Helper to send DM notification to owner
-  async function sendOwnerNotification(message: string): Promise<void> {
+  // Helper to send DM notification to owner. Returns the message ID if sent successfully.
+  async function sendOwnerNotification(message: string): Promise<string | undefined> {
     if (!effectiveOwnerShip) {
       runtime.log?.("[tlon] No ownerShip configured, cannot send notification");
-      return;
+      return undefined;
     }
     try {
-      await sendDm({
+      const result = await sendDm({
         botProfile: getBotProfile(),
         fromShip: botShipName,
         toShip: effectiveOwnerShip,
         text: message,
       });
       runtime.log?.(`[tlon] Sent notification to owner ${effectiveOwnerShip}`);
+      return result.messageId;
     } catch (err) {
       runtime.error?.(`[tlon] Failed to send notification to owner: ${String(err)}`);
+      return undefined;
     }
   }
 
@@ -766,14 +803,14 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
 
       // Safety: Never block the owner
       if (effectiveOwnerShip && targetShip === effectiveOwnerShip) {
-        runtime.warn?.(`[tlon] Agent attempted to block owner ship ${targetShip} - ignoring`);
+        runtime.log?.(`[tlon] Agent attempted to block owner ship ${targetShip} - ignoring`);
         continue;
       }
 
       // Only allow blocking the current message sender (not arbitrary third parties)
       const normalizedSender = normalizeShip(senderShip);
       if (targetShip !== normalizedSender) {
-        runtime.warn?.(`[tlon] Agent tried to block "${targetShip}" but sender is "${normalizedSender}" - ignoring`);
+        runtime.log?.(`[tlon] Agent tried to block "${targetShip}" but sender is "${normalizedSender}" - ignoring`);
         continue;
       }
 
@@ -821,47 +858,43 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       runtime.log?.(
         `[tlon] Updated existing approval for ${approval.requestingShip} (${approval.type}) - re-sending notification`,
       );
+      // Send notification first, then save once with the notification ID.
+      // Saving before sendOwnerNotification causes a race: the settings subscription
+      // event replaces pendingApprovals in-memory, so the notificationMessageId
+      // set on the old object reference is lost.
+      const existMsg = formatApprovalRequest(existing, buildDisplayContext());
+      const existNotifId = await sendOwnerNotification(existMsg);
+      if (existNotifId) {
+        existing.notificationMessageId = normalizeNotificationId(existNotifId);
+      }
       await savePendingApprovals();
-      const message = formatApprovalRequest(existing, buildDisplayContext());
-      await sendOwnerNotification(message);
       return;
     }
 
+    // Send notification before saving so notificationMessageId is included
+    // in the single save. See comment above about the settings subscription race.
+    const message = formatApprovalRequest(approval, buildDisplayContext());
+    const notifId = await sendOwnerNotification(message);
+    if (notifId) {
+      approval.notificationMessageId = normalizeNotificationId(notifId);
+    }
     pendingApprovals.push(approval);
     await savePendingApprovals();
-
-    const message = formatApprovalRequest(approval, buildDisplayContext());
-    await sendOwnerNotification(message);
     runtime.log?.(
       `[tlon] Queued approval request: ${approval.id} (${approval.type} from ${approval.requestingShip})`,
     );
   }
 
-  // Process the owner's approval response
-  async function handleApprovalResponse(text: string): Promise<boolean> {
-    const parsed = parseApprovalResponse(text);
-    if (!parsed) {
-      return false;
-    }
-
-    // Don't intercept common words (yes, no, ok, etc.) when nothing is pending
-    if (pendingApprovals.length === 0 && !parsed.id) {
-      return false;
-    }
-
-    const approval = findPendingApproval(pendingApprovals, parsed.id);
-    if (!approval) {
-      await sendOwnerNotification(
-        "No pending approval found" + (parsed.id ? ` for ID: #${parsed.id}` : ""),
-      );
-      return true; // Still consumed the message
-    }
-
-    if (parsed.action === "approve") {
+  // ── Approval action execution ─────────────────────────────────────
+  // Shared by the slash command bridge and the reaction-based approval handler.
+  async function executeApprovalAction(
+    approval: PendingApproval,
+    action: "approve" | "deny" | "block",
+  ): Promise<string> {
+    if (action === "approve") {
       switch (approval.type) {
         case "dm":
           await addToDmAllowlist(approval.requestingShip);
-          // Process the original message if available
           if (approval.originalMessage) {
             runtime.log?.(
               `[tlon] Processing original message from ${approval.requestingShip} after approval`,
@@ -880,9 +913,8 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         case "channel":
           if (approval.channelNest) {
             await addToChannelAllowlist(approval.requestingShip, approval.channelNest);
-            // Process the original message if available
             if (approval.originalMessage) {
-              const parsed = parseChannelNest(approval.channelNest);
+              const nest = parseChannelNest(approval.channelNest);
               runtime.log?.(
                 `[tlon] Processing original message from ${approval.requestingShip} in ${approval.channelNest} after approval`,
               );
@@ -893,8 +925,8 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
                 messageContent: approval.originalMessage.messageContent,
                 isGroup: true,
                 channelNest: approval.channelNest,
-                hostShip: parsed?.hostShip,
-                channelName: parsed?.channelName,
+                hostShip: nest?.hostShip,
+                channelName: nest?.channelName,
                 timestamp: approval.originalMessage.timestamp,
                 parentId: approval.originalMessage.parentId,
                 isThreadReply: approval.originalMessage.isThreadReply,
@@ -904,7 +936,6 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
           break;
 
         case "group":
-          // Accept the group invite (don't add to allowlist - each invite requires approval)
           if (approval.groupFlag) {
             try {
               await api!.poke({
@@ -917,8 +948,6 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
               });
               runtime.log?.(`[tlon] Joined group ${approval.groupFlag} after approval`);
 
-              // Immediately discover channels from the newly joined group
-              // Small delay to allow the join to propagate
               setTimeout(async () => {
                 try {
                   const discoveredChannels = await fetchAllChannels(api!, runtime);
@@ -944,76 +973,59 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
           }
           break;
       }
-
-      const ctx = buildDisplayContext();
-      await sendOwnerNotification(formatApprovalConfirmation(approval, "approve", ctx));
-    } else if (parsed.action === "block") {
-      // Block the ship using Tlon's native blocking AND remove from allowlist
+    } else if (action === "block") {
       await blockShip(approval.requestingShip);
       await removeFromDmAllowlist(approval.requestingShip);
-      const ctx = buildDisplayContext();
-      await sendOwnerNotification(formatApprovalConfirmation(approval, "block", ctx));
-    } else {
-      // Denied - just remove from pending, no notification to requester
-      const ctx = buildDisplayContext();
-      await sendOwnerNotification(formatApprovalConfirmation(approval, "deny", ctx));
     }
+    // "deny" — no side effects beyond removing from pending
 
-    // Remove from pending
     pendingApprovals = removePendingApproval(pendingApprovals, approval.id);
     await savePendingApprovals();
 
-    return true;
+    return formatApprovalConfirmation(approval, action, buildDisplayContext());
   }
 
-  // Handle admin commands from owner (unblock, blocked, pending)
-  async function handleAdminCommand(text: string): Promise<boolean> {
-    const command = parseAdminCommand(text);
-    if (!command) {
-      return false;
-    }
+  // ── Command bridge ──────────────────────────────────────────────────
+  // Exposes approval/admin actions to slash commands registered in index.ts.
+  // Handlers return response text; the slash command framework sends it back.
+  const accountKey = opts.accountId ?? undefined;
+  const commandBridge: ApprovalCommandBridge = {
+    get ownerShip() {
+      return effectiveOwnerShip;
+    },
+    async handleAction(action, id) {
+      // Prune expired approvals
+      pendingApprovals = pruneExpired(pendingApprovals);
+      await savePendingApprovals();
 
-    const ctx = buildDisplayContext();
-
-    switch (command.type) {
-      case "help": {
-        await sendOwnerNotification(formatHelpText());
-        runtime.log?.("[tlon] Owner requested help text");
-        return true;
+      const approval = findPendingApproval(pendingApprovals, id);
+      if (!approval) {
+        return "No pending approval found" + (id ? ` for ID: #${id}` : ".");
       }
 
-      case "blocked": {
-        const blockedShips = await getBlockedShips();
-        await sendOwnerNotification(formatBlockedList(blockedShips, ctx));
-        runtime.log?.(`[tlon] Owner requested blocked ships list (${blockedShips.length} ships)`);
-        return true;
-      }
+      return executeApprovalAction(approval, action);
+    },
 
-      case "pending": {
-        await sendOwnerNotification(formatPendingList(pendingApprovals, ctx));
-        runtime.log?.(
-          `[tlon] Owner requested pending approvals list (${pendingApprovals.length} pending)`,
-        );
-        return true;
-      }
+    async getPendingList() {
+      return formatPendingList(pendingApprovals, buildDisplayContext());
+    },
 
-      case "unblock": {
-        const shipToUnblock = command.ship;
-        const isBlocked = await isShipBlocked(shipToUnblock);
-        if (!isBlocked) {
-          await sendOwnerNotification(`${shipToUnblock} is not blocked.`);
-          return true;
-        }
-        const success = await unblockShip(shipToUnblock);
-        if (success) {
-          await sendOwnerNotification(`Unblocked ${shipToUnblock}.`);
-        } else {
-          await sendOwnerNotification(`Failed to unblock ${shipToUnblock}.`);
-        }
-        return true;
+    async getBlockedList() {
+      const blockedShips = await getBlockedShips();
+      return formatBlockedList(blockedShips, buildDisplayContext());
+    },
+
+    async handleUnblock(ship) {
+      runtime.log?.(`[tlon] handleUnblock: checking if ${ship} is blocked...`);
+      const blocked = await isShipBlocked(ship);
+      if (!blocked) {
+        return `${ship} is not blocked.`;
       }
-    }
-  }
+      const success = await unblockShip(ship);
+      return success ? `Unblocked ${ship}.` : `Failed to unblock ${ship}.`;
+    },
+  };
+  setBridge(accountKey, commandBridge);
 
   // Check if a ship is the owner (always allowed to DM)
   function isOwner(ship: string): boolean {
@@ -1059,8 +1071,8 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       senderShip,
       isGroup,
       channelNest,
-      hostShip,
-      channelName,
+      hostShip: _hostShip,
+      channelName: _channelName,
       timestamp,
       parentId,
       isThreadReply,
@@ -1375,11 +1387,12 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
           // Use settings store value if set, otherwise fall back to file config
           const showSignature = effectiveShowModelSig;
           if (showSignature) {
+            const modelCfg = cfg.agents?.defaults?.model;
             const modelInfo =
               (payload as { metadata?: { model?: string } }).metadata?.model ||
               (payload as { model?: string }).model ||
               (route as { model?: string }).model ||
-              cfg.agents?.defaults?.model?.primary;
+              (typeof modelCfg === "string" ? modelCfg : modelCfg?.primary);
             replyText = `${replyText}\n\n_[Generated by ${formatModelName(modelInfo)}]_`;
           }
 
@@ -1407,7 +1420,13 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
               runtime.log?.(`[tlon] Now tracking thread for future replies: ${deliverParentId}`);
             }
           } else {
-            await sendDm({ botProfile: getBotProfile(), fromShip: botShipName, toShip: senderShip, text: replyText, replyToId: deliverParentId ? String(deliverParentId) : undefined });
+            await sendDm({
+              botProfile: getBotProfile(),
+              fromShip: botShipName,
+              toShip: senderShip,
+              text: replyText,
+              replyToId: deliverParentId ? String(deliverParentId) : undefined,
+            });
           }
         },
         onError: (err, info) => {
@@ -1747,6 +1766,34 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         const reactAuthor = normalizeShip(extractAuthorShip(reactData?.author) || reactData?.ship || "");
         const reactEmoji = dmAddReact?.react ?? "";
         if (reactAuthor && reactAuthor !== botShipName) {
+          // Check if this is an approval reaction from the owner on a notification message
+          if (isAdd && isOwner(reactAuthor)) {
+            const approvalAction = emojiToApprovalAction(reactEmoji);
+            if (approvalAction) {
+              const normalizedEventId = normalizeNotificationId(messageId);
+              const matchedApproval = pendingApprovals.find(
+                (a) => a.notificationMessageId === normalizedEventId,
+              );
+              if (matchedApproval) {
+                if (isExpired(matchedApproval)) {
+                  runtime.log?.(`[tlon] Ignoring reaction on expired approval #${matchedApproval.id}`);
+                  // Fall through to normal reaction handling
+                } else {
+                  runtime.log?.(
+                    `[tlon] Reaction-based approval: ${reactEmoji} → ${approvalAction} for #${matchedApproval.id}`,
+                  );
+                  try {
+                    const confirmText = await executeApprovalAction(matchedApproval, approvalAction);
+                    await sendOwnerNotification(confirmText);
+                  } catch (err) {
+                    runtime.error?.(`[tlon] Reaction approval error: ${String(err)}`);
+                  }
+                  return;
+                }
+              }
+            }
+          }
+
           try {
             const partnerShip = extractDmPartnerShip(whom);
             const route = core.channel.routing.resolveAgentRoute({
@@ -1862,24 +1909,6 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       const messageText = citedContent + rawText;
       if (!messageText.trim()) {
         return;
-      }
-
-      // Check if this is the owner sending an approval response
-      if (isOwner(senderShip) && isApprovalResponse(messageText)) {
-        const handled = await handleApprovalResponse(messageText);
-        if (handled) {
-          runtime.log?.(`[tlon] Processed approval response from owner: ${messageText}`);
-          return;
-        }
-      }
-
-      // Check if this is the owner sending an admin command
-      if (isOwner(senderShip) && isAdminCommand(messageText)) {
-        const handled = await handleAdminCommand(messageText);
-        if (handled) {
-          runtime.log?.(`[tlon] Processed admin command from owner: ${messageText}`);
-          return;
-        }
       }
 
       // Owner is always allowed to DM (bypass allowlist)
@@ -2500,6 +2529,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       await new Promise(() => {});
     }
   } finally {
+    removeBridge(accountKey, commandBridge);
     try {
       await api?.close();
     } catch (error: any) {
