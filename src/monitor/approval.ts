@@ -36,18 +36,11 @@ export type CreateApprovalParams = {
 
 /** Display hints for human-readable formatting. Callers resolve these from caches/lookups. */
 export type DisplayContext = {
-  /** Map from ship name (~ship) to human-readable nickname */
-  shipNames?: Map<string, string>;
   /** Map from channel nest (chat/~host/name) to human-readable channel display name */
   channelNames?: Map<string, string>;
   /** Map from group flag (~host/name) to human-readable group title */
   groupNames?: Map<string, string>;
 };
-
-function displayShip(ship: string, ctx?: DisplayContext): string {
-  const name = ctx?.shipNames?.get(ship);
-  return name ? `${ship} (${name})` : ship;
-}
 
 function displayChannel(nest: string, ctx?: DisplayContext): string {
   const name = ctx?.channelNames?.get(nest);
@@ -213,7 +206,7 @@ export function formatApprovalRequest(approval: PendingApproval, ctx?: DisplayCo
   switch (approval.type) {
     case "dm":
       return [
-        `DM request from ${displayShip(approval.requestingShip, ctx)}`,
+        `DM request from ${approval.requestingShip}`,
         preview,
         "",
         actionHintsDm(approval.id),
@@ -221,7 +214,7 @@ export function formatApprovalRequest(approval: PendingApproval, ctx?: DisplayCo
 
     case "channel":
       return [
-        `${displayShip(approval.requestingShip, ctx)} mentioned the bot in ${displayChannel(approval.channelNest ?? "", ctx)}`,
+        `${approval.requestingShip} mentioned the bot in ${displayChannel(approval.channelNest ?? "", ctx)}`,
         preview,
         "",
         actionHintsChannel(approval.id),
@@ -229,7 +222,7 @@ export function formatApprovalRequest(approval: PendingApproval, ctx?: DisplayCo
 
     case "group":
       return [
-        `Group invite from ${displayShip(approval.requestingShip, ctx)} to join ${displayGroup(approval.groupFlag ?? "", ctx, approval.groupTitle)}`,
+        `Group invite from ${approval.requestingShip} to join ${displayGroup(approval.groupFlag ?? "", ctx, approval.groupTitle)}`,
         "",
         actionHintsGroup(approval.id),
       ].join("\n");
@@ -314,7 +307,7 @@ export function formatApprovalConfirmation(
   action: "approve" | "deny" | "block",
   ctx?: DisplayContext,
 ): string {
-  const ship = displayShip(approval.requestingShip, ctx);
+  const ship = approval.requestingShip;
 
   if (action === "block") {
     return `Blocked ${ship}. They will no longer be able to contact the bot.`;
@@ -352,11 +345,11 @@ export function formatApprovalConfirmation(
 /**
  * Format the list of blocked ships for display to owner.
  */
-export function formatBlockedList(ships: string[], ctx?: DisplayContext): string {
+export function formatBlockedList(ships: string[]): string {
   if (ships.length === 0) {
     return "No ships are currently blocked.";
   }
-  const lines = ships.map((s) => `  ${displayShip(s, ctx)}`);
+  const lines = ships.map((s) => `  ${s}`);
   return [
     `Blocked ships (${ships.length}):`,
     ...lines,
@@ -375,7 +368,7 @@ export function formatPendingList(approvals: PendingApproval[], ctx?: DisplayCon
   }
 
   const entries = active.map((a) => {
-    const ship = displayShip(a.requestingShip, ctx);
+    const ship = a.requestingShip;
     const preview = a.messagePreview ? `\n    "${truncate(a.messagePreview, 80)}"` : "";
 
     switch (a.type) {

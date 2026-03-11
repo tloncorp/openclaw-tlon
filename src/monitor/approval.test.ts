@@ -147,20 +147,19 @@ describe("findPendingApproval", () => {
 // ---------------------------------------------------------------------------
 
 const ctx: DisplayContext = {
-  shipNames: new Map([["~sampel-palnet", "Sam"], ["~zod", "Zod"]]),
   channelNames: new Map([["chat/~host/general", "general"]]),
   groupNames: new Map([["~host/cool-group", "Cool Group"]]),
 };
 
 describe("formatApprovalRequest", () => {
-  it("DM request shows nickname, reaction hints, and slash command hints", () => {
+  it("DM request shows ship, reaction hints, and slash command hints", () => {
     const approval = createPendingApproval({
       type: "dm",
       requestingShip: "~sampel-palnet",
       messagePreview: "Hello there",
     });
     const text = formatApprovalRequest(approval, ctx);
-    expect(text).toContain("~sampel-palnet (Sam)");
+    expect(text).toContain("~sampel-palnet");
     expect(text).toContain('"Hello there"');
     expect(text).toContain("React to this message: 👍 approve · 👎 deny · 🛑 block");
     expect(text).toContain("Or use a slash command:");
@@ -169,7 +168,7 @@ describe("formatApprovalRequest", () => {
     expect(text).toContain(`/ban ${approval.id}`);
   });
 
-  it("channel request shows channel name and nickname", () => {
+  it("channel request shows channel name and ship", () => {
     const approval = createPendingApproval({
       type: "channel",
       requestingShip: "~sampel-palnet",
@@ -177,7 +176,7 @@ describe("formatApprovalRequest", () => {
       messagePreview: "Hey @bot",
     });
     const text = formatApprovalRequest(approval, ctx);
-    expect(text).toContain("~sampel-palnet (Sam)");
+    expect(text).toContain("~sampel-palnet");
     expect(text).toContain("general (chat/~host/general)");
     expect(text).toContain(`/allow ${approval.id}`);
   });
@@ -204,25 +203,24 @@ describe("formatApprovalRequest", () => {
     expect(text).toContain("Other Title (~host/other-group)");
   });
 
-  it("works without context (backwards compatible)", () => {
+  it("works without context", () => {
     const approval = createPendingApproval({
       type: "dm",
       requestingShip: "~zod",
     });
     const text = formatApprovalRequest(approval);
     expect(text).toContain("~zod");
-    expect(text).not.toContain("(Zod)");
   });
 });
 
 describe("formatApprovalConfirmation", () => {
-  it("shows nickname in confirmation", () => {
+  it("shows ship in confirmation", () => {
     const approval: PendingApproval = {
       id: "da1b2", type: "dm", requestingShip: "~sampel-palnet", timestamp: 1,
     };
-    expect(formatApprovalConfirmation(approval, "approve", ctx)).toContain("~sampel-palnet (Sam)");
-    expect(formatApprovalConfirmation(approval, "deny", ctx)).toContain("~sampel-palnet (Sam)");
-    expect(formatApprovalConfirmation(approval, "block", ctx)).toContain("~sampel-palnet (Sam)");
+    expect(formatApprovalConfirmation(approval, "approve", ctx)).toContain("~sampel-palnet");
+    expect(formatApprovalConfirmation(approval, "deny", ctx)).toContain("~sampel-palnet");
+    expect(formatApprovalConfirmation(approval, "block", ctx)).toContain("~sampel-palnet");
   });
 
   it("channel confirmation shows channel name", () => {
@@ -259,18 +257,12 @@ describe("formatBlockedList", () => {
     expect(formatBlockedList([])).toBe("No ships are currently blocked.");
   });
 
-  it("shows ships with nicknames", () => {
-    const text = formatBlockedList(["~sampel-palnet", "~zod"], ctx);
-    expect(text).toContain("~sampel-palnet (Sam)");
-    expect(text).toContain("~zod (Zod)");
+  it("shows ships", () => {
+    const text = formatBlockedList(["~sampel-palnet", "~zod"]);
+    expect(text).toContain("~sampel-palnet");
+    expect(text).toContain("~zod");
     expect(text).toContain("Blocked ships (2):");
     expect(text).toContain("`/unban ~ship-name`");
-  });
-
-  it("works without context", () => {
-    const text = formatBlockedList(["~zod"]);
-    expect(text).toContain("~zod");
-    expect(text).not.toContain("(Zod)");
   });
 });
 
@@ -295,12 +287,12 @@ describe("formatPendingList", () => {
     expect(text).toContain('"Hello there"');
   });
 
-  it("shows nicknames from context", () => {
+  it("shows ship in pending list", () => {
     const approvals: PendingApproval[] = [
       { id: "da1b2", type: "dm", requestingShip: "~zod", timestamp: Date.now() },
     ];
     const text = formatPendingList(approvals, ctx);
-    expect(text).toContain("~zod (Zod)");
+    expect(text).toContain("~zod");
   });
 
   it("shows channel names for channel approvals", () => {

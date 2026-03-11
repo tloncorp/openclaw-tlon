@@ -339,7 +339,6 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       }
     }
     return {
-      shipNames: nicknameCache,
       channelNames,
       groupNames: groupNameCache,
     };
@@ -1012,7 +1011,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
 
     async getBlockedList() {
       const blockedShips = await getBlockedShips();
-      return formatBlockedList(blockedShips, buildDisplayContext());
+      return formatBlockedList(blockedShips);
     },
 
     async handleUnblock(ship) {
