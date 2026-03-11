@@ -24,7 +24,7 @@
     "prebuild": "node scripts/generate-version.js",
     "build": "tsc",
     "clean": "rm -rf dist",
-    "prepublishOnly": "npm run clean && npm run build",
+
     "dev": "./dev/run.sh",
     "format": "oxfmt --check",
     "format:fix": "oxfmt --write",
@@ -49,6 +49,7 @@
     "openclaw": ">=2026.2.0"
   },
   "devDependencies": {
+    "@types/node": "^25.4.0",
     "dotenv": "^17.2.4",
     "openclaw": "2026.2.25",
     "oxfmt": "0.27.0",
