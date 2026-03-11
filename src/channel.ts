@@ -264,6 +264,14 @@ export const tlonPlugin: ChannelPlugin = {
     listAccountIds: (cfg) => listTlonAccountIds(cfg),
     resolveAccount: (cfg, accountId) => resolveTlonAccount(cfg, accountId ?? undefined),
     defaultAccountId: () => "default",
+    resolveAllowFrom: ({ cfg, accountId }) => {
+      const account = resolveTlonAccount(cfg, accountId ?? undefined);
+      return account.ownerShip ? [account.ownerShip] : [];
+    },
+    formatAllowFrom: ({ allowFrom }) =>
+      allowFrom
+        .map((entry) => normalizeShip(String(entry).trim()))
+        .filter(Boolean),
     setAccountEnabled: ({ cfg, accountId, enabled }) => {
       const useDefault = !accountId || accountId === "default";
       if (useDefault) {
