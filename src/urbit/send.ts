@@ -1,155 +1,174 @@
+import {
+  sendPost as apiSendPost,
+  sendReply as apiSendReply,
+  addReaction as apiAddReaction,
+  removeReaction as apiRemoveReaction,
+  deletePost as apiDeletePost,
+} from "@tloncorp/api";
 import { scot, da } from "@urbit/aura";
 import { markdownToStory, createImageBlock, isImageUrl, type Story } from "./story.js";
 
-export type TlonPokeApi = {
-  poke: (params: { app: string; mark: string; json: unknown }) => Promise<unknown>;
+// --- Helpers ---
+
+/**
+ * Format a post ID as @ud (with dots) if it's a bare digit string.
+ * Tlon requires @ud-formatted IDs for post references.
+ */
+function formatPostId(postId: string): string {
+  if (/^\d+$/.test(postId)) {
+    try {
+      return scot("ud", BigInt(postId));
+    } catch {
+      // fall through
+    }
+  }
+  return postId;
+}
+
+/**
+ * Parse a writ-id string into author and bare ID components.
+ * Writ-ids look like "~sampel-palnet/170.141.184..." (author/udId).
+ * Returns the components for use with @tloncorp/api which expects them separately.
+ */
+function parseWritId(id: string): { author: string; bareId: string } {
+  if (id.includes("/") && id.startsWith("~")) {
+    const idx = id.indexOf("/");
+    return { author: id.slice(0, idx), bareId: id.slice(idx + 1) };
+  }
+  return { author: "", bareId: id };
+}
+
+/**
+ * Compute a @ud-formatted timestamp for building message IDs.
+ */
+function formatSentAt(sentAt: number): string {
+  return scot("ud", da.fromUnix(sentAt));
+}
+
+// --- DMs ---
+
+/** Optional bot profile for custom display name/avatar */
+export type BotProfile = {
+  // Use empty string instead of undefined to ensure consistent serialization
+  nickname: string;
+  avatar: string;
 };
 
 type SendTextParams = {
-  api: TlonPokeApi;
   fromShip: string;
   toShip: string;
   text: string;
+  replyToId?: string | null;
+  parentAuthor?: string;
+  botProfile?: BotProfile;
 };
 
 type SendStoryParams = {
-  api: TlonPokeApi;
   fromShip: string;
   toShip: string;
   story: Story;
-};
-
-export async function sendDm({ api, fromShip, toShip, text }: SendTextParams) {
-  const story: Story = markdownToStory(text);
-  return sendDmWithStory({ api, fromShip, toShip, story });
-}
-
-export async function sendDmWithStory({ api, fromShip, toShip, story }: SendStoryParams) {
-  const sentAt = Date.now();
-  const idUd = scot("ud", da.fromUnix(sentAt));
-  const id = `${fromShip}/${idUd}`;
-
-  const delta = {
-    add: {
-      memo: {
-        content: story,
-        author: fromShip,
-        sent: sentAt,
-      },
-      kind: null,
-      time: null,
-    },
-  };
-
-  const action = {
-    ship: toShip,
-    diff: { id, delta },
-  };
-
-  await api.poke({
-    app: "chat",
-    mark: "chat-dm-action",
-    json: action,
-  });
-
-  return { channel: "tlon", messageId: id };
-}
-
-type SendGroupParams = {
-  api: TlonPokeApi;
-  fromShip: string;
-  hostShip: string;
-  channelName: string;
-  text: string;
   replyToId?: string | null;
+  parentAuthor?: string;
+  botProfile?: BotProfile;
 };
 
-type SendGroupStoryParams = {
-  api: TlonPokeApi;
-  fromShip: string;
-  hostShip: string;
-  channelName: string;
-  story: Story;
-  replyToId?: string | null;
-};
-
-export async function sendGroupMessage({
-  api,
-  fromShip,
-  hostShip,
-  channelName,
-  text,
-  replyToId,
-}: SendGroupParams) {
-  const story: Story = markdownToStory(text);
-  return sendGroupMessageWithStory({ api, fromShip, hostShip, channelName, story, replyToId });
+export async function sendDm(params: SendTextParams) {
+  const story: Story = markdownToStory(params.text);
+  return sendDmWithStory({ ...params, story });
 }
 
-export async function sendGroupMessageWithStory({
-  api,
+export async function sendDmWithStory({
   fromShip,
-  hostShip,
-  channelName,
+  toShip,
   story,
   replyToId,
-}: SendGroupStoryParams) {
+  parentAuthor,
+  botProfile,
+}: SendStoryParams) {
   const sentAt = Date.now();
+  const messageId = `${fromShip}/${formatSentAt(sentAt)}`;
 
-  // Format reply ID as @ud (with dots) - required for Tlon to recognize thread replies
-  let formattedReplyId = replyToId;
-  if (replyToId && /^\d+$/.test(replyToId)) {
-    try {
-      // scot('ud', n) formats a number as @ud with dots
-      formattedReplyId = scot("ud", BigInt(replyToId));
-    } catch {
-      // Fall back to raw ID if formatting fails
-    }
+  if (replyToId) {
+    const parsed = parseWritId(replyToId);
+    const effectiveAuthor = parentAuthor || parsed.author || toShip;
+    const bareParentId = formatPostId(parsed.bareId);
+
+    await apiSendReply({
+      channelId: toShip,
+      parentId: bareParentId,
+      parentAuthor: effectiveAuthor,
+      content: story,
+      sentAt,
+      authorId: fromShip,
+      botProfile,
+    });
+    return { channel: "tlon", messageId };
   }
 
-  const action = {
-    channel: {
-      nest: `chat/${hostShip}/${channelName}`,
-      action: formattedReplyId
-        ? {
-            // Thread reply - needs post wrapper around reply action
-            // ReplyActionAdd takes Memo: {content, author, sent} - no kind/blob/meta
-            post: {
-              reply: {
-                id: formattedReplyId,
-                action: {
-                  add: {
-                    content: story,
-                    author: fromShip,
-                    sent: sentAt,
-                  },
-                },
-              },
-            },
-          }
-        : {
-            // Regular post
-            post: {
-              add: {
-                content: story,
-                author: fromShip,
-                sent: sentAt,
-                kind: "/chat",
-                blob: null,
-                meta: null,
-              },
-            },
-          },
-    },
-  };
-
-  await api.poke({
-    app: "channels",
-    mark: "channel-action-1",
-    json: action,
+  await apiSendPost({
+    channelId: toShip,
+    authorId: fromShip,
+    sentAt,
+    content: story,
+    botProfile,
   });
+  return { channel: "tlon", messageId };
+}
 
+// --- Channel posts (chat, heap, diary) ---
+
+type SendChannelPostParams = {
+  fromShip: string;
+  /** Full nest like "chat/~host/channel", "heap/~host/channel", or "diary/~host/channel" */
+  nest: string;
+  story: Story;
+  replyToId?: string | null;
+  /** Optional title for heap/diary posts */
+  title?: string;
+  /** Optional bot profile for custom display name/avatar */
+  botProfile?: BotProfile;
+};
+
+/**
+ * Unified function for posting to any channel type (chat, heap, diary).
+ * Takes a full nest string directly.
+ */
+export async function sendChannelPost({
+  fromShip,
+  nest,
+  story,
+  replyToId,
+  title,
+  botProfile,
+}: SendChannelPostParams) {
+  const sentAt = Date.now();
+
+  if (replyToId) {
+    const formattedReplyId = formatPostId(replyToId);
+    await apiSendReply({
+      channelId: nest,
+      parentId: formattedReplyId,
+      parentAuthor: "", // Not used for channel replies
+      content: story,
+      sentAt,
+      authorId: fromShip,
+      botProfile,
+    });
+    return { channel: "tlon", messageId: `${fromShip}/${sentAt}` };
+  }
+
+  await apiSendPost({
+    channelId: nest,
+    authorId: fromShip,
+    sentAt,
+    content: story,
+    metadata: title ? { title } : undefined,
+    botProfile,
+  });
   return { channel: "tlon", messageId: `${fromShip}/${sentAt}` };
 }
+
+// --- Utilities ---
 
 export function buildMediaText(text: string | undefined, mediaUrl: string | undefined): string {
   const cleanText = text?.trim() ?? "";
@@ -185,4 +204,163 @@ export function buildMediaStory(text: string | undefined, mediaUrl: string | und
   }
 
   return story.length > 0 ? story : [{ inline: [""] }];
+}
+
+// --- Reactions ---
+
+type ChannelReactParams = {
+  fromShip: string;
+  hostShip: string;
+  channelName: string;
+  postId: string;
+  react: string;
+  nestPrefix?: string;
+  parentId?: string;
+};
+
+export async function addChannelReaction({
+  fromShip,
+  hostShip,
+  channelName,
+  postId,
+  react,
+  nestPrefix = "chat",
+  parentId,
+}: ChannelReactParams) {
+  const nest = `${nestPrefix}/${hostShip}/${channelName}`;
+  const formattedPostId = formatPostId(postId);
+
+  await apiAddReaction({
+    channelId: nest,
+    postId: formattedPostId,
+    emoji: react,
+    our: fromShip,
+    postAuthor: fromShip, // Not used for channel reactions
+    ...(parentId && { parentId: formatPostId(parentId) }),
+  });
+}
+
+export async function removeChannelReaction({
+  fromShip,
+  hostShip,
+  channelName,
+  postId,
+  nestPrefix = "chat",
+  parentId,
+}: Omit<ChannelReactParams, "react">) {
+  const nest = `${nestPrefix}/${hostShip}/${channelName}`;
+  const formattedPostId = formatPostId(postId);
+
+  await apiRemoveReaction({
+    channelId: nest,
+    postId: formattedPostId,
+    our: fromShip,
+    postAuthor: fromShip, // Not used for channel reactions
+    ...(parentId && { parentId: formatPostId(parentId) }),
+  });
+}
+
+type DmReactParams = {
+  fromShip: string;
+  toShip: string;
+  messageId: string;
+  react: string;
+  parentId?: string;
+  postAuthor?: string;
+  parentAuthor?: string;
+};
+
+export async function addDmReaction({
+  fromShip,
+  toShip,
+  messageId,
+  react,
+  parentId,
+  postAuthor,
+  parentAuthor,
+}: DmReactParams) {
+  const parsedMessage = parseWritId(messageId);
+  const effectivePostAuthor = postAuthor || parsedMessage.author || toShip;
+  const formattedPostId = formatPostId(parsedMessage.bareId);
+
+  if (parentId) {
+    const parsedParent = parseWritId(parentId);
+    const effectiveParentAuthor = parentAuthor || parsedParent.author || toShip;
+    const formattedParentId = formatPostId(parsedParent.bareId);
+
+    await apiAddReaction({
+      channelId: toShip,
+      postId: formattedPostId,
+      emoji: react,
+      our: fromShip,
+      postAuthor: effectivePostAuthor,
+      parentId: formattedParentId,
+      parentAuthorId: effectiveParentAuthor,
+    });
+    return;
+  }
+
+  await apiAddReaction({
+    channelId: toShip,
+    postId: formattedPostId,
+    emoji: react,
+    our: fromShip,
+    postAuthor: effectivePostAuthor,
+  });
+}
+
+export async function removeDmReaction({
+  fromShip,
+  toShip,
+  messageId,
+  parentId,
+  postAuthor,
+  parentAuthor,
+}: Omit<DmReactParams, "react">) {
+  const parsedMessage = parseWritId(messageId);
+  const effectivePostAuthor = postAuthor || parsedMessage.author || toShip;
+  const formattedPostId = formatPostId(parsedMessage.bareId);
+
+  if (parentId) {
+    const parsedParent = parseWritId(parentId);
+    const effectiveParentAuthor = parentAuthor || parsedParent.author || toShip;
+    const formattedParentId = formatPostId(parsedParent.bareId);
+
+    await apiRemoveReaction({
+      channelId: toShip,
+      postId: formattedPostId,
+      our: fromShip,
+      postAuthor: effectivePostAuthor,
+      parentId: formattedParentId,
+      parentAuthorId: effectiveParentAuthor,
+    });
+    return;
+  }
+
+  await apiRemoveReaction({
+    channelId: toShip,
+    postId: formattedPostId,
+    our: fromShip,
+    postAuthor: effectivePostAuthor,
+  });
+}
+// --- Delete ---
+
+type DeleteHeapPostParams = {
+  hostShip: string;
+  channelName: string;
+  curioId: string;
+};
+
+export async function deleteHeapPost({
+  hostShip,
+  channelName,
+  curioId,
+}: DeleteHeapPostParams) {
+  const nest = `heap/${hostShip}/${channelName}`;
+  const formattedCurioId = formatPostId(curioId);
+
+  await apiDeletePost(nest, formattedCurioId, "");
+
+  return { ok: true };
 }

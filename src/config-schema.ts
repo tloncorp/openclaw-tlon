@@ -13,6 +13,8 @@ export const TlonAuthorizationSchema = z.object({
   channelRules: z.record(z.string(), TlonChannelRuleSchema).optional(),
 });
 
+export const ReactionLevelSchema = z.enum(["off", "ack", "minimal", "extensive"]);
+
 export const TlonAccountSchema = z.object({
   name: z.string().optional(),
   enabled: z.boolean().optional(),
@@ -29,6 +31,10 @@ export const TlonAccountSchema = z.object({
   autoAcceptGroupInvites: z.boolean().optional(), // Auto-accept all group invites
   // Owner ship for approval system
   ownerShip: ShipSchema.optional(), // Ship that receives approval requests and can approve/deny
+  // Reaction level: off (no reactions), ack (notify only), minimal (react sparingly), extensive (react freely)
+  reactionLevel: ReactionLevelSchema.optional(),
+  // Rate limiting for bot-to-bot responses
+  maxConsecutiveBotResponses: z.number().int().min(0).optional(), // Max consecutive responses to another bot (default: 3)
 });
 
 export const TlonConfigSchema = z.object({
@@ -50,6 +56,10 @@ export const TlonConfigSchema = z.object({
   autoAcceptGroupInvites: z.boolean().optional(), // Auto-accept all group invites
   // Owner ship for approval system
   ownerShip: ShipSchema.optional(), // Ship that receives approval requests and can approve/deny
+  // Reaction level: off (no reactions), ack (notify only), minimal (react sparingly), extensive (react freely)
+  reactionLevel: ReactionLevelSchema.optional(),
+  // Rate limiting for bot-to-bot responses
+  maxConsecutiveBotResponses: z.number().int().min(0).optional(), // Max consecutive responses to another bot (default: 3)
 });
 
 export const tlonChannelConfigSchema = buildChannelConfigSchema(TlonConfigSchema);

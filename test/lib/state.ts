@@ -6,6 +6,8 @@
  */
 
 import {
+  createGroup,
+  getCurrentUserId,
   Urbit,
   configureClient,
   getGroups,
@@ -55,6 +57,9 @@ export interface StateClient {
 
   /** Raw poke */
   poke(params: { app: string; mark: string; json: unknown }): Promise<void>;
+
+  /** Create a group with a default chat channel */
+  createGroup(title: string): Promise<{ groupId: string; chatChannel: string }>;
 }
 
 let apiQueue: Promise<unknown> = Promise.resolve();
@@ -140,6 +145,37 @@ export function createStateClient(config: StateClientConfig): StateClient {
 
     async scry<T = unknown>(app: string, path: string): Promise<T> {
       return withClient(async () => scry<T>({ app, path }));
+    },
+
+    async createGroup(title: string) {
+      return withClient(async () => {
+        const slug = Math.random().toString(36).slice(2, 10);
+        const groupId = `~${shipName}/${slug}`;
+        const channelSlug = `${slug}-general`;
+        const chatChannel = `chat/~${shipName}/${channelSlug}`;
+
+        await createGroup({
+          group: {
+            id: groupId,
+            title,
+            description: "Test fixture group",
+            hostUserId: getCurrentUserId(),
+            currentUserIsHost: true,
+            currentUserIsMember: true,
+            channels: [
+              {
+                id: chatChannel,
+                title: "General",
+                description: "General chat",
+                type: "chat",
+                groupId,
+              },
+            ],
+          },
+        });
+
+        return { groupId, chatChannel };
+      });
     },
 
     async poke(params: { app: string; mark: string; json: unknown }) {

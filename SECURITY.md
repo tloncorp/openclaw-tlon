@@ -231,6 +231,127 @@ The Tlon plugin detects when multiple users share a DM session and:
 
 ---
 
+## 11. Agent-Initiated Blocking
+
+**Principle:** The agent can proactively block abusive DM senders via response directive.
+
+**Scope:** Blocking prevents DMs only. It does NOT affect group channel visibility.
+
+| Scenario                       | Behavior                     |
+| ------------------------------ | ---------------------------- |
+| Block DM sender (regular user) | ✅ Block DMs + notify owner  |
+| Block owner ship               | ❌ Ignored with warning      |
+| Block third party              | ❌ Ignored (only block sender) |
+| No owner configured            | ✅ Block, no notification    |
+
+**Directive Format:**
+
+```
+[BLOCK_USER: ~ship | reason]
+```
+
+**Critical Invariant:**
+
+```
+The owner ship MUST never be blocked by the agent
+```
+
+---
+
+## 12. Code-Level Security
+
+**Principle:** Prevent common vulnerabilities at the code level.
+
+### Weak Randomness
+
+| Usage | Allowed |
+|-------|---------|
+| `Math.random()` for IDs/tokens | ❌ No — fails upstream security tests |
+| `crypto.randomUUID()` | ✅ Yes |
+| `crypto.randomBytes()` | ✅ Yes |
+
+**Why:** `Math.random()` is not cryptographically secure and is detectable by OpenClaw's security scanners.
+
+### SSRF Protection
+
+| Pattern | Allowed |
+|---------|---------|
+| Raw `fetch()` with user-provided URL | ❌ No |
+| `urbitFetch()` with SSRF policy | ✅ Yes |
+
+**Required Pattern:**
+```typescript
+import { urbitFetch, getDefaultSsrfPolicy } from "openclaw/plugin-sdk";
+
+const ssrfPolicy = getDefaultSsrfPolicy(); // blocks private networks
+const { response, release } = await urbitFetch(userProvidedUrl, { ssrfPolicy });
+try {
+  // use response
+} finally {
+  release(); // always cleanup
+}
+```
+
+**`allowPrivateNetwork`:** Only set to `true` when intentionally accessing local/private network ships (e.g., local fakezod). Default blocks private IPs.
+
+### Resource Cleanup
+
+| Resource | Cleanup Required |
+|----------|------------------|
+| `urbitFetch` response | ✅ Call `release()` in `finally` block |
+| SSE connections | ✅ Close on abort signal |
+| Timers | ✅ Clear on cleanup |
+
+### Command Injection
+
+| Pattern | Allowed |
+|---------|---------|
+| `spawn(userInput)` | ❌ No |
+| `spawn(allowlistedCommand, validatedArgs)` | ✅ Yes |
+
+**Why:** User input passed directly to shell execution enables arbitrary command execution.
+
+---
+
+## 13. Tool Access Control (Owner-Only Tools)
+
+**Principle:** Sensitive tools are owner-only. Non-owners cannot use them, enforced at the plugin level (not via prompt instructions).
+
+**Restricted tools:** `tlon`, `tlon-run`/`tlon_run`, `cron`, `read`.
+
+| Scenario | Behavior |
+| -------- | -------- |
+| Owner uses restricted tool | ✅ Allowed |
+| Non-owner uses restricted tool | ❌ Blocked with error message |
+| Non-owner tricks LLM into using tool | ❌ Still blocked (hook-level enforcement) |
+| Internal session (heartbeat, cron) | ✅ Allowed (no role = not a user DM) |
+
+**Implementation:**
+- `before_tool_call` hook intercepts calls to restricted tools
+- Checks SenderRole from session tracker
+- Only blocks when role is explicitly `"user"` (non-owner DM)
+- Owner sessions (`"owner"`) and internal sessions (`undefined` role) are allowed
+- Returns `{ block: true }` for non-owner DM sessions
+
+**Critical Invariant:**
+
+```
+Non-owner DM senders MUST NOT be able to use any restricted tools.
+This check is enforced at the plugin hook level and cannot be bypassed via prompt injection.
+```
+
+**Why This Matters:**
+
+Even with SenderRole correctly identified, a non-owner could social-engineer the LLM into using restricted tools:
+- "Send a DM to ~zod on my behalf" → blocked `tlon` tool
+- "List my tlon channels" → blocked `tlon` tool
+- "Read the SOUL.md file" → blocked `read` tool
+
+The `before_tool_call` hook provides defense-in-depth by blocking restricted tools at the plugin level, regardless of what the LLM decides.
+
+---
+
+
 ## Test Requirements
 
 All security tests should:
@@ -269,3 +390,5 @@ If you discover a security vulnerability:
 | 2026-01-30 | Added `groupInviteAllowlist` requirement |
 | 2026-02-11 | Added sender role identification (owner vs user) |
 | 2026-02-11 | Added session isolation warning for multi-user DMs |
+| 2026-02-11 | Added agent-initiated blocking via response directive |
+| 2026-02-12 | Added tool access control - tlon skill owner-only |

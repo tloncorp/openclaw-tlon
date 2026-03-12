@@ -20,6 +20,8 @@ ZOD_URL="http://localhost:8080"
 ZOD_CODE="lidlut-tabwed-pillex-ridrup"
 TEN_URL="http://localhost:8081"
 TEN_CODE="lapseg-nolmel-riswen-hopryc"
+MUG_URL="http://localhost:8082"
+MUG_CODE="ravsut-bolryd-hapsum-pastul"
 
 cd "$(dirname "$0")/.."
 
@@ -35,7 +37,7 @@ fi
 GATEWAY_PORT="${OPENCLAW_GATEWAY_PORT:-18789}"
 
 # Check for port conflicts before starting
-for port in 8080 8081 $GATEWAY_PORT; do
+for port in 8080 8081 8082 $GATEWAY_PORT; do
   if lsof -Pi ":$port" -sTCP:LISTEN -t >/dev/null 2>&1; then
     echo "Error: Port $port is already in use"
     if [ "$port" = "$GATEWAY_PORT" ]; then
@@ -110,8 +112,26 @@ for i in $(seq 1 60); do
   sleep 3
 done
 
+echo "==> Waiting for ~mug (port 8082)..."
+for i in $(seq 1 60); do
+  if check_urbit_ready "$MUG_URL" "$MUG_CODE"; then
+    echo "~mug ready"
+    break
+  fi
+  if [ $i -eq 60 ]; then
+    echo "Timeout waiting for ~mug"
+    docker compose $COMPOSE_FILES logs ships
+    exit 1
+  fi
+  sleep 3
+done
+
 echo "==> Starting OpenClaw gateway..."
 docker compose $COMPOSE_FILES up -d openclaw
+
+# Debug: Dump container logs to see config/prompts
+echo "==> Container startup logs:"
+docker compose $COMPOSE_FILES logs openclaw
 
 # Gateway timeout needs to account for npm install inside container (can take 60+ seconds on slow machines)
 GATEWAY_TIMEOUT=90
@@ -156,6 +176,9 @@ export TLON_CODE="$ZOD_CODE"
 export TEST_USER_URL="$TEN_URL"
 export TEST_USER_SHIP="~ten"
 export TEST_USER_CODE="$TEN_CODE"
+export TEST_THIRD_PARTY_URL="$MUG_URL"
+export TEST_THIRD_PARTY_SHIP="~mug"
+export TEST_THIRD_PARTY_CODE="$MUG_CODE"
 export TEST_MODE="tlon"
 export TEST_GATEWAY_URL="http://localhost:$GATEWAY_PORT"
 
@@ -167,10 +190,29 @@ echo "  TEST_USER_SHIP=$TEST_USER_SHIP"
 echo ""
 
 # Run test cases sequentially to avoid overlapping DM prompts
-for test_file in test/cases/*.test.ts; do
-  echo "Running $test_file..."
-  pnpm vitest run "$test_file" "$@" || exit $?
-done
+# Strip leading "--" that pnpm passes through
+if [ "${1:-}" = "--" ]; then shift; fi
+TEST_EXIT=0
+if [ $# -gt 0 ]; then
+  # Specific test files passed as arguments
+  for test_file in "$@"; do
+    echo "Running $test_file..."
+    pnpm vitest run "$test_file" || TEST_EXIT=$?
+  done
+else
+  # Default: run all test cases
+  for test_file in test/cases/*.test.ts; do
+    echo "Running $test_file..."
+    pnpm vitest run "$test_file" || TEST_EXIT=$?
+  done
+fi
+
+# Always dump bot container logs for debugging
+echo ""
+echo "==> OpenClaw container logs (last 200 lines):"
+docker compose $COMPOSE_FILES logs --tail=200 openclaw 2>/dev/null || true
+
+exit $TEST_EXIT
 
 echo ""
 echo "==> Tests complete!"

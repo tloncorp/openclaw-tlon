@@ -1,9 +1,30 @@
 {
-  "name": "@openclaw/tlon",
-  "version": "2026.1.30",
+  "name": "@tloncorp/openclaw",
+  "version": "0.2.0",
   "description": "OpenClaw Tlon/Urbit channel plugin",
   "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./plugin": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist/",
+    "openclaw.plugin.json",
+    "README.md"
+  ],
   "scripts": {
+    "prebuild": "node scripts/generate-version.js",
+    "build": "tsc",
+    "clean": "rm -rf dist",
+
     "dev": "./dev/run.sh",
     "format": "oxfmt --check",
     "format:fix": "oxfmt --write",
@@ -12,30 +33,33 @@
     "test": "vitest run src/",
     "test:security": "vitest run src/security.test.ts",
     "test:watch": "vitest src/",
-    "test:integration": "./test/run.sh",
+    "test:integration": "bash ./test/run.sh",
     "test:integration:dev": "./test/run-dev.sh",
     "test:integration:watch": "./test/run-dev.sh --watch",
     "test:all": "vitest run"
   },
   "dependencies": {
-    "@tloncorp/api": "github:tloncorp/api-beta#main",
-    "@tloncorp/tlon-skill": "0.1.11",
+    "@tloncorp/api": "github:tloncorp/api-beta#c121deb",
+    "@tloncorp/tlon-skill": "^0.2.2",
     "@urbit/aura": "^3.0.0",
-    "@urbit/http-api": "^3.0.0"
+    "@urbit/http-api": "^3.0.0",
+    "zod": "^4.3.6"
+  },
+  "peerDependencies": {
+    "openclaw": ">=2026.2.0"
   },
   "devDependencies": {
+    "@types/node": "^25.4.0",
     "dotenv": "^17.2.4",
-    "openclaw": "2026.2.19-2",
+    "openclaw": "2026.2.25",
     "oxfmt": "0.27.0",
     "oxlint": "^1.42.0",
-    "oxlint-tsgolint": "^0.12.2",
+    "oxlint-tsgolint": "^0.16.0",
+    "typescript": "^5.7.0",
     "vitest": "^4.0.0",
     "zod": "^4.3.6"
   },
   "openclaw": {
-    "extensions": [
-      "./index.ts"
-    ],
     "channel": {
       "id": "tlon",
       "label": "Tlon",
@@ -47,9 +71,14 @@
       "quickstartAllowFrom": true
     },
     "install": {
-      "npmSpec": "@moltbot/tlon",
+      "npmSpec": "@tloncorp/openclaw",
       "localPath": "extensions/tlon",
       "defaultChoice": "npm"
     }
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/tloncorp/openclaw-tlon.git"
+  },
+  "license": "MIT"
 }

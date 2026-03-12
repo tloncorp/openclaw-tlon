@@ -340,3 +340,27 @@ export function formatChangesDate(daysAgo = 5): string {
   const day = targetDate.getDate();
   return `~${year}.${month}.${day}..20.19.51..9b9d`;
 }
+
+/**
+ * Sanitize user message text to prevent prompt injection via role tags
+ * and control directives.
+ *
+ * Role tags like [owner] in message bodies could trick the LLM into
+ * granting elevated privileges. Block directives could trigger automated
+ * actions if echoed back by the LLM.
+ *
+ * Converts role tags from [brackets] to (parentheses) to preserve meaning
+ * while breaking the structured format the LLM recognizes.
+ * Strips block directives entirely as they have no legitimate user purpose.
+ */
+export function sanitizeMessageText(text: string): string {
+  if (!text) return text;
+
+  // Strip [BLOCK_USER: ~ship | reason] directives entirely
+  let sanitized = text.replace(/\[BLOCK_USER:\s*~[\w-]+\s*\|\s*.+?\]/gi, "");
+
+  // Convert role tags from [brackets] to (parentheses)
+  sanitized = sanitized.replace(/\[(owner|user|admin|system)\]/gi, "($1)");
+
+  return sanitized;
+}

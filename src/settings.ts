@@ -18,6 +18,8 @@ export type PendingApproval = {
   requestingShip: string;
   channelNest?: string;
   groupFlag?: string;
+  /** Human-readable group title from invite preview */
+  groupTitle?: string;
   messagePreview?: string;
   /** Full message context for processing after approval */
   originalMessage?: {
@@ -29,6 +31,8 @@ export type PendingApproval = {
     isThreadReply?: boolean;
   };
   timestamp: number;
+  /** Normalized message ID of the owner notification DM (for reaction-based approval) */
+  notificationMessageId?: string;
 };
 
 export type TlonSettingsStore = {
@@ -207,7 +211,12 @@ function parseSettingsEvent(event: unknown): { key: string; value: unknown } | n
     return null;
   }
 
-  const evt = event as Record<string, unknown>;
+  let evt = event as Record<string, unknown>;
+
+  // Unwrap "settings-event" wrapper if present
+  if (evt["settings-event"] && typeof evt["settings-event"] === "object") {
+    evt = evt["settings-event"] as Record<string, unknown>;
+  }
 
   // Handle put-entry events
   if (evt["put-entry"]) {

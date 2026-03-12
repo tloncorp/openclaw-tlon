@@ -1,12 +1,20 @@
 import { spawn } from "node:child_process";
+import { createRequire } from "node:module";
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
+import { PLUGIN_COMMIT } from "./src/version.generated.js";
+
+// Get package version at runtime
+const require = createRequire(import.meta.url);
+const { version: PLUGIN_VERSION } = require("./package.json") as { version: string };
 import { emptyPluginConfigSchema } from "openclaw/plugin-sdk";
 import { tlonPlugin } from "./src/channel.js";
+import { resolveBridgeForCommand } from "./src/monitor/command-auth.js";
 import { setTlonRuntime } from "./src/runtime.js";
 import { resolveTlonAccount } from "./src/types.js";
+import { getSessionRole } from "./src/session-roles.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -31,7 +39,9 @@ const ALLOWED_TLON_COMMANDS = new Set([
 function findTlonBinary(): string {
   // Check in node_modules/.bin
   const skillBin = join(__dirname, "node_modules", ".bin", "tlon");
-  console.log(`[tlon] Checking for binary at: ${skillBin}, exists: ${existsSync(skillBin)}`);
+  console.log(
+    `[tlon] Checking for binary at: ${skillBin}, exists: ${existsSync(skillBin)}`,
+  );
   if (existsSync(skillBin)) return skillBin;
 
   // Check for platform-specific binary directly
@@ -99,11 +109,12 @@ function runTlonCommand(
   credentials?: { url: string; ship: string; code: string },
 ): Promise<string> {
   return new Promise((resolve, reject) => {
-    // Build environment with Tlon credentials if provided
+    // Build environment with Tlon credentials
+    // Pass all credentials - skill checks cache first, falls back to these if miss
     const env = { ...process.env };
     if (credentials) {
-      env.URBIT_URL = credentials.url;
       env.URBIT_SHIP = credentials.ship;
+      env.URBIT_URL = credentials.url;
       env.URBIT_CODE = credentials.code;
     }
 
@@ -143,6 +154,15 @@ const plugin = {
     setTlonRuntime(api.runtime);
     api.registerChannel({ plugin: tlonPlugin });
 
+    // Register /tlon-version command
+    api.registerCommand({
+      name: "tlon-version",
+      description: "Show Tlon plugin version.",
+      handler: async () => {
+        return { text: `Tlon plugin v${PLUGIN_VERSION} (${PLUGIN_COMMIT})` };
+      },
+    });
+
     // Register the tlon tool
     const tlonBinary = findTlonBinary();
     api.logger.info(`[tlon] Registering tlon tool, binary: ${tlonBinary}`);
@@ -157,7 +177,9 @@ const plugin = {
     if (credentials) {
       api.logger.info(`[tlon] Credentials available for ${account.ship}`);
     } else {
-      api.logger.warn(`[tlon] No credentials configured - tlon tool will rely on env vars`);
+      api.logger.warn(
+        `[tlon] No credentials configured - tlon tool will rely on env vars`,
+      );
     }
 
     api.registerTool({
@@ -201,12 +223,121 @@ const plugin = {
             content: [{ type: "text" as const, text: output }],
             details: undefined,
           };
-        } catch (error: any) {
+        } catch (error: unknown) {
+          const message =
+            error instanceof Error ? error.message : String(error);
           return {
-            content: [{ type: "text" as const, text: `Error: ${error.message}` }],
+            content: [{ type: "text" as const, text: `Error: ${message}` }],
             details: { error: true },
           };
         }
+      },
+    });
+
+    // Tool access control: block sensitive tools for non-owners
+    const ownerOnlyTools = new Set([
+      "tlon",
+      "tlon_run",
+      "tlon-run",
+      "cron",
+      "read",
+    ]);
+
+    api.on("before_tool_call", (event, ctx) => {
+      if (!ownerOnlyTools.has(event.toolName)) {
+        return;
+      }
+
+      const role = getSessionRole(ctx.sessionKey ?? "");
+
+      // Allow owner sessions and internal sessions (heartbeat, cron, etc.).
+      // Internal sessions have no role because they're not triggered by DMs.
+      // Only block when role is explicitly "user" (non-owner DM).
+      if (role === "user") {
+        api.logger.warn(
+          `[tlon] Blocked ${event.toolName} tool for non-owner. Session: ${ctx.sessionKey}, Role: ${role}`,
+        );
+        return {
+          block: true,
+          blockReason: `The ${event.toolName} tool is not available.`,
+        };
+      }
+
+      api.logger.info(
+        `[tlon] Allowed ${event.toolName} tool for ${role ?? "internal"} session. Session: ${ctx.sessionKey}`,
+      );
+    });
+
+    // ── Slash commands for approval & admin ────────────────────────────
+    // These bypass the LLM and call the monitor's command bridge directly.
+    // Each handler resolves the correct bridge (multi-account safe) and
+    // enforces owner-only access (default-deny).
+
+    api.registerCommand({
+      name: "allow",
+      description: "Allow a pending DM/channel/group request",
+      acceptsArgs: true,
+      handler: async (ctx) => {
+        const result = resolveBridgeForCommand(ctx);
+        if ("error" in result) return { text: result.error };
+        return { text: await result.bridge.handleAction("approve", ctx.args?.trim() || undefined) };
+      },
+    });
+
+    api.registerCommand({
+      name: "reject",
+      description: "Reject a pending DM/channel/group request",
+      acceptsArgs: true,
+      handler: async (ctx) => {
+        const result = resolveBridgeForCommand(ctx);
+        if ("error" in result) return { text: result.error };
+        return { text: await result.bridge.handleAction("deny", ctx.args?.trim() || undefined) };
+      },
+    });
+
+    api.registerCommand({
+      name: "ban",
+      description: "Ban a ship and deny its pending request",
+      acceptsArgs: true,
+      handler: async (ctx) => {
+        const result = resolveBridgeForCommand(ctx);
+        if ("error" in result) return { text: result.error };
+        return { text: await result.bridge.handleAction("block", ctx.args?.trim() || undefined) };
+      },
+    });
+
+    api.registerCommand({
+      name: "pending",
+      description: "List pending approval requests",
+      handler: async (ctx) => {
+        const result = resolveBridgeForCommand(ctx);
+        if ("error" in result) return { text: result.error };
+        return { text: await result.bridge.getPendingList() };
+      },
+    });
+
+    api.registerCommand({
+      name: "banned",
+      description: "List banned ships",
+      handler: async (ctx) => {
+        const result = resolveBridgeForCommand(ctx);
+        if ("error" in result) return { text: result.error };
+        return { text: await result.bridge.getBlockedList() };
+      },
+    });
+
+    api.registerCommand({
+      name: "unban",
+      description: "Unban a ship (e.g. /unban ~sampel-palnet)",
+      acceptsArgs: true,
+      handler: async (ctx) => {
+        const result = resolveBridgeForCommand(ctx);
+        if ("error" in result) return { text: result.error };
+        const ship = ctx.args?.trim();
+        if (!ship) {
+          return { text: "Usage: /unban ~ship-name" };
+        }
+        return { text: await result.bridge.handleUnblock(ship) };
       },
     });
   },

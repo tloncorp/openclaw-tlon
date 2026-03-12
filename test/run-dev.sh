@@ -10,7 +10,7 @@ if [ -f .env ]; then
   set +a
 fi
 
-if [ -n "$TEST_GATEWAY_URL" ]; then
+if [ -n "${TEST_GATEWAY_URL:-}" ]; then
   GATEWAY_URL="$TEST_GATEWAY_URL"
 else
   GATEWAY_PORT="${OPENCLAW_GATEWAY_PORT:-18789}"
@@ -41,7 +41,13 @@ echo "  TLON_SHIP=$TLON_SHIP"
 echo "  TEST_USER_SHIP=$TEST_USER_SHIP"
 
 # Run integration test files sequentially to avoid overlapping DM prompts.
-for test_file in test/cases/*.test.ts; do
-  echo "Running $test_file..."
-  pnpm vitest run "$test_file" "$@" || exit $?
-done
+# If a specific file is passed as an argument, run only that file.
+if [ $# -gt 0 ] && [[ "$1" == *.test.ts || "$1" == test/* ]]; then
+  echo "Running $1..."
+  pnpm vitest run "$@" || exit $?
+else
+  for test_file in test/cases/*.test.ts; do
+    echo "Running $test_file..."
+    pnpm vitest run "$test_file" "$@" || exit $?
+  done
+fi

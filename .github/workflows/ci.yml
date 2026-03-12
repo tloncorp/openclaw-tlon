@@ -2,9 +2,7 @@ name: CI
 
 on:
   pull_request:
-    branches: [master]
-  push:
-    branches: [master]
+    branches: [master, stable]
 
 jobs:
   unit-test:
@@ -33,7 +31,7 @@ jobs:
   integration-test:
     name: Integration Tests
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
 

@@ -165,6 +165,98 @@ describe("UrbitSSEClient", () => {
     });
   });
 
+  describe("resubscribe after quit", () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("resubscribes when a quit event is received", async () => {
+      const { urbitFetch } = await import("./fetch.js");
+      const mockUrbitFetch = vi.mocked(urbitFetch);
+      mockUrbitFetch.mockResolvedValue({
+        response: { ok: true, status: 200 },
+        finalUrl: "https://example.com",
+        release: vi.fn().mockResolvedValue(undefined),
+      });
+
+      const client = new UrbitSSEClient("https://example.com", "urbauth-~zod=123");
+      (client as { isConnected: boolean }).isConnected = true;
+
+      const eventHandler = vi.fn();
+      const quitHandler = vi.fn();
+
+      await client.subscribe({
+        app: "channels",
+        path: "/v2",
+        event: eventHandler,
+        quit: quitHandler,
+      });
+
+      expect(client.subscriptions).toHaveLength(1);
+      mockUrbitFetch.mockClear();
+
+      // Simulate a quit event from the server
+      mockUrbitFetch.mockResolvedValue({
+        response: { ok: true, status: 200 },
+        finalUrl: "https://example.com",
+        release: vi.fn().mockResolvedValue(undefined),
+      });
+
+      client.processEvent('id: 1\ndata: {"id":1,"response":"quit"}');
+
+      expect(quitHandler).toHaveBeenCalledTimes(1);
+
+      // Wait for the resubscription (2s initial backoff)
+      await vi.advanceTimersByTimeAsync(2100);
+
+      // Should have sent a new subscribe request
+      expect(mockUrbitFetch).toHaveBeenCalledTimes(1);
+      const body = JSON.parse(mockUrbitFetch.mock.calls[0][0].init.body as string);
+      expect(body[0]).toMatchObject({
+        action: "subscribe",
+        app: "channels",
+        path: "/v2",
+      });
+      // New sub ID should be 2
+      expect(body[0].id).toBe(2);
+      expect(client.subscriptions).toHaveLength(2);
+    });
+
+    it("does not resubscribe if client is aborted", async () => {
+      const { urbitFetch } = await import("./fetch.js");
+      const mockUrbitFetch = vi.mocked(urbitFetch);
+      mockUrbitFetch.mockResolvedValue({
+        response: { ok: true, status: 200 },
+        finalUrl: "https://example.com",
+        release: vi.fn().mockResolvedValue(undefined),
+      });
+
+      const client = new UrbitSSEClient("https://example.com", "urbauth-~zod=123");
+      (client as { isConnected: boolean }).isConnected = true;
+
+      await client.subscribe({
+        app: "channels",
+        path: "/v2",
+        event: vi.fn(),
+        quit: vi.fn(),
+      });
+
+      mockUrbitFetch.mockClear();
+
+      // Abort before quit
+      client.aborted = true;
+      client.processEvent('id: 1\ndata: {"id":1,"response":"quit"}');
+
+      await vi.advanceTimersByTimeAsync(5000);
+
+      expect(mockUrbitFetch).not.toHaveBeenCalled();
+    });
+  });
+
   describe("constructor", () => {
     it("generates unique channel ID", () => {
       const client1 = new UrbitSSEClient("https://example.com", "urbauth-~zod=123");

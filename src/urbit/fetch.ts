@@ -17,7 +17,13 @@ export type UrbitFetchOptions = {
   pinDns?: boolean;
 };
 
-export async function urbitFetch(params: UrbitFetchOptions) {
+export type UrbitFetchResult = {
+  response: Response;
+  finalUrl: string;
+  release: () => Promise<void>;
+};
+
+export async function urbitFetch(params: UrbitFetchOptions): Promise<UrbitFetchResult> {
   const validated = validateUrbitBaseUrl(params.baseUrl);
   if (!validated.ok) {
     throw new UrbitUrlError(validated.error);
