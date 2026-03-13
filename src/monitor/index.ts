@@ -811,8 +811,8 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       return false;
     }
 
-    // Don't intercept common words (yes, no, ok, etc.) when nothing is pending
-    if (pendingApprovals.length === 0 && !parsed.id) {
+    // Don't intercept approval-like messages when nothing is pending
+    if (pendingApprovals.length === 0) {
       return false;
     }
 
