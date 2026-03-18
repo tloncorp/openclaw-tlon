@@ -58,7 +58,7 @@ import {
 } from "./approval.js";
 import { setBridge, removeBridge, type ApprovalCommandBridge } from "./command-bridge.js";
 import { fetchAllChannels, fetchInitData } from "./discovery.js";
-import { cacheMessage, lookupCachedMessage, getChannelHistory, fetchThreadHistory } from "./history.js";
+import { cacheMessage, lookupCachedMessage, getChannelHistory, fetchChannelHistory, fetchThreadHistory } from "./history.js";
 import { downloadMessageImages } from "./media.js";
 import { createProcessedMessageTracker } from "./processed-messages.js";
 import {
@@ -1150,8 +1150,8 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         const threadHistory = await fetchThreadHistory(api, groupChannel, parentId, 20, runtime);
         if (threadHistory.length > 0) {
           const threadContext = threadHistory
-            .slice(-10) // Last 10 messages for context
-            .map((msg) => `${msg.author}: ${sanitizeMessageText(msg.content)}`)
+            .slice(-20) // Last 20 thread messages for context
+            .map((msg) => `${formatShipWithNickname(msg.author)}: ${sanitizeMessageText(msg.content)}`)
             .join("\n");
 
           // Prepend thread context to the message
@@ -1165,6 +1165,34 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       } catch (error: any) {
         runtime?.log?.(`[tlon] Could not fetch thread context: ${error?.message ?? String(error)}`);
         // Continue without thread context - not critical
+      }
+    }
+
+    // Fetch recent channel history on mention (non-thread) so the agent has
+    // context about what the channel has been discussing.
+    if (isGroup && groupChannel && !isThreadReply) {
+      try {
+        const recentHistory = await fetchChannelHistory(api, groupChannel, 20, runtime);
+        if (recentHistory.length > 0) {
+          // Filter out the current message itself (avoid duplication)
+          const contextMessages = recentHistory
+            .filter((msg) => msg.id !== params.messageId)
+            .slice(0, 20)
+            .reverse() // oldest first for natural reading order
+            .map((msg) => `${formatShipWithNickname(msg.author)}: ${sanitizeMessageText(msg.content)}`)
+            .join("\n");
+
+          if (contextMessages) {
+            const contextNote = `[Recent channel activity - ${recentHistory.length} messages. Use this context to understand what's being discussed.]`;
+            messageText = `${contextNote}\n\n${contextMessages}\n\n[Current message (mentioned you)]\n${messageText}`;
+            runtime?.log?.(
+              `[tlon] Added channel context (${recentHistory.length} messages) to mention in ${groupChannel}`,
+            );
+          }
+        }
+      } catch (error: any) {
+        runtime?.log?.(`[tlon] Could not fetch channel context: ${error?.message ?? String(error)}`);
+        // Continue without channel context - not critical
       }
     }
 
