@@ -11,16 +11,22 @@
 #
 # Usage:
 #   pnpm test:integration
+#   TEN_PORT=9081 pnpm test:integration    # use different port for ~ten
 
 set -euo pipefail
 
 # Fakezod credentials - these are the standard deterministic codes for ephemeral Urbit ships
 # ~zod is the bot ship, ~ten is the test user that sends DMs
-ZOD_URL="http://localhost:8080"
+# Host ports can be overridden via env vars (container-internal ports stay fixed)
+ZOD_PORT="${ZOD_PORT:-8080}"
+TEN_PORT="${TEN_PORT:-8081}"
+MUG_PORT="${MUG_PORT:-8082}"
+
+ZOD_URL="http://localhost:$ZOD_PORT"
 ZOD_CODE="lidlut-tabwed-pillex-ridrup"
-TEN_URL="http://localhost:8081"
+TEN_URL="http://localhost:$TEN_PORT"
 TEN_CODE="lapseg-nolmel-riswen-hopryc"
-MUG_URL="http://localhost:8082"
+MUG_URL="http://localhost:$MUG_PORT"
 MUG_CODE="ravsut-bolryd-hapsum-pastul"
 
 cd "$(dirname "$0")/.."
@@ -37,7 +43,7 @@ fi
 GATEWAY_PORT="${OPENCLAW_GATEWAY_PORT:-18789}"
 
 # Check for port conflicts before starting
-for port in 8080 8081 8082 $GATEWAY_PORT; do
+for port in $ZOD_PORT $TEN_PORT $MUG_PORT $GATEWAY_PORT; do
   if lsof -Pi ":$port" -sTCP:LISTEN -t >/dev/null 2>&1; then
     echo "Error: Port $port is already in use"
     if [ "$port" = "$GATEWAY_PORT" ]; then
@@ -48,6 +54,9 @@ for port in 8080 8081 8082 $GATEWAY_PORT; do
     exit 1
   fi
 done
+
+# Export port vars for docker-compose interpolation
+export ZOD_PORT TEN_PORT MUG_PORT
 
 # Use test compose file, add local override if tlonbot repo exists
 COMPOSE_FILES="-f dev/docker-compose.test.yml"
