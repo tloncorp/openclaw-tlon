@@ -3,13 +3,13 @@ import { createRequire } from "node:module";
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
+import type { OpenClawPluginApi } from "./src/openclaw-sdk.js";
 import { PLUGIN_COMMIT } from "./src/version.generated.js";
 
 // Get package version at runtime
 const require = createRequire(import.meta.url);
 const { version: PLUGIN_VERSION } = require("./package.json") as { version: string };
-import { emptyPluginConfigSchema } from "openclaw/plugin-sdk";
+import { emptyPluginConfigSchema } from "./src/openclaw-sdk.js";
 import { tlonPlugin } from "./src/channel.js";
 import { resolveBridgeForCommand } from "./src/monitor/command-auth.js";
 import { setTlonRuntime } from "./src/runtime.js";

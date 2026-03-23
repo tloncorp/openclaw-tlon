@@ -1,18 +1,19 @@
 import type {
+  ChannelAccountSnapshot,
   ChannelOutboundAdapter,
   ChannelPlugin,
   ChannelSetupInput,
   OpenClawConfig,
-} from "openclaw/plugin-sdk";
+} from "./openclaw-sdk.js";
 import {
   applyAccountNameToChannelSection,
   DEFAULT_ACCOUNT_ID,
   normalizeAccountId,
-} from "openclaw/plugin-sdk";
+  tlonSetupWizard,
+} from "./openclaw-sdk.js";
 import { buildTlonAccountFields } from "./account-fields.js";
 import { tlonChannelConfigSchema } from "./config-schema.js";
 import { monitorTlonProvider } from "./monitor/index.js";
-import { tlonOnboardingAdapter } from "./onboarding.js";
 import { formatTargetHint, normalizeShip, parseTlonTarget } from "./targets.js";
 import { resolveTlonAccount, listTlonAccountIds } from "./types.js";
 import { authenticate } from "./urbit/auth.js";
@@ -257,7 +258,7 @@ export const tlonPlugin: ChannelPlugin = {
       };
     },
   },
-  onboarding: tlonOnboardingAdapter,
+  setupWizard: tlonSetupWizard,
   reload: { configPrefixes: ["channels.tlon"] },
   configSchema: tlonChannelConfigSchema,
   config: {
@@ -518,7 +519,7 @@ export const tlonPlugin: ChannelPlugin = {
         lastError: runtime?.lastError ?? null,
         probe,
       };
-      return snapshot as import("openclaw/plugin-sdk").ChannelAccountSnapshot;
+      return snapshot as ChannelAccountSnapshot;
     },
   },
   gateway: {
@@ -528,7 +529,7 @@ export const tlonPlugin: ChannelPlugin = {
         accountId: account.accountId,
         ship: account.ship,
         url: account.url,
-      } as import("openclaw/plugin-sdk").ChannelAccountSnapshot);
+      } as ChannelAccountSnapshot);
       ctx.log?.info(`[${account.accountId}] starting Tlon provider for ${account.ship ?? "tlon"}`);
       return monitorTlonProvider({
         runtime: ctx.runtime,

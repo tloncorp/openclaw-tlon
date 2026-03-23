@@ -1,11 +1,12 @@
 import {
   createActionGate,
+  describeMessageToolActions,
   jsonResult,
   readReactionParams,
   readStringParam,
   type ChannelMessageActionAdapter,
   type ChannelMessageActionName,
-} from "openclaw/plugin-sdk";
+} from "./openclaw-sdk.js";
 import { resolveTlonAccount } from "./types.js";
 import { normalizeShip, parseTlonTarget } from "./targets.js";
 import { withAuthenticatedTlonApi } from "./urbit/api-client.js";
@@ -22,10 +23,10 @@ import { markdownToStory } from "./urbit/story.js";
 const SUPPORTED_ACTIONS = new Set<ChannelMessageActionName>(["react", "delete", "reply"]);
 
 export const tlonMessageActions: ChannelMessageActionAdapter = {
-  listActions: ({ cfg }) => {
+  describeMessageTool: ({ cfg }) => {
     const account = resolveTlonAccount(cfg);
     if (!account.configured || !account.enabled) {
-      return [];
+      return null;
     }
     const gate = createActionGate(
       (cfg.channels?.tlon as { actions?: Record<string, boolean | undefined> })?.actions,
@@ -33,7 +34,8 @@ export const tlonMessageActions: ChannelMessageActionAdapter = {
     const actions: ChannelMessageActionName[] = [];
     if (gate("reactions")) actions.push("react");
     if (gate("delete")) actions.push("delete");
-    return actions;
+    actions.push("reply");
+    return describeMessageToolActions(actions);
   },
 
   supportsAction: ({ action }) => SUPPORTED_ACTIONS.has(action),
