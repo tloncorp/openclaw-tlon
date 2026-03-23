@@ -1,4 +1,4 @@
-import type { RuntimeEnv, ReplyPayload, OpenClawConfig } from "openclaw/plugin-sdk";
+import type { RuntimeEnv, ReplyPayload, OpenClawConfig } from "../openclaw-sdk.js";
 import type { Memo, Story } from "@tloncorp/api";
 
 // Local structural types — @tloncorp/api defines these internally but
