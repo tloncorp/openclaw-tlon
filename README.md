@@ -223,7 +223,15 @@ pnpm test:integration -- test/cases/dm.test.ts
 
 For iterative development — you manage the ships and gateway yourself, tests run directly against them.
 
-**1. Create `.env`:**
+**1. Run setup** (clones sibling repos, creates `.env` from template):
+
+```bash
+./dev/setup.sh
+```
+
+This clones `tlonbot` and `api-beta` as sibling directories and creates `.env` from `.env.example` if it doesn't exist.
+
+**2. Edit `.env`:**
 
 ```bash
 # Required: LLM provider key
@@ -253,13 +261,13 @@ OPENCLAW_GATEWAY_PORT=18789
 # TLONBOT_TOKEN=ghp_...
 ```
 
-**2. Start your dev environment:**
+**3. Start your dev environment:**
 
 ```bash
 pnpm dev   # or docker compose --env-file .env -f dev/docker-compose.yml up --build
 ```
 
-**3. Run tests against it:**
+**4. Run tests against it:**
 
 ```bash
 pnpm test:integration:dev                          # All tests
