@@ -15,6 +15,16 @@
 
 set -euo pipefail
 
+cd "$(dirname "$0")/.."
+
+# Load .env file if present (for OPENROUTER_API_KEY, TLONBOT_TOKEN, etc.)
+# Test-specific variables (TLON_SHIP, TLON_CODE, etc.) are overridden below
+if [ -f .env ]; then
+  set -a
+  eval "$(grep -v '^#' .env | grep -v '^$' | sed 's/~/\\~/g')"
+  set +a
+fi
+
 # Fakezod credentials - these are the standard deterministic codes for ephemeral Urbit ships
 # ~zod is the bot ship, ~ten is the test user that sends DMs
 # Host ports can be overridden via env vars (container-internal ports stay fixed)
@@ -28,16 +38,6 @@ TEN_URL="http://localhost:$TEN_PORT"
 TEN_CODE="lapseg-nolmel-riswen-hopryc"
 MUG_URL="http://localhost:$MUG_PORT"
 MUG_CODE="ravsut-bolryd-hapsum-pastul"
-
-cd "$(dirname "$0")/.."
-
-# Load .env file if present (for OPENROUTER_API_KEY, TLONBOT_TOKEN, etc.)
-# Test-specific variables (TLON_SHIP, TLON_CODE, etc.) are overridden below
-if [ -f .env ]; then
-  set -a
-  eval "$(grep -v '^#' .env | grep -v '^$' | sed 's/~/\\~/g')"
-  set +a
-fi
 
 # Gateway port can be overridden via env var (matches docker-compose.test.yml)
 GATEWAY_PORT="${OPENCLAW_GATEWAY_PORT:-18789}"

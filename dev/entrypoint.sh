@@ -52,11 +52,22 @@ mkdir -p "$WORKSPACE_DIR/skills"
 rm -rf "$WORKSPACE_DIR/skills/tlon"
 ln -s /workspace/openclaw-tlon/node_modules/@tloncorp/tlon-skill "$WORKSPACE_DIR/skills/tlon"
 
-# Ensure default OpenClaw config path exists to avoid ENOENT in gateway health refresh.
+# Copy and patch config from tlonbot
 CONFIG_DIR=/root/.openclaw
 CONFIG_PATH="$CONFIG_DIR/openclaw.json"
 mkdir -p "$CONFIG_DIR"
-if [ ! -f "$CONFIG_PATH" ] && [ -f "/workspace/openclaw-tlon/dev/openclaw.dev.json" ]; then
+
+if [ -f "/workspace/tlonbot/openclaw.json" ]; then
+  echo "==> Copying config from tlonbot..."
+  cp /workspace/tlonbot/openclaw.json "$CONFIG_PATH"
+
+  # Patch in Brave API key if available
+  if [ -n "$BRAVE_API_KEY" ]; then
+    echo "==> Patching Brave API key into config..."
+    jq --arg key "$BRAVE_API_KEY" '.tools.web.search.apiKey = $key' \
+      "$CONFIG_PATH" > "$CONFIG_PATH.tmp" && mv "$CONFIG_PATH.tmp" "$CONFIG_PATH"
+  fi
+elif [ -f "/workspace/openclaw-tlon/dev/openclaw.dev.json" ]; then
   cp "/workspace/openclaw-tlon/dev/openclaw.dev.json" "$CONFIG_PATH"
 fi
 

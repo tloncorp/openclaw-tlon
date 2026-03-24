@@ -22,8 +22,9 @@ services:
       # Note: tlon-skill is installed from npm, no mount needed
       # Persist OpenClaw state
       - openclaw-state:/root/.openclaw
-      # Config from tlonbot
-      - ../../tlonbot/openclaw.json:/root/.openclaw/openclaw.json:ro
+      # Config from tlonbot (copied + patched by entrypoint, not mounted directly)
+      # The entrypoint copies /workspace/tlonbot/openclaw.json → /root/.openclaw/openclaw.json
+      # and patches in env vars (BRAVE_API_KEY, etc.)
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
