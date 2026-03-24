@@ -110,6 +110,10 @@ upsert_block "$WORKSPACE_DIR/SOUL.md" "$(envsubst < /workspace/tlonbot/prompts/S
 upsert_block "$WORKSPACE_DIR/USER.md" "$(cat /workspace/tlonbot/prompts/USER.md)"
 upsert_block "$WORKSPACE_DIR/TOOLS.md" "$(cat /workspace/tlonbot/prompts/TOOLS.md)"
 upsert_block "$WORKSPACE_DIR/HEARTBEAT.md" "$(cat /workspace/tlonbot/prompts/HEARTBEAT.md)"
+upsert_block "$WORKSPACE_DIR/AGENTS.md" "$(cat /workspace/tlonbot/prompts/AGENTS.md)"
+upsert_block "$WORKSPACE_DIR/BOOTSTRAP.md" "$(cat /workspace/tlonbot/prompts/BOOTSTRAP.md)"
+upsert_block "$WORKSPACE_DIR/IDENTITY.md" "$(cat /workspace/tlonbot/prompts/IDENTITY.md)"
+upsert_block "$WORKSPACE_DIR/MEMORY.md" "$(cat /workspace/tlonbot/prompts/MEMORY.md)"
 
 export WORKSPACE_DIR
 export TLON_RUN_PATH="/workspace/tlonbot/bin/tlon-run"
