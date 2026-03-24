@@ -81,6 +81,7 @@ cat > "$CONFIG_DIR/openclaw.json" << EOF
     "allow": [
       "web_fetch",
       "web_search",
+      "image_search",
       "read",
       "cron",
       "tlon",
@@ -123,6 +124,24 @@ cat > "$CONFIG_DIR/openclaw.json" << EOF
   }
 }
 EOF
+
+# Patch in image-search plugin if tlonbot is mounted
+if [ -d "/workspace/tlonbot/image-search" ]; then
+  echo "==> Patching config: adding image-search plugin..."
+  jq '.plugins.load.paths += ["/workspace/tlonbot/image-search"]
+    | .plugins.entries["image-search"] = {"enabled": true}' \
+    "$CONFIG_DIR/openclaw.json" > "$CONFIG_DIR/openclaw.json.tmp" \
+    && mv "$CONFIG_DIR/openclaw.json.tmp" "$CONFIG_DIR/openclaw.json"
+fi
+
+# Patch in Brave API key for web search if available
+if [ -n "$BRAVE_API_KEY" ]; then
+  echo "==> Patching config: adding Brave search API key..."
+  jq --arg key "$BRAVE_API_KEY" \
+    '.tools.web.search = {"provider": "brave", "apiKey": $key}' \
+    "$CONFIG_DIR/openclaw.json" > "$CONFIG_DIR/openclaw.json.tmp" \
+    && mv "$CONFIG_DIR/openclaw.json.tmp" "$CONFIG_DIR/openclaw.json"
+fi
 
 echo "==> Config written:"
 cat "$CONFIG_DIR/openclaw.json"

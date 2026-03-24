@@ -158,6 +158,7 @@ docker compose --env-file .env -f dev/docker-compose.yml up --build
 ```
 parent/
 ├── api-beta/           # @tloncorp/api - shared API library (cloned by setup)
+├── tlonbot/            # Bot prompts + image-search extension (optional)
 └── openclaw-tlon/      # This repo
 ```
 
@@ -168,6 +169,126 @@ The tlon-skill is installed via npm and doesn't need to be cloned separately.
 1. Edit code in either repo
 2. Restart container: `docker compose --env-file .env -f dev/docker-compose.yml up --build`
 3. For faster iteration, run OpenClaw directly on host with npm link
+
+## Testing
+
+### Unit Tests
+
+```bash
+pnpm test              # Run unit tests
+pnpm test:watch        # Watch mode
+pnpm test:security     # Security tests only
+```
+
+### Integration Tests
+
+Integration tests spin up ephemeral fakezod ships (~zod, ~ten, ~mug) in Docker, boot an OpenClaw gateway with the plugin, and run end-to-end scenarios.
+
+#### Minimal Setup (`test:integration`)
+
+Runs everything in Docker — ships + gateway + tests. Only needs an LLM API key.
+
+**1. Create `.env`** with at minimum:
+
+```bash
+# Required: at least one LLM provider key
+OPENROUTER_API_KEY=sk-or-...
+
+# Optional: override the default model (default: openrouter/minimax/minimax-m2.1)
+# MODEL=anthropic/claude-sonnet-4-5
+```
+
+That's it. The test harness handles ship credentials, config, and cleanup automatically.
+
+**2. Run:**
+
+```bash
+pnpm test:integration
+```
+
+This will:
+- Start 3 fakezod ships (~zod as bot, ~ten as test user, ~mug as third party)
+- Build and start an OpenClaw container with the plugin
+- Wait for ships, gateway, and SSE subscriptions
+- Run all test cases in `test/cases/`
+- Tear everything down on exit
+
+**Run a specific test:**
+
+```bash
+pnpm test:integration -- test/cases/dm.test.ts
+```
+
+#### Extended Setup (`test:integration:dev`)
+
+For iterative development — you manage the ships and gateway yourself, tests run directly against them.
+
+**1. Run setup** (clones sibling repos, creates `.env` from template):
+
+```bash
+./dev/setup.sh
+```
+
+This clones `tlonbot` and `api-beta` as sibling directories and creates `.env` from `.env.example` if it doesn't exist.
+
+**2. Edit `.env`:**
+
+```bash
+# Required: LLM provider key
+OPENROUTER_API_KEY=sk-or-...
+
+# Bot ship (the ship running the plugin)
+TLON_URL=http://host.docker.internal:8080
+TLON_SHIP=~zod
+TLON_CODE=lidlut-tabwed-pillex-ridrup
+
+# Test user ship (sends DMs to the bot)
+TEST_USER_URL=http://host.docker.internal:8081
+TEST_USER_SHIP=~ten
+TEST_USER_CODE=lapseg-nolmel-riswen-hopryc
+
+# DM allowlist and owner
+TLON_DM_ALLOWLIST=~ten
+TLON_OWNER_SHIP=~ten
+
+# Gateway port (match your running gateway)
+OPENCLAW_GATEWAY_PORT=18789
+
+# Optional: Brave Search API key (enables web_search + image_search tools)
+# BRAVE_API_KEY=BSA...
+
+# Optional: tlonbot GitHub token (if not using local clone)
+# TLONBOT_TOKEN=ghp_...
+```
+
+**3. Start your dev environment:**
+
+```bash
+pnpm dev   # or docker compose --env-file .env -f dev/docker-compose.yml up --build
+```
+
+**4. Run tests against it:**
+
+```bash
+pnpm test:integration:dev                          # All tests
+pnpm test:integration:dev test/cases/dm.test.ts    # Specific test
+pnpm test:integration:dev --watch                  # Watch mode
+```
+
+#### Optional: Image Search & Brave API
+
+To test the `image_search` tool and Brave-powered `web_search`:
+
+1. Get a [Brave Search API key](https://brave.com/search/api/)
+2. Add to `.env`: `BRAVE_API_KEY=BSA...`
+3. Clone [tlonbot](https://github.com/tloncorp/tlonbot) as a sibling directory:
+   ```bash
+   cd .. && gh repo clone tloncorp/tlonbot
+   ```
+
+When `../tlonbot` exists, `docker-compose.local.yml` mounts it automatically, making the `image-search` plugin available. The entrypoint patches the config to load it if present.
+
+Without these, `web_search` falls back to whatever provider is available, and `image_search` returns a "no API key" error — tests that don't depend on image search still pass.
 
 ## License
 

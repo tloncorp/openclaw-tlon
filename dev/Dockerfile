@@ -1,6 +1,6 @@
 FROM node:24-bookworm-slim
 
-RUN apt-get update && apt-get install -y git curl gettext-base && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y git curl gettext-base && apt-get install -y git curl jq && rm -rf /var/lib/apt/lists/*
 
 RUN npm install -g pnpm
 
