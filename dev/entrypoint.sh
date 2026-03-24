@@ -44,13 +44,13 @@ fi
 rm -rf "$(npm root -g)/openclaw/extensions/tlon"
 
 # Plugin is loaded from /workspace/openclaw-tlon via plugins.load.paths in config
-# Install tlon skill to workspace skills directory (most reliable discovery method)
-echo "==> Installing tlon skill to workspace..."
-WORKSPACE_DIR=/root/.openclaw/workspace
-mkdir -p "$WORKSPACE_DIR/skills"
-# Symlink the skill package to workspace skills (recreate if exists)
-rm -rf "$WORKSPACE_DIR/skills/tlon"
-ln -s /workspace/openclaw-tlon/node_modules/@tloncorp/tlon-skill "$WORKSPACE_DIR/skills/tlon"
+# Skill should be discovered via plugin manifest's "skills" field.
+# Commenting out manual symlink to test manifest-based discovery.
+# echo "==> Installing tlon skill to workspace..."
+# WORKSPACE_DIR=/root/.openclaw/workspace
+# mkdir -p "$WORKSPACE_DIR/skills"
+# rm -rf "$WORKSPACE_DIR/skills/tlon"
+# ln -s /workspace/openclaw-tlon/node_modules/@tloncorp/tlon-skill "$WORKSPACE_DIR/skills/tlon"
 
 # Copy and patch config from tlonbot
 CONFIG_DIR=/root/.openclaw
