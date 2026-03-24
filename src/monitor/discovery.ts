@@ -1,4 +1,4 @@
-import type { RuntimeEnv } from "../openclaw-sdk.js";
+import type { RuntimeEnv } from "openclaw/plugin-sdk";
 import type { Foreigns } from "../urbit/foreigns.js";
 import { formatChangesDate } from "./utils.js";
 
