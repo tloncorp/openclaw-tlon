@@ -51,7 +51,7 @@
   "devDependencies": {
     "@types/node": "^25.4.0",
     "dotenv": "^17.2.4",
-    "openclaw": "2026.3.22",
+    "openclaw": "2026.3.23",
     "oxfmt": "0.27.0",
     "oxlint": "^1.42.0",
     "oxlint-tsgolint": "^0.16.0",

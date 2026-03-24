@@ -1,18 +1,21 @@
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
+import { emptyPluginConfigSchema } from "openclaw/plugin-sdk/tlon";
 import { PLUGIN_COMMIT } from "./src/version.generated.js";
 
-import { emptyPluginConfigSchema } from "./src/openclaw-sdk.js";
 import { tlonPlugin } from "./src/channel.js";
 import { resolveBridgeForCommand } from "./src/monitor/command-auth.js";
 import { setTlonRuntime } from "./src/runtime.js";
+import { resolveTlonBinary } from "./src/tlon-binary.js";
 import { resolveTlonAccount } from "./src/types.js";
 import { getSessionRole } from "./src/session-roles.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+const require = createRequire(import.meta.url);
 
 function readPluginVersion(): string {
   const packageJsonPath = [join(__dirname, "package.json"), join(__dirname, "..", "package.json")]
@@ -53,26 +56,10 @@ const ALLOWED_TLON_COMMANDS = new Set([
  * Find the tlon binary from the skill package
  */
 function findTlonBinary(): string {
-  // Check in node_modules/.bin
-  const skillBin = join(__dirname, "node_modules", ".bin", "tlon");
-  console.log(
-    `[tlon] Checking for binary at: ${skillBin}, exists: ${existsSync(skillBin)}`,
-  );
-  if (existsSync(skillBin)) return skillBin;
-
-  // Check for platform-specific binary directly
-  const platform = process.platform;
-  const arch = process.arch;
-  const platformPkg = `@tloncorp/tlon-skill-${platform}-${arch}`;
-  const platformBin = join(__dirname, "node_modules", platformPkg, "tlon");
-  console.log(
-    `[tlon] Checking for platform binary at: ${platformBin}, exists: ${existsSync(platformBin)}`,
-  );
-  if (existsSync(platformBin)) return platformBin;
-
-  // Fallback to PATH
-  console.log(`[tlon] Falling back to PATH lookup for 'tlon'`);
-  return "tlon";
+  return resolveTlonBinary({
+    moduleDir: __dirname,
+    resolveModule: require.resolve,
+  });
 }
 
 /**
@@ -203,7 +190,10 @@ const plugin = {
       label: "Tlon CLI",
       description:
         "Tlon/Urbit API operations: activity, channels, contacts, groups, messages, dms, posts, notebook, settings. " +
-        "Examples: 'activity mentions --limit 10', 'channels groups', 'contacts self', 'groups list'",
+        'Examples: \'activity mentions --limit 10\', \'channels groups\', \'contacts self\', ' +
+        '\'contacts update-profile --nickname "My Name"\', ' +
+        '\'groups add-channel ~host/group "Room Name" --kind chat\', ' +
+        '\'messages channel chat/~host/slug --limit 20\', \'groups list\'',
       parameters: {
         type: "object",
         properties: {
@@ -211,7 +201,10 @@ const plugin = {
             type: "string",
             description:
               "The tlon command and arguments. " +
-              "Examples: 'activity mentions --limit 10', 'contacts get ~sampel-palnet', 'groups list'",
+              'Examples: \'activity mentions --limit 10\', \'contacts get ~sampel-palnet\', ' +
+              '\'contacts update-profile --nickname "My Name"\', ' +
+              '\'groups add-channel ~host/group "Room Name" --kind chat\', ' +
+              '\'messages channel chat/~host/slug --limit 20\', \'groups list\'',
           },
         },
         required: ["command"],

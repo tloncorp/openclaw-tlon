@@ -95,6 +95,7 @@ export function createTlonClient(config: TlonClientConfig): TestClient {
   // Create Urbit client for test user to send DMs
   const testUserShipClean = testUser.shipName.replace(/^~/, "");
   const testUserShipNorm = testUser.shipName.startsWith("~") ? testUser.shipName : `~${testUser.shipName}`;
+  const botShipNorm = bot.shipName.startsWith("~") ? bot.shipName : `~${bot.shipName}`;
   const urbit = new Urbit(testUser.shipUrl, testUser.code);
   urbit.ship = testUserShipClean;
 
@@ -142,6 +143,8 @@ export function createTlonClient(config: TlonClientConfig): TestClient {
       mark: "chat-dm-action",
       json: action,
     });
+
+    return { messageId: id, sentAt };
   };
 
   return {
@@ -149,7 +152,6 @@ export function createTlonClient(config: TlonClientConfig): TestClient {
       const timeoutMs = opts.timeoutMs ?? 60_000;
 
       try {
-        const botShipNorm = bot.shipName.startsWith("~") ? bot.shipName : `~${bot.shipName}`;
         // Snapshot latest bot DM timestamp before sending, so we only accept truly new replies.
         let baselineBotSentAt = 0;
         try {
@@ -168,9 +170,13 @@ export function createTlonClient(config: TlonClientConfig): TestClient {
         // Retry transient channel failures so tests don't fail fast and cascade prompts.
         let sent = false;
         let lastSendError = "";
+        let sentMessageId = "";
+        let sentAt = 0;
         for (let attempt = 1; attempt <= 3; attempt += 1) {
           try {
-            await sendTestUserDm(bot.shipName, text);
+            const result = await sendTestUserDm(bot.shipName, text);
+            sentMessageId = result.messageId;
+            sentAt = result.sentAt;
             sent = true;
             break;
           } catch (err) {
@@ -193,14 +199,38 @@ export function createTlonClient(config: TlonClientConfig): TestClient {
         const startTime = Date.now();
         let lastPollError = "";
         let attempts = 0;
+        let promptPostedSentAt: number | undefined;
 
         while (Date.now() - startTime < timeoutMs) {
           attempts += 1;
           await sleep(2000);
 
           try {
-            // Poll DM channel directly to avoid activity timestamp parsing edge cases.
+            // Poll DM channel directly and only accept bot posts after this prompt.
             const dmPosts = await testUserState.channelPosts(botShipNorm, 30);
+            const promptPost = (dmPosts ?? []).find((post) => {
+              const p = post as {
+                id?: string;
+                authorId?: string;
+                textContent?: string | null;
+                content?: unknown;
+              };
+              const textContent = p.textContent ?? getTextContent(p.content);
+              return (
+                p.id === sentMessageId &&
+                p.authorId === testUserShipNorm &&
+                (textContent ?? "").trim() === text
+              );
+            }) as { sentAt?: number } | undefined;
+
+            if (typeof promptPost?.sentAt === "number") {
+              promptPostedSentAt = promptPost.sentAt;
+            }
+
+            const responseAnchor = Math.max(
+              baselineBotSentAt,
+              promptPostedSentAt ?? baselineBotSentAt,
+            );
             const botDmPosts = (dmPosts ?? [])
               .map((post) => {
                 const p = post as {
@@ -217,8 +247,9 @@ export function createTlonClient(config: TlonClientConfig): TestClient {
                 };
               })
               .filter((post) => post.authorId === botShipNorm)
-              .filter((post) => typeof post.sentAt === "number" && post.sentAt > baselineBotSentAt)
-              .filter((post) => post.text.length > 0);
+              .filter((post) => typeof post.sentAt === "number" && post.sentAt > responseAnchor)
+              .filter((post) => post.text.length > 0)
+              .sort((a, b) => (a.sentAt ?? 0) - (b.sentAt ?? 0));
 
             // Diagnostic: log poll state on first and every 5th attempt
             if (attempts === 1 || attempts % 5 === 0) {
@@ -228,17 +259,24 @@ export function createTlonClient(config: TlonClientConfig): TestClient {
                   return { authorId: p.authorId, sentAt: p.sentAt, text: ((p.textContent ?? getTextContent(p.content)) ?? "").trim().slice(0, 40) };
                 })
                 .filter((p) => p.authorId === botShipNorm);
-              console.log(`[poll #${attempts}] baseline=${baselineBotSentAt} totalPosts=${(dmPosts ?? []).length} botPosts=${allBotPosts.length} newBotPosts=${botDmPosts.length} latestBotSentAt=${allBotPosts.length > 0 ? Math.max(...allBotPosts.map(p => p.sentAt ?? 0)) : "none"}`);
+              console.log(`[poll #${attempts}] baseline=${baselineBotSentAt} sentAt=${sentAt} promptPostedSentAt=${promptPostedSentAt ?? "none"} anchor=${responseAnchor} sentId=${sentMessageId} totalPosts=${(dmPosts ?? []).length} botPosts=${allBotPosts.length} newBotPosts=${botDmPosts.length} latestBotSentAt=${allBotPosts.length > 0 ? Math.max(...allBotPosts.map(p => p.sentAt ?? 0)) : "none"}`);
               if (allBotPosts.length > 0) {
                 console.log(`[poll #${attempts}] last 3 bot posts: ${JSON.stringify(allBotPosts.slice(-3))}`);
               }
             }
 
             if (botDmPosts.length > 0) {
-              const latest = botDmPosts.sort((a, b) => (b.sentAt ?? 0) - (a.sentAt ?? 0))[0];
+              const firstReply = botDmPosts[0];
+              if (firstReply.text.startsWith("⚠️ Agent failed before reply:")) {
+                return {
+                  success: false,
+                  text: firstReply.text,
+                  error: firstReply.text,
+                };
+              }
               return {
                 success: true,
-                text: latest.text,
+                text: firstReply.text,
               };
             }
           } catch (err) {
@@ -252,7 +290,7 @@ export function createTlonClient(config: TlonClientConfig): TestClient {
           success: false,
           error:
             `Timeout waiting for bot response after ${timeoutMs}ms ` +
-            `(attempts=${attempts}, baselineBotSentAt=${baselineBotSentAt})` +
+            `(attempts=${attempts}, baselineBotSentAt=${baselineBotSentAt}, sentAt=${sentAt}, promptPostedSentAt=${promptPostedSentAt ?? "none"}, sentMessageId=${sentMessageId})` +
             (lastPollError ? `, lastPollError=${lastPollError}` : ""),
         };
       } catch (err) {

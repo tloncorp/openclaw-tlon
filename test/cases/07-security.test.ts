@@ -49,6 +49,28 @@ describe("security", () => {
     return Array.isArray(raw) ? raw : [];
   }
 
+  async function ensureShipUnblocked(ship: string): Promise<void> {
+    const normalizedShip = ship.startsWith("~") ? ship : `~${ship}`;
+    const blockedBefore = (await getBlockedShips()).map((item) =>
+      item.startsWith("~") ? item : `~${item}`,
+    );
+    if (!blockedBefore.includes(normalizedShip)) {
+      return;
+    }
+
+    await fixtures.botState.poke({
+      app: "chat",
+      mark: "chat-unblock-ship",
+      json: { ship: normalizedShip },
+    });
+    await waitFor(async () => {
+      const blockedAfter = (await getBlockedShips()).map((item) =>
+        item.startsWith("~") ? item : `~${item}`,
+      );
+      return blockedAfter.includes(normalizedShip) ? undefined : true;
+    }, 30_000, 2000, `${normalizedShip} to be removed from blocked list`);
+  }
+
   // =========================================================================
   // 1. Tool Access Control
   // =========================================================================
@@ -150,11 +172,7 @@ describe("security", () => {
         expect(response.text ?? "").toContain("~nec");
       } finally {
         // Always clean up the block
-        await fixtures.botState.poke({
-          app: "chat",
-          mark: "chat-unblock-ship",
-          json: { ship: "~nec" },
-        });
+        await ensureShipUnblocked("~nec");
         await new Promise((resolve) => setTimeout(resolve, 3000));
       }
     });
@@ -241,11 +259,7 @@ describe("security", () => {
       } finally {
         // Always unblock to restore DM access for subsequent tests
         console.log(`[TEST] Unblocking ${fixtures.thirdPartyShip}...`);
-        await fixtures.botState.poke({
-          app: "chat",
-          mark: "chat-unblock-ship",
-          json: { ship: fixtures.thirdPartyShip },
-        });
+        await ensureShipUnblocked(fixtures.thirdPartyShip);
         await new Promise((resolve) => setTimeout(resolve, 3000));
       }
     });
@@ -327,11 +341,7 @@ describe("security", () => {
       } finally {
         // Clean up: unblock the ship
         console.log(`[TEST] Unblocking ${fixtures.thirdPartyShip}...`);
-        await fixtures.botState.poke({
-          app: "chat",
-          mark: "chat-unblock-ship",
-          json: { ship: fixtures.thirdPartyShip },
-        });
+        await ensureShipUnblocked(fixtures.thirdPartyShip);
         await new Promise((resolve) => setTimeout(resolve, 3000));
       }
     });
@@ -451,16 +461,8 @@ describe("security", () => {
       requireThirdParty(fixtures);
 
       // 1. Ensure third party is not blocked and not on the allowlist
-      try {
-        await fixtures.botState.poke({
-          app: "chat",
-          mark: "chat-unblock-ship",
-          json: { ship: fixtures.thirdPartyShip },
-        });
-        await new Promise((resolve) => setTimeout(resolve, 2000));
-      } catch {
-        // Ignore if ship was not blocked
-      }
+      await ensureShipUnblocked(fixtures.thirdPartyShip);
+      await new Promise((resolve) => setTimeout(resolve, 2000));
 
       const currentList = await getDmAllowlist();
       if (currentList.includes(fixtures.thirdPartyShip)) {
@@ -730,11 +732,7 @@ describe("security", () => {
       expect(blocked).toContain(fixtures.thirdPartyShip);
 
       // Clean up: unblock the ship and re-add to allowlist for subsequent tests
-      await fixtures.botState.poke({
-        app: "chat",
-        mark: "chat-unblock-ship",
-        json: { ship: fixtures.thirdPartyShip },
-      });
+      await ensureShipUnblocked(fixtures.thirdPartyShip);
       const cleanList = await getDmAllowlist();
       if (!cleanList.includes(fixtures.thirdPartyShip)) {
         await seedDmAllowlist([...cleanList, fixtures.thirdPartyShip]);

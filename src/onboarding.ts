@@ -1,11 +1,15 @@
-import type { OpenClawConfig, WizardPrompter } from "openclaw/plugin-sdk";
+import type {
+  ChannelSetupInput,
+  ChannelSetupWizard,
+  OpenClawConfig,
+  WizardPrompter,
+} from "openclaw/plugin-sdk/setup";
 import {
-  formatDocsLink,
-  promptAccountId,
+  applyAccountNameToChannelSection,
   DEFAULT_ACCOUNT_ID,
+  formatDocsLink,
   normalizeAccountId,
-  type ChannelOnboardingAdapter,
-} from "./openclaw-sdk.js";
+} from "openclaw/plugin-sdk/setup";
 import { buildTlonAccountFields } from "./account-fields.js";
 import type { TlonResolvedAccount } from "./types.js";
 import { listTlonAccountIds, resolveTlonAccount } from "./types.js";
@@ -13,50 +17,63 @@ import { isBlockedUrbitHostname, validateUrbitBaseUrl } from "./urbit/base-url.j
 
 const channel = "tlon" as const;
 
+const TLON_SETUP_NOTE_LINES = [
+  "You need your Urbit ship URL and login code.",
+  "Example URL: https://your-ship-host",
+  "Example ship: ~sampel-palnet",
+  "If your ship URL is on a private network (LAN/localhost), you must explicitly allow it during setup.",
+  `Docs: ${formatDocsLink("/channels/tlon", "channels/tlon")}`,
+];
+
+export type TlonSetupInput = ChannelSetupInput & {
+  ship?: string;
+  url?: string;
+  code?: string;
+  allowPrivateNetwork?: boolean;
+  groupChannels?: string[];
+  dmAllowlist?: string[];
+  autoDiscoverChannels?: boolean;
+  ownerShip?: string;
+};
+
 function isConfigured(account: TlonResolvedAccount): boolean {
   return Boolean(account.ship && account.url && account.code);
 }
 
-function applyAccountConfig(params: {
+export function applyTlonSetupConfig(params: {
   cfg: OpenClawConfig;
   accountId: string;
-  input: {
-    name?: string;
-    ship?: string;
-    url?: string;
-    code?: string;
-    allowPrivateNetwork?: boolean;
-    groupChannels?: string[];
-    dmAllowlist?: string[];
-    autoDiscoverChannels?: boolean;
-  };
+  input: TlonSetupInput;
 }): OpenClawConfig {
   const { cfg, accountId, input } = params;
   const useDefault = accountId === DEFAULT_ACCOUNT_ID;
-  const base = cfg.channels?.tlon ?? {};
-  const nextValues = {
-    enabled: true,
-    ...(input.name ? { name: input.name } : {}),
-    ...buildTlonAccountFields(input),
-  };
+  const namedConfig = applyAccountNameToChannelSection({
+    cfg,
+    channelKey: "tlon",
+    accountId,
+    name: input.name,
+  });
+  const base = namedConfig.channels?.tlon ?? {};
+  const payload = buildTlonAccountFields(input);
 
   if (useDefault) {
     return {
-      ...cfg,
+      ...namedConfig,
       channels: {
-        ...cfg.channels,
+        ...namedConfig.channels,
         tlon: {
           ...base,
-          ...nextValues,
+          enabled: true,
+          ...payload,
         },
       },
     };
   }
 
   return {
-    ...cfg,
+    ...namedConfig,
     channels: {
-      ...cfg.channels,
+      ...namedConfig.channels,
       tlon: {
         ...base,
         enabled: base.enabled ?? true,
@@ -66,25 +83,13 @@ function applyAccountConfig(params: {
             ...(base as { accounts?: Record<string, Record<string, unknown>> }).accounts?.[
               accountId
             ],
-            ...nextValues,
+            enabled: true,
+            ...payload,
           },
         },
       },
     },
   };
-}
-
-async function noteTlonHelp(prompter: WizardPrompter): Promise<void> {
-  await prompter.note(
-    [
-      "You need your Urbit ship URL and login code.",
-      "Example URL: https://your-ship-host",
-      "Example ship: ~sampel-palnet",
-      "If your ship URL is on a private network (LAN/localhost), you must explicitly allow it during setup.",
-      `Docs: ${formatDocsLink("/channels/tlon", "channels/tlon")}`,
-    ].join("\n"),
-    "Tlon setup",
-  );
 }
 
 function parseList(value: string): string[] {
@@ -94,63 +99,135 @@ function parseList(value: string): string[] {
     .filter(Boolean);
 }
 
-export const tlonOnboardingAdapter: ChannelOnboardingAdapter = {
+async function promptTlonAccountId(params: {
+  cfg: OpenClawConfig;
+  prompter: WizardPrompter;
+  currentId: string;
+  defaultAccountId: string;
+}): Promise<string> {
+  const existingIds = listTlonAccountIds(params.cfg);
+  const choice = await params.prompter.select({
+    message: "Tlon account",
+    options: [
+      ...existingIds.map((accountId) => ({
+        value: accountId,
+        label: accountId === "default" ? "default (primary)" : accountId,
+      })),
+      { value: "__new__", label: "Add a new account" },
+    ],
+    initialValue: params.currentId,
+  });
+
+  if (choice !== "__new__") {
+    return normalizeAccountId(choice);
+  }
+
+  const entered = await params.prompter.text({
+    message: "New Tlon account id",
+    validate: (value) => (value?.trim() ? undefined : "Required"),
+  });
+  const normalized = normalizeAccountId(String(entered));
+  if (String(entered).trim() !== normalized) {
+    await params.prompter.note(`Normalized account id to "${normalized}".`, "Tlon account");
+  }
+  return normalized;
+}
+
+export const tlonSetupWizard: ChannelSetupWizard = {
   channel,
-  getStatus: async ({ cfg }) => {
-    const accountIds = listTlonAccountIds(cfg);
-    const configured =
-      accountIds.length > 0
+  status: {
+    configuredLabel: "configured",
+    unconfiguredLabel: "needs setup",
+    configuredHint: "configured",
+    unconfiguredHint: "urbit messenger",
+    configuredScore: 1,
+    unconfiguredScore: 4,
+    resolveConfigured: ({ cfg }) => {
+      const accountIds = listTlonAccountIds(cfg);
+      return accountIds.length > 0
         ? accountIds.some((accountId) => isConfigured(resolveTlonAccount(cfg, accountId)))
         : isConfigured(resolveTlonAccount(cfg, DEFAULT_ACCOUNT_ID));
-
-    return {
-      channel,
-      configured,
-      statusLines: [`Tlon: ${configured ? "configured" : "needs setup"}`],
-      selectionHint: configured ? "configured" : "urbit messenger",
-      quickstartScore: configured ? 1 : 4,
-    };
+    },
+    resolveStatusLines: ({ configured }) => [`Tlon: ${configured ? "configured" : "needs setup"}`],
+    resolveSelectionHint: ({ configured }) => (configured ? "configured" : "urbit messenger"),
+    resolveQuickstartScore: ({ configured }) => (configured ? 1 : 4),
   },
-  configure: async ({ cfg, prompter, accountOverrides, shouldPromptAccountIds }) => {
-    const override = accountOverrides[channel]?.trim();
-    const defaultAccountId = DEFAULT_ACCOUNT_ID;
-    let accountId = override ? normalizeAccountId(override) : defaultAccountId;
-
-    if (shouldPromptAccountIds && !override) {
-      accountId = await promptAccountId({
-        cfg,
-        prompter,
-        label: "Tlon",
-        currentId: accountId,
-        listAccountIds: listTlonAccountIds,
-        defaultAccountId,
-      });
+  introNote: {
+    title: "Tlon setup",
+    lines: TLON_SETUP_NOTE_LINES,
+  },
+  resolveAccountIdForConfigure: async ({
+    cfg,
+    prompter,
+    accountOverride,
+    shouldPromptAccountIds,
+    defaultAccountId,
+  }) => {
+    const override = accountOverride?.trim();
+    const currentId = override ? normalizeAccountId(override) : defaultAccountId;
+    if (!shouldPromptAccountIds || override) {
+      return currentId;
     }
-
-    const resolved = resolveTlonAccount(cfg, accountId);
-    await noteTlonHelp(prompter);
-
-    const ship = await prompter.text({
+    return await promptTlonAccountId({
+      cfg,
+      prompter,
+      currentId,
+      defaultAccountId,
+    });
+  },
+  stepOrder: "text-first",
+  credentials: [],
+  textInputs: [
+    {
+      inputKey: "ship",
       message: "Ship name",
       placeholder: "~sampel-palnet",
-      initialValue: resolved.ship ?? undefined,
-      validate: (value) => (String(value ?? "").trim() ? undefined : "Required"),
-    });
-
-    const url = await prompter.text({
+      currentValue: ({ cfg, accountId }) => resolveTlonAccount(cfg, accountId).ship ?? undefined,
+      applySet: ({ cfg, accountId, value }) =>
+        applyTlonSetupConfig({
+          cfg,
+          accountId,
+          input: { ship: value.trim() },
+        }),
+    },
+    {
+      inputKey: "url",
       message: "Ship URL",
       placeholder: "https://your-ship-host",
-      initialValue: resolved.url ?? undefined,
-      validate: (value) => {
-        const next = validateUrbitBaseUrl(String(value ?? ""));
-        if (!next.ok) {
-          return next.error;
-        }
-        return undefined;
+      currentValue: ({ cfg, accountId }) => resolveTlonAccount(cfg, accountId).url ?? undefined,
+      validate: ({ value }) => {
+        const next = validateUrbitBaseUrl(value);
+        return next.ok ? undefined : next.error;
       },
-    });
+      normalizeValue: ({ value }) => {
+        const next = validateUrbitBaseUrl(value);
+        return next.ok ? next.baseUrl : value.trim();
+      },
+      applySet: ({ cfg, accountId, value }) =>
+        applyTlonSetupConfig({
+          cfg,
+          accountId,
+          input: { url: value.trim() },
+        }),
+    },
+    {
+      inputKey: "code",
+      message: "Login code",
+      placeholder: "lidlut-tabwed-pillex-ridrup",
+      currentValue: ({ cfg, accountId }) => resolveTlonAccount(cfg, accountId).code ?? undefined,
+      applySet: ({ cfg, accountId, value }) =>
+        applyTlonSetupConfig({
+          cfg,
+          accountId,
+          input: { code: value.trim() },
+        }),
+    },
+  ],
+  finalize: async ({ cfg, accountId, prompter }) => {
+    let next = cfg;
+    let resolved = resolveTlonAccount(next, accountId);
 
-    const validatedUrl = validateUrbitBaseUrl(String(url).trim());
+    const validatedUrl = validateUrbitBaseUrl(resolved.url ?? "");
     if (!validatedUrl.ok) {
       throw new Error(`Invalid URL: ${validatedUrl.error}`);
     }
@@ -165,64 +242,68 @@ export const tlonOnboardingAdapter: ChannelOnboardingAdapter = {
       if (!allowPrivateNetwork) {
         throw new Error("Refusing private/internal Ship URL without explicit approval");
       }
+      next = applyTlonSetupConfig({
+        cfg: next,
+        accountId,
+        input: { allowPrivateNetwork },
+      });
+      resolved = resolveTlonAccount(next, accountId);
     }
-
-    const code = await prompter.text({
-      message: "Login code",
-      placeholder: "lidlut-tabwed-pillex-ridrup",
-      initialValue: resolved.code ?? undefined,
-      validate: (value) => (String(value ?? "").trim() ? undefined : "Required"),
-    });
 
     const wantsGroupChannels = await prompter.confirm({
       message: "Add group channels manually? (optional)",
-      initialValue: false,
+      initialValue: resolved.groupChannels.length > 0,
     });
-
-    let groupChannels: string[] | undefined;
     if (wantsGroupChannels) {
       const entry = await prompter.text({
         message: "Group channels (comma-separated)",
         placeholder: "chat/~host-ship/general, chat/~host-ship/support",
+        initialValue:
+          resolved.groupChannels.length > 0 ? resolved.groupChannels.join(", ") : undefined,
       });
-      const parsed = parseList(String(entry ?? ""));
-      groupChannels = parsed.length > 0 ? parsed : undefined;
+      const groupChannels = parseList(String(entry ?? ""));
+      next = applyTlonSetupConfig({
+        cfg: next,
+        accountId,
+        input: {
+          groupChannels: groupChannels.length > 0 ? groupChannels : undefined,
+        },
+      });
+      resolved = resolveTlonAccount(next, accountId);
     }
 
     const wantsAllowlist = await prompter.confirm({
       message: "Restrict DMs with an allowlist?",
-      initialValue: false,
+      initialValue: resolved.dmAllowlist.length > 0,
     });
-
-    let dmAllowlist: string[] | undefined;
     if (wantsAllowlist) {
       const entry = await prompter.text({
         message: "DM allowlist (comma-separated ship names)",
         placeholder: "~zod, ~nec",
+        initialValue:
+          resolved.dmAllowlist.length > 0 ? resolved.dmAllowlist.join(", ") : undefined,
       });
-      const parsed = parseList(String(entry ?? ""));
-      dmAllowlist = parsed.length > 0 ? parsed : undefined;
+      const dmAllowlist = parseList(String(entry ?? ""));
+      next = applyTlonSetupConfig({
+        cfg: next,
+        accountId,
+        input: {
+          dmAllowlist: dmAllowlist.length > 0 ? dmAllowlist : undefined,
+        },
+      });
+      resolved = resolveTlonAccount(next, accountId);
     }
 
     const autoDiscoverChannels = await prompter.confirm({
       message: "Enable auto-discovery of group channels?",
       initialValue: resolved.autoDiscoverChannels ?? true,
     });
-
-    const next = applyAccountConfig({
-      cfg,
+    next = applyTlonSetupConfig({
+      cfg: next,
       accountId,
-      input: {
-        ship: String(ship).trim(),
-        url: String(url).trim(),
-        code: String(code).trim(),
-        allowPrivateNetwork,
-        groupChannels,
-        dmAllowlist,
-        autoDiscoverChannels,
-      },
+      input: { autoDiscoverChannels },
     });
 
-    return { cfg: next, accountId };
+    return { cfg: next };
   },
 };

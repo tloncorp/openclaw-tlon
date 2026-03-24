@@ -1,12 +1,10 @@
 import {
-  createActionGate,
-  describeMessageToolActions,
-  jsonResult,
-  readReactionParams,
-  readStringParam,
   type ChannelMessageActionAdapter,
   type ChannelMessageActionName,
-} from "./openclaw-sdk.js";
+} from "openclaw/plugin-sdk";
+import {
+  readStringParam,
+} from "openclaw/plugin-sdk/param-readers";
 import { resolveTlonAccount } from "./types.js";
 import { normalizeShip, parseTlonTarget } from "./targets.js";
 import { withAuthenticatedTlonApi } from "./urbit/api-client.js";
@@ -21,6 +19,57 @@ import {
 import { markdownToStory } from "./urbit/story.js";
 
 const SUPPORTED_ACTIONS = new Set<ChannelMessageActionName>(["react", "delete", "reply"]);
+
+function createActionGate<T extends Record<string, boolean | undefined>>(
+  actions: T | undefined,
+) {
+  return (key: keyof T, defaultValue = true) => {
+    const value = actions?.[key];
+    if (value === undefined) {
+      return defaultValue;
+    }
+    return value !== false;
+  };
+}
+
+function describeMessageToolActions(
+  actions: readonly ChannelMessageActionName[],
+): ReturnType<NonNullable<ChannelMessageActionAdapter["describeMessageTool"]>> {
+  return { actions };
+}
+
+function jsonResult(payload: unknown) {
+  return {
+    content: [
+      {
+        type: "text" as const,
+        text: JSON.stringify(payload, null, 2),
+      },
+    ],
+    details: payload,
+  };
+}
+
+function readReactionParams(
+  params: Record<string, unknown>,
+  options: {
+    emojiKey?: string;
+    removeKey?: string;
+    removeErrorMessage: string;
+  },
+) {
+  const emojiKey = options.emojiKey ?? "emoji";
+  const removeKey = options.removeKey ?? "remove";
+  const remove = typeof params[removeKey] === "boolean" ? params[removeKey] : false;
+  const emoji = readStringParam(params, emojiKey, {
+    required: true,
+    allowEmpty: true,
+  });
+  if (remove && !emoji) {
+    throw new Error(options.removeErrorMessage);
+  }
+  return { emoji, remove, isEmpty: !emoji };
+}
 
 export const tlonMessageActions: ChannelMessageActionAdapter = {
   describeMessageTool: ({ cfg }) => {

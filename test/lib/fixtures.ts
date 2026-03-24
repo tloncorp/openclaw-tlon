@@ -42,6 +42,25 @@ export interface TestFixtures {
 let cachedFixtures: TestFixtures | null = null;
 let setupPromise: Promise<TestFixtures> | null = null;
 
+interface PluginSettingsAll {
+  all?: Record<
+    string,
+    Record<
+      string,
+      {
+        dmAllowlist?: string[];
+        pendingApprovals?: string | PendingApprovalRecord[];
+      }
+    >
+  >;
+}
+
+interface PendingApprovalRecord {
+  id: string;
+  requestingShip: string;
+  notificationMessageId?: string;
+}
+
 /**
  * Get or create shared test fixtures.
  * Safe to call from multiple test files - will only set up once.
@@ -75,6 +94,94 @@ async function setupFixtures(): Promise<TestFixtures> {
     ? config.testUser.shipName
     : `~${config.testUser.shipName}`;
 
+  const getPluginSettings = async (): Promise<PluginSettingsAll> =>
+    botState.scry<PluginSettingsAll>("settings", "/all");
+
+  const putPluginEntry = async (entryKey: string, value: unknown) => {
+    await botState.poke({
+      app: "settings",
+      mark: "settings-event",
+      json: {
+        "put-entry": {
+          desk: "moltbot",
+          "bucket-key": "tlon",
+          "entry-key": entryKey,
+          value,
+        },
+      },
+    });
+  };
+
+  const getDmAllowlist = async (): Promise<string[]> => {
+    const settings = await getPluginSettings();
+    return settings.all?.moltbot?.tlon?.dmAllowlist ?? [];
+  };
+
+  const setDmAllowlist = async (ships: string[]) => {
+    await putPluginEntry("dmAllowlist", ships);
+  };
+
+  const getPendingApprovals = async (): Promise<PendingApprovalRecord[]> => {
+    const settings = await getPluginSettings();
+    const raw = settings.all?.moltbot?.tlon?.pendingApprovals;
+    if (!raw) {
+      return [];
+    }
+    if (Array.isArray(raw)) {
+      return raw.filter(
+        (item): item is PendingApprovalRecord =>
+          typeof item?.id === "string" && typeof item?.requestingShip === "string",
+      );
+    }
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      if (!Array.isArray(parsed)) {
+        return [];
+      }
+      return parsed.filter(
+        (item): item is PendingApprovalRecord =>
+          typeof item === "object" &&
+          item !== null &&
+          typeof (item as PendingApprovalRecord).id === "string" &&
+          typeof (item as PendingApprovalRecord).requestingShip === "string",
+      );
+    } catch {
+      return [];
+    }
+  };
+
+  const getBlockedShips = async (): Promise<string[]> => {
+    const blocked = await botState.scry<string[]>("chat", "/blocked");
+    return Array.isArray(blocked) ? blocked : [];
+  };
+
+  const clearPendingApprovals = async () => {
+    await putPluginEntry("pendingApprovals", "[]");
+  };
+
+  const ensureShipUnblocked = async (ship: string) => {
+    const normalizedShip = ship.startsWith("~") ? ship : `~${ship}`;
+    const blockedBefore = (await getBlockedShips()).map((item) =>
+      item.startsWith("~") ? item : `~${item}`,
+    );
+    if (!blockedBefore.includes(normalizedShip)) {
+      return;
+    }
+
+    console.log(`[FIXTURES] Unblocking lingering blocked ship ${normalizedShip}...`);
+    await botState.poke({
+      app: "chat",
+      mark: "chat-unblock-ship",
+      json: { ship: normalizedShip },
+    });
+    await waitFor(async () => {
+      const blockedAfter = (await getBlockedShips()).map((item) =>
+        item.startsWith("~") ? item : `~${item}`,
+      );
+      return blockedAfter.includes(normalizedShip) ? undefined : true;
+    }, 30_000, 2000, `${normalizedShip} to be unblocked`);
+  };
+
   // 1. Initialize bot profile
   console.log("[FIXTURES] Initializing bot profile...");
   try {
@@ -99,45 +206,58 @@ async function setupFixtures(): Promise<TestFixtures> {
   console.log("[FIXTURES] Creating test group...");
   let group: TestFixtures["group"] = null;
 
-  try {
-    // Check for existing fixture group first
-    const existingGroups = await botState.groups();
-    const existing = (existingGroups ?? []).find((g) => {
-      const gr = g as { title?: string };
-      return gr.title?.startsWith("OpenClaw Test Fixtures");
-    }) as { id?: string; title?: string; channels?: Array<{ id?: string }> } | undefined;
+  for (let attempt = 1; attempt <= 3 && !group; attempt += 1) {
+    try {
+      const existingGroups = await botState.groups();
+      const existing = (existingGroups ?? []).find((g) => {
+        const gr = g as { title?: string };
+        return gr.title?.startsWith("OpenClaw Test Fixtures");
+      }) as { id?: string; title?: string; channels?: Array<{ id?: string }> } | undefined;
 
-    if (existing?.id) {
-      console.log(`[FIXTURES] ✓ Using existing group: ${existing.id}`);
-      const channels = existing.channels ?? [];
-      const chatChannel = channels.find((c) => c.id?.includes("chat"))?.id;
-      group = {
-        id: existing.id,
-        title: existing.title ?? "OpenClaw Test Fixtures",
-        chatChannel: chatChannel ?? `chat/${existing.id}/general`,
-      };
-    } else {
-      // Create new group directly via API (more reliable than prompting agent)
+      if (existing?.id) {
+        console.log(`[FIXTURES] ✓ Using existing group: ${existing.id}`);
+        const channels = existing.channels ?? [];
+        const chatChannel = channels.find((c) => c.id?.includes("chat"))?.id;
+        group = {
+          id: existing.id,
+          title: existing.title ?? "OpenClaw Test Fixtures",
+          chatChannel: chatChannel ?? `chat/${existing.id}/general`,
+        };
+        break;
+      }
+
       const suffix = Date.now().toString(36);
       const groupTitle = `OpenClaw Test Fixtures ${suffix}`;
-
       const { groupId, chatChannel } = await botState.createGroup(groupTitle);
+      await waitFor(async () => {
+        const created = await botState.group(groupId);
+        return created ? true : undefined;
+      }, 15_000, 1500, `group ${groupId} to appear`);
       group = {
         id: groupId,
         title: groupTitle,
         chatChannel,
       };
       console.log(`[FIXTURES] ✓ Created group: ${groupId}`);
+    } catch (err) {
+      console.log(`[FIXTURES] Group setup attempt ${attempt}/3 failed: ${String(err)}`);
+      if (attempt < 3) {
+        await sleep(3000);
+      }
     }
-  } catch (err) {
-    console.log(`[FIXTURES] Warning: Failed to create group: ${err}`);
+  }
+  if (!group) {
+    console.log("[FIXTURES] Warning: Failed to create group after 3 attempts");
   }
 
   // 3. Ensure DM channel exists by sending a message
   console.log("[FIXTURES] Ensuring DM channel exists...");
   try {
     // The test client sends via DM, so just sending any prompt establishes the channel
-    await client.prompt("Hello, this is a test setup message.", { timeoutMs: 60_000 });
+    const dmSetup = await client.prompt("Hello, this is a test setup message.", { timeoutMs: 60_000 });
+    if (!dmSetup.success) {
+      throw new Error(dmSetup.error ?? "DM setup prompt did not receive a usable reply");
+    }
     await sleep(2000);
     console.log("[FIXTURES] ✓ DM channel established");
   } catch (err) {
@@ -159,35 +279,28 @@ async function setupFixtures(): Promise<TestFixtures> {
       bot: config.bot,
     });
 
-    console.log(`[FIXTURES] Establishing DM access for ${thirdPartyShip} via approval flow...`);
+    console.log(`[FIXTURES] Restoring DM baseline for ${thirdPartyShip}...`);
     try {
-      // ~mug sends DM (not on allowlist, triggers approval request to owner)
-      const mugPromise = thirdPartyClient.prompt(
-        "Hello, requesting DM access for integration tests.",
-        { timeoutMs: 90_000 },
-      );
+      const staleApprovals = await getPendingApprovals();
+      if (staleApprovals.length > 0) {
+        console.log(`[FIXTURES] Clearing ${staleApprovals.length} stale pending approval(s)`);
+        await clearPendingApprovals();
+        await sleep(2000);
+      }
 
-      // Wait for the approval notification to reach the owner
-      await sleep(8000);
+      await ensureShipUnblocked(thirdPartyShip);
 
-      // Owner (~ten) approves the DM request via slash command
-      const approvalResponse = await client.prompt("/allow");
-      console.log(
-        `[FIXTURES] Approval response: ${approvalResponse.text?.slice(0, 200)}`,
-      );
-
-      // Wait for ~mug's original message to be processed
-      const mugResponse = await mugPromise;
-      console.log(
-        `[FIXTURES] ${thirdPartyShip} DM response: ${mugResponse.text?.slice(0, 200)}`,
-      );
-
-      if (mugResponse.success) {
-        console.log(`[FIXTURES] ✓ ${thirdPartyShip} DM access established via approval`);
+      const currentAllowlist = await getDmAllowlist();
+      if (currentAllowlist.includes(thirdPartyShip)) {
+        console.log(`[FIXTURES] ✓ ${thirdPartyShip} already has DM access`);
       } else {
-        console.log(
-          `[FIXTURES] Warning: ${thirdPartyShip} approval flow incomplete: ${mugResponse.error}`,
-        );
+        await setDmAllowlist([...currentAllowlist, thirdPartyShip]);
+        await waitFor(async () => {
+          const allowlist = await getDmAllowlist();
+          return allowlist.includes(thirdPartyShip) ? true : undefined;
+        }, 30_000, 2000, `${thirdPartyShip} to appear in dmAllowlist`);
+        await sleep(2000);
+        console.log(`[FIXTURES] ✓ ${thirdPartyShip} DM access restored in baseline`);
       }
     } catch (err) {
       console.log(`[FIXTURES] Warning: ${thirdPartyShip} DM setup failed: ${String(err)}`);

@@ -746,6 +746,11 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
   async function unblockShip(ship: string): Promise<boolean> {
     const normalizedShip = normalizeShip(ship);
     try {
+      const blocked = await isShipBlocked(normalizedShip);
+      if (!blocked) {
+        runtime.log?.(`[tlon] Ship ${normalizedShip} is not blocked; skipping unblock`);
+        return true;
+      }
       await api!.poke({
         app: "chat",
         mark: "chat-unblock-ship",

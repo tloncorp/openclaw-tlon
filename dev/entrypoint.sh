@@ -19,6 +19,12 @@ echo "==> Installing plugin dependencies..."
 cd /workspace/openclaw-tlon
 pnpm install
 
+echo "==> Exposing tlon CLI..."
+export PATH="/workspace/openclaw-tlon/node_modules/.bin:$PATH"
+if [ -x "/workspace/openclaw-tlon/node_modules/.bin/tlon" ]; then
+  ln -sf /workspace/openclaw-tlon/node_modules/.bin/tlon /usr/local/bin/tlon
+fi
+
 # Link api-beta if mounted (for local development)
 if [ -f "/workspace/api-beta/package.json" ]; then
   cd /workspace/api-beta
@@ -39,6 +45,9 @@ if [ -f "/workspace/api-beta/package.json" ]; then
   cd /workspace/openclaw-tlon
   npm link @tloncorp/api 2>/dev/null || true
 fi
+
+echo "==> Building plugin..."
+pnpm build
 
 # Remove bundled tlon plugin to avoid duplicate ID conflict
 rm -rf "$(npm root -g)/openclaw/extensions/tlon"
@@ -69,6 +78,18 @@ if [ -f "/workspace/tlonbot/openclaw.json" ]; then
   fi
 elif [ -f "/workspace/openclaw-tlon/dev/openclaw.dev.json" ]; then
   cp "/workspace/openclaw-tlon/dev/openclaw.dev.json" "$CONFIG_PATH"
+fi
+
+if [ -f "$CONFIG_PATH" ]; then
+  echo "==> Ensuring tlon plugin is explicitly trusted..."
+  jq '
+    .plugins = (.plugins // {})
+    | .plugins.load = (.plugins.load // {})
+    | .plugins.load.paths = ((.plugins.load.paths // []) + ["/workspace/openclaw-tlon"] | unique)
+    | .plugins.entries = (.plugins.entries // {})
+    | .plugins.entries.tlon = ((.plugins.entries.tlon // {}) + {"enabled": true})
+    | .plugins.allow = ((.plugins.allow // []) + ["tlon"] | unique)
+  ' "$CONFIG_PATH" > "$CONFIG_PATH.tmp" && mv "$CONFIG_PATH.tmp" "$CONFIG_PATH"
 fi
 
 # Upsert a marked block into a file (preserves content outside the markers)

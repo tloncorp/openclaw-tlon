@@ -2,18 +2,12 @@ import type {
   ChannelAccountSnapshot,
   ChannelOutboundAdapter,
   ChannelPlugin,
-  ChannelSetupInput,
   OpenClawConfig,
-} from "./openclaw-sdk.js";
-import {
-  applyAccountNameToChannelSection,
-  DEFAULT_ACCOUNT_ID,
-  normalizeAccountId,
-  tlonSetupWizard,
-} from "./openclaw-sdk.js";
-import { buildTlonAccountFields } from "./account-fields.js";
+} from "openclaw/plugin-sdk/tlon";
+import { applyAccountNameToChannelSection, normalizeAccountId } from "openclaw/plugin-sdk/tlon";
 import { tlonChannelConfigSchema } from "./config-schema.js";
 import { monitorTlonProvider } from "./monitor/index.js";
+import { applyTlonSetupConfig, tlonSetupWizard, type TlonSetupInput } from "./onboarding.js";
 import { formatTargetHint, normalizeShip, parseTlonTarget } from "./targets.js";
 import { resolveTlonAccount, listTlonAccountIds } from "./types.js";
 import { authenticate } from "./urbit/auth.js";
@@ -74,70 +68,6 @@ async function getBotProfile(ship: string): Promise<BotProfile | undefined> {
   }
 
   return undefined;
-}
-
-type TlonSetupInput = ChannelSetupInput & {
-  ship?: string;
-  url?: string;
-  code?: string;
-  allowPrivateNetwork?: boolean;
-  groupChannels?: string[];
-  dmAllowlist?: string[];
-  autoDiscoverChannels?: boolean;
-  ownerShip?: string;
-};
-
-function applyTlonSetupConfig(params: {
-  cfg: OpenClawConfig;
-  accountId: string;
-  input: TlonSetupInput;
-}): OpenClawConfig {
-  const { cfg, accountId, input } = params;
-  const useDefault = accountId === DEFAULT_ACCOUNT_ID;
-  const namedConfig = applyAccountNameToChannelSection({
-    cfg,
-    channelKey: "tlon",
-    accountId,
-    name: input.name,
-  });
-  const base = namedConfig.channels?.tlon ?? {};
-
-  const payload = buildTlonAccountFields(input);
-
-  if (useDefault) {
-    return {
-      ...namedConfig,
-      channels: {
-        ...namedConfig.channels,
-        tlon: {
-          ...base,
-          enabled: true,
-          ...payload,
-        },
-      },
-    };
-  }
-
-  return {
-    ...namedConfig,
-    channels: {
-      ...namedConfig.channels,
-      tlon: {
-        ...base,
-        enabled: base.enabled ?? true,
-        accounts: {
-          ...(base as { accounts?: Record<string, unknown> }).accounts,
-          [accountId]: {
-            ...(base as { accounts?: Record<string, Record<string, unknown>> }).accounts?.[
-              accountId
-            ],
-            enabled: true,
-            ...payload,
-          },
-        },
-      },
-    },
-  };
 }
 
 const tlonOutbound: ChannelOutboundAdapter = {

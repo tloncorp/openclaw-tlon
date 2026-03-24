@@ -17,10 +17,11 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "24"
           cache: "pnpm"
 
       - run: pnpm install
+      - run: pnpm build
 
       - name: Run unit tests
         run: npx vitest run src/ --exclude src/config-schema.test.ts
@@ -32,6 +33,10 @@ jobs:
     name: Integration Tests
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    env:
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+      BRAVE_API_KEY: ${{ secrets.BRAVE_API_KEY }}
+      TLONBOT_TOKEN: ${{ secrets.TLONBOT_TOKEN }}
     steps:
       - uses: actions/checkout@v4
 
@@ -41,15 +46,13 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "24"
           cache: "pnpm"
 
       - run: pnpm install
+      - run: pnpm build
 
       - name: Run integration tests
-        env:
-          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-          TLONBOT_TOKEN: ${{ secrets.TLONBOT_TOKEN }}
         run: pnpm test:integration
 
       - name: Dump logs on failure

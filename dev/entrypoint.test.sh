@@ -15,7 +15,24 @@ find /workspace/openclaw-tlon -not -path '*/.git/*' -exec chown root:root {} \; 
 
 echo "==> Installing plugin dependencies..."
 cd /workspace/openclaw-tlon
-npm install
+pnpm install
+
+echo "==> Exposing tlon CLI..."
+export PATH="/workspace/openclaw-tlon/node_modules/.bin:$PATH"
+if [ -x "/workspace/openclaw-tlon/node_modules/.bin/tlon" ]; then
+  ln -sf /workspace/openclaw-tlon/node_modules/.bin/tlon /usr/local/bin/tlon
+fi
+
+echo "==> Exposing tlon skill package..."
+TLON_SKILL_SRC="/workspace/openclaw-tlon/node_modules/@tloncorp/tlon-skill"
+TLON_SKILL_DST="/workspace/openclaw-tlon/node_modules/openclaw/dist/extensions/tlon/node_modules/@tloncorp/tlon-skill"
+if [ -d "$TLON_SKILL_SRC" ]; then
+  mkdir -p "$(dirname "$TLON_SKILL_DST")"
+  ln -sfn "$TLON_SKILL_SRC" "$TLON_SKILL_DST"
+fi
+
+echo "==> Building plugin..."
+pnpm build
 
 # tlon-skill comes in as plugin dependency (see package.json)
 echo "==> Checking tlon-skill from plugin dependencies..."
@@ -68,6 +85,7 @@ cat > "$CONFIG_DIR/openclaw.json" << EOF
     }
   },
   "plugins": {
+    "allow": ["tlon"],
     "load": {
       "paths": ["/workspace/openclaw-tlon"]
     },
