@@ -1,5 +1,5 @@
 {
-  "name": "@tloncorp/openclaw",
+  "name": "@tloncorp/tlon",
   "version": "0.2.0",
   "description": "OpenClaw Tlon/Urbit channel plugin",
   "type": "module",
@@ -74,7 +74,7 @@
       "quickstartAllowFrom": true
     },
     "install": {
-      "npmSpec": "@tloncorp/openclaw",
+      "npmSpec": "@tloncorp/tlon",
       "localPath": "extensions/tlon",
       "defaultChoice": "npm"
     }

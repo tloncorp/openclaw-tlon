@@ -1,14 +1,10 @@
 import { spawn } from "node:child_process";
-import { createRequire } from "node:module";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { OpenClawPluginApi } from "./src/openclaw-sdk.js";
 import { PLUGIN_COMMIT } from "./src/version.generated.js";
 
-// Get package version at runtime
-const require = createRequire(import.meta.url);
-const { version: PLUGIN_VERSION } = require("./package.json") as { version: string };
 import { emptyPluginConfigSchema } from "./src/openclaw-sdk.js";
 import { tlonPlugin } from "./src/channel.js";
 import { resolveBridgeForCommand } from "./src/monitor/command-auth.js";
@@ -17,6 +13,23 @@ import { resolveTlonAccount } from "./src/types.js";
 import { getSessionRole } from "./src/session-roles.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+
+function readPluginVersion(): string {
+  const packageJsonPath = [join(__dirname, "package.json"), join(__dirname, "..", "package.json")]
+    .find(existsSync);
+  if (!packageJsonPath) {
+    throw new Error("Could not find plugin package.json");
+  }
+
+  const { version } = JSON.parse(readFileSync(packageJsonPath, "utf-8")) as { version?: string };
+  if (!version) {
+    throw new Error(`Missing version in ${packageJsonPath}`);
+  }
+
+  return version;
+}
+
+const PLUGIN_VERSION = readPluginVersion();
 
 // Whitelist of allowed tlon subcommands
 const ALLOWED_TLON_COMMANDS = new Set([
