@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { OpenClawPluginApi } from "./src/openclaw-sdk.js";
+import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 import { PLUGIN_COMMIT } from "./src/version.generated.js";
 
 import { emptyPluginConfigSchema } from "./src/openclaw-sdk.js";
