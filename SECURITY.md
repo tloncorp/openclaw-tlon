@@ -317,7 +317,7 @@ try {
 
 **Principle:** Sensitive tools are owner-only. Non-owners cannot use them, enforced at the plugin level (not via prompt instructions).
 
-**Restricted tools:** `tlon`, `tlon-run`/`tlon_run`, `cron`, `read`.
+**Restricted tools:** `tlon`, `cron`, `read`.
 
 | Scenario | Behavior |
 | -------- | -------- |

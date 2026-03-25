@@ -53,13 +53,13 @@ pnpm build
 rm -rf "$(npm root -g)/openclaw/extensions/tlon"
 
 # Plugin is loaded from /workspace/openclaw-tlon via plugins.load.paths in config
-# Install tlon skill to workspace skills directory (most reliable discovery method)
-echo "==> Installing tlon skill to workspace..."
-WORKSPACE_DIR=/root/.openclaw/workspace
-mkdir -p "$WORKSPACE_DIR/skills"
-# Symlink the skill package to workspace skills (recreate if exists)
-rm -rf "$WORKSPACE_DIR/skills/tlon"
-ln -s /workspace/openclaw-tlon/node_modules/@tloncorp/tlon-skill "$WORKSPACE_DIR/skills/tlon"
+# Skill should be discovered via plugin manifest's "skills" field.
+# Commenting out manual symlink to test manifest-based discovery.
+# echo "==> Installing tlon skill to workspace..."
+# WORKSPACE_DIR=/root/.openclaw/workspace
+# mkdir -p "$WORKSPACE_DIR/skills"
+# rm -rf "$WORKSPACE_DIR/skills/tlon"
+# ln -s /workspace/openclaw-tlon/node_modules/@tloncorp/tlon-skill "$WORKSPACE_DIR/skills/tlon"
 
 # Copy and patch config from tlonbot
 CONFIG_DIR=/root/.openclaw
@@ -131,6 +131,10 @@ upsert_block "$WORKSPACE_DIR/SOUL.md" "$(envsubst < /workspace/tlonbot/prompts/S
 upsert_block "$WORKSPACE_DIR/USER.md" "$(cat /workspace/tlonbot/prompts/USER.md)"
 upsert_block "$WORKSPACE_DIR/TOOLS.md" "$(cat /workspace/tlonbot/prompts/TOOLS.md)"
 upsert_block "$WORKSPACE_DIR/HEARTBEAT.md" "$(cat /workspace/tlonbot/prompts/HEARTBEAT.md)"
+upsert_block "$WORKSPACE_DIR/AGENTS.md" "$(cat /workspace/tlonbot/prompts/AGENTS.md)"
+upsert_block "$WORKSPACE_DIR/BOOTSTRAP.md" "$(cat /workspace/tlonbot/prompts/BOOTSTRAP.md)"
+upsert_block "$WORKSPACE_DIR/IDENTITY.md" "$(cat /workspace/tlonbot/prompts/IDENTITY.md)"
+upsert_block "$WORKSPACE_DIR/MEMORY.md" "$(cat /workspace/tlonbot/prompts/MEMORY.md)"
 
 export WORKSPACE_DIR
 export TLON_RUN_PATH="/workspace/tlonbot/bin/tlon-run"
