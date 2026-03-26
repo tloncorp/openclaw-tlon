@@ -98,39 +98,55 @@ async function setupFixtures(): Promise<TestFixtures> {
   // 2. Create a test group with a chat channel
   console.log("[FIXTURES] Creating test group...");
   let group: TestFixtures["group"] = null;
+  let existing:
+    | { id?: string; title?: string; channels?: Array<{ id?: string }> }
+    | undefined;
 
   try {
     // Check for existing fixture group first
     const existingGroups = await botState.groups();
-    const existing = (existingGroups ?? []).find((g) => {
+    existing = (existingGroups ?? []).find((g) => {
       const gr = g as { title?: string };
       return gr.title?.startsWith("OpenClaw Test Fixtures");
     }) as { id?: string; title?: string; channels?: Array<{ id?: string }> } | undefined;
-
-    if (existing?.id) {
-      console.log(`[FIXTURES] ✓ Using existing group: ${existing.id}`);
-      const channels = existing.channels ?? [];
-      const chatChannel = channels.find((c) => c.id?.includes("chat"))?.id;
-      group = {
-        id: existing.id,
-        title: existing.title ?? "OpenClaw Test Fixtures",
-        chatChannel: chatChannel ?? `chat/${existing.id}/general`,
-      };
-    } else {
-      // Create new group directly via API (more reliable than prompting agent)
-      const suffix = Date.now().toString(36);
-      const groupTitle = `OpenClaw Test Fixtures ${suffix}`;
-
-      const { groupId, chatChannel } = await botState.createGroup(groupTitle);
-      group = {
-        id: groupId,
-        title: groupTitle,
-        chatChannel,
-      };
-      console.log(`[FIXTURES] ✓ Created group: ${groupId}`);
-    }
   } catch (err) {
-    console.log(`[FIXTURES] Warning: Failed to create group: ${err}`);
+    console.log(
+      `[FIXTURES] Warning: Failed to list existing groups, falling back to createGroup(): ${err}`,
+    );
+  }
+
+  if (existing?.id) {
+    console.log(`[FIXTURES] ✓ Using existing group: ${existing.id}`);
+    const channels = existing.channels ?? [];
+    const chatChannel = channels.find((c) => c.id?.includes("chat"))?.id;
+    group = {
+      id: existing.id,
+      title: existing.title ?? "OpenClaw Test Fixtures",
+      chatChannel: chatChannel ?? `chat/${existing.id}/general`,
+    };
+  } else {
+    // Create new group directly via API (more reliable than prompting agent)
+    const suffix = Date.now().toString(36);
+    const groupTitle = `OpenClaw Test Fixtures ${suffix}`;
+
+    for (let attempt = 1; attempt <= 3 && !group; attempt++) {
+      try {
+        const { groupId, chatChannel } = await botState.createGroup(groupTitle);
+        group = {
+          id: groupId,
+          title: groupTitle,
+          chatChannel,
+        };
+        console.log(`[FIXTURES] ✓ Created group: ${groupId}`);
+      } catch (err) {
+        console.log(
+          `[FIXTURES] Warning: Failed to create group (attempt ${attempt}/3): ${err}`,
+        );
+        if (attempt < 3) {
+          await sleep(2000);
+        }
+      }
+    }
   }
 
   // 3. Ensure DM channel exists by sending a message
@@ -161,33 +177,53 @@ async function setupFixtures(): Promise<TestFixtures> {
 
     console.log(`[FIXTURES] Establishing DM access for ${thirdPartyShip} via approval flow...`);
     try {
-      // ~mug sends DM (not on allowlist, triggers approval request to owner)
-      const mugPromise = thirdPartyClient.prompt(
-        "Hello, requesting DM access for integration tests.",
-        { timeoutMs: 90_000 },
-      );
+      let accessReady = false;
 
-      // Wait for the approval notification to reach the owner
-      await sleep(8000);
+      for (let attempt = 1; attempt <= 3 && !accessReady; attempt++) {
+        console.log(`[FIXTURES] ${thirdPartyShip} approval attempt ${attempt}/3...`);
 
-      // Owner (~ten) approves the DM request via slash command
-      const approvalResponse = await client.prompt("/allow");
-      console.log(
-        `[FIXTURES] Approval response: ${approvalResponse.text?.slice(0, 200)}`,
-      );
-
-      // Wait for ~mug's original message to be processed
-      const mugResponse = await mugPromise;
-      console.log(
-        `[FIXTURES] ${thirdPartyShip} DM response: ${mugResponse.text?.slice(0, 200)}`,
-      );
-
-      if (mugResponse.success) {
-        console.log(`[FIXTURES] ✓ ${thirdPartyShip} DM access established via approval`);
-      } else {
-        console.log(
-          `[FIXTURES] Warning: ${thirdPartyShip} approval flow incomplete: ${mugResponse.error}`,
+        // ~mug sends DM (not on allowlist, triggers approval request to owner)
+        const mugPromise = thirdPartyClient.prompt(
+          `Hello, requesting DM access for integration tests (attempt ${attempt}).`,
+          { timeoutMs: 45_000 },
         );
+
+        // Wait for the approval notification to reach the owner
+        await sleep(8000);
+
+        // Owner (~ten) approves the DM request via slash command
+        const approvalResponse = await client.prompt("/allow", { timeoutMs: 45_000 });
+        console.log(
+          `[FIXTURES] Approval response: ${approvalResponse.text?.slice(0, 200)}`,
+        );
+
+        // Log whatever the initial ~mug request got back, but don't treat it as proof
+        // that DM access is actually established.
+        const mugResponse = await mugPromise;
+        console.log(
+          `[FIXTURES] ${thirdPartyShip} initial DM response: ${mugResponse.text?.slice(0, 200)}`,
+        );
+
+        // The real proof is whether a fresh, normal follow-up DM now gets a response.
+        const probeResponse = await thirdPartyClient.prompt(
+          "Hi there! Just reply with a short hello so I know DM access is working now.",
+          { timeoutMs: 45_000 },
+        );
+        console.log(
+          `[FIXTURES] ${thirdPartyShip} probe response: ${probeResponse.text?.slice(0, 200)}`,
+        );
+
+        if (probeResponse.success) {
+          accessReady = true;
+          console.log(`[FIXTURES] ✓ ${thirdPartyShip} DM access established via approval`);
+        } else {
+          console.log(
+            `[FIXTURES] Warning: ${thirdPartyShip} approval probe failed on attempt ${attempt}: ${probeResponse.error}`,
+          );
+          if (attempt < 3) {
+            await sleep(5000);
+          }
+        }
       }
     } catch (err) {
       console.log(`[FIXTURES] Warning: ${thirdPartyShip} DM setup failed: ${String(err)}`);

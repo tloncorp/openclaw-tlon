@@ -1,3 +1,5 @@
+import crypto from "node:crypto";
+
 /**
  * Ship State Client
  *
@@ -68,7 +70,7 @@ function runExclusive<T>(fn: () => Promise<T>): Promise<T> {
   const next = apiQueue.then(fn, fn);
   apiQueue = next.then(
     () => undefined,
-    () => undefined
+    () => undefined,
   );
   return next;
 }
@@ -79,7 +81,7 @@ function runExclusive<T>(fn: () => Promise<T>): Promise<T> {
 export function createStateClient(config: StateClientConfig): StateClient {
   const shipName = config.shipName.replace(/^~/, "");
   const urbit = new Urbit(config.shipUrl, config.code);
-  urbit.ship = shipName;
+  urbit.nodeId = shipName;
 
   let connected = false;
 
@@ -130,7 +132,11 @@ export function createStateClient(config: StateClientConfig): StateClient {
 
     async channelPosts(channelId: string, count = 20) {
       return withClient(async () => {
-        const result = await getChannelPosts({ channelId, count, mode: "newest" });
+        const result = await getChannelPosts({
+          channelId,
+          count,
+          mode: "newest",
+        });
         return result.posts ?? [];
       });
     },
@@ -149,7 +155,7 @@ export function createStateClient(config: StateClientConfig): StateClient {
 
     async createGroup(title: string) {
       return withClient(async () => {
-        const slug = Math.random().toString(36).slice(2, 10);
+        const slug = `fixture-${crypto.randomUUID().replace(/-/g, "").slice(0, 8)}`;
         const groupId = `~${shipName}/${slug}`;
         const channelSlug = `${slug}-general`;
         const chatChannel = `chat/~${shipName}/${channelSlug}`;
