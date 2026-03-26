@@ -1,4 +1,4 @@
-import { defineConfig } from "vitest/config";
+import { defineConfig, configDefaults } from "vitest/config";
 import { config } from "dotenv";
 
 // Load .env file
@@ -13,5 +13,6 @@ export default defineConfig({
     sequence: { shuffle: false },
     pool: "forks",
     fileParallelism: false,
+    exclude: [...configDefaults.exclude, "**/.pnpm-store/**"],
   },
 });
