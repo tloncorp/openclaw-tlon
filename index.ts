@@ -240,8 +240,6 @@ const plugin = {
     // Tool access control: block sensitive tools for non-owners
     const ownerOnlyTools = new Set([
       "tlon",
-      "tlon_run",
-      "tlon-run",
       "cron",
       "read",
     ]);
