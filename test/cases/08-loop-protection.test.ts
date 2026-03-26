@@ -62,27 +62,15 @@ describe("loop protection", () => {
       }
 
       // Third-party ship sends via regular Tlon client (string author)
-      // They should keep getting responses since they're not detected as a bot.
-      // Use varied, low-friction prompts so we don't accidentally trigger
-      // the model's anti-spam/harassment behavior.
-      const prompts = [
-        "Hey there, how's your day going?",
-        "What's one good word to describe a calm afternoon?",
-        "Name a color you like and why in a few words.",
-        "What's a nice snack recommendation?",
-        "Share one encouraging word before I go.",
-      ];
-
-      for (const [index, prompt] of prompts.entries()) {
+      // They should always get responses since they're not detected as a bot
+      for (let i = 1; i <= 5; i++) {
         const response = await fixtures.thirdPartyClient!.prompt(
-          prompt,
+          `Regular user message ${i} - should always get response`,
           { timeoutMs: 30_000 }
         );
 
         expect(response.success).toBe(true);
-        console.log(
-          `[TEST] Regular user response ${index + 1}: ${response.text?.slice(0, 30)}`,
-        );
+        console.log(`[TEST] Regular user response ${i}: ${response.text?.slice(0, 30)}`);
       }
     });
   });
