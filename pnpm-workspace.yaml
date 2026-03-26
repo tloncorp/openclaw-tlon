@@ -2,6 +2,3 @@ packages: []
 
 onlyBuiltDependencies:
   - '@tloncorp/api'
-
-overrides:
-  '@tloncorp/api': link:../tlon-apps/packages/api
