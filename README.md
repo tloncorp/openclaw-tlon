@@ -37,38 +37,38 @@ channels:
     ship: "~your-ship"
     url: "https://your-ship.tlon.network"
     code: "your-access-code"
-    
+
     # Owner receives approval requests and can manage the bot
     ownerShip: "~your-main-ship"
-    
+
     # Ships allowed to DM the bot directly
     dmAllowlist:
       - "~trusted-friend"
       - "~another-ship"
-    
+
     # Auto-accept settings
-    autoAcceptDmInvites: true      # Accept DMs from ships in dmAllowlist
-    autoAcceptGroupInvites: false  # Require approval for group invites
-    
+    autoAcceptDmInvites: true # Accept DMs from ships in dmAllowlist
+    autoAcceptGroupInvites: false # Require approval for group invites
+
     # Channel discovery
-    autoDiscoverChannels: true     # Monitor all channels in joined groups
-    groupChannels:                 # Additional channels to monitor explicitly
+    autoDiscoverChannels: true # Monitor all channels in joined groups
+    groupChannels: # Additional channels to monitor explicitly
       - "chat/~host-ship/channel-name"
-    
+
     # Per-channel authorization
     authorization:
       channelRules:
         "chat/~host/public-channel":
-          mode: "open"             # Anyone can interact
+          mode: "open" # Anyone can interact
         "chat/~host/private-channel":
           mode: "restricted"
           allowedShips:
             - "~specific-ship"
-    
+
     # Ships authorized by default for restricted channels
     defaultAuthorizedShips:
       - "~always-allowed"
-    
+
     # Show model info in responses
     showModelSignature: false
 ```
@@ -100,11 +100,11 @@ Reply "approve", "deny", or "block" (ID: dm-1234567890-abc)
 
 The owner can send these commands via DM:
 
-| Command | Description |
-|---------|-------------|
-| `blocked` | List all blocked ships |
-| `pending` | List pending approval requests |
-| `unblock ~ship` | Unblock a ship |
+| Command         | Description                    |
+| --------------- | ------------------------------ |
+| `blocked`       | List all blocked ships         |
+| `pending`       | List pending approval requests |
+| `unblock ~ship` | Unblock a ship                 |
 
 ## Bundled Skill
 
@@ -138,7 +138,7 @@ Full documentation: https://docs.openclaw.ai/channels/tlon
 gh repo clone tloncorp/openclaw-tlon
 cd openclaw-tlon
 
-# 2. Run setup (clones api-beta, creates .env)
+# 2. Run setup (clones tlonbot + tlon-apps, creates .env)
 ./dev/setup.sh
 
 # 3. Edit .env with your credentials
@@ -157,18 +157,40 @@ docker compose --env-file .env -f dev/docker-compose.yml up --build
 
 ```
 parent/
-├── api-beta/           # @tloncorp/api - shared API library (cloned by setup)
 ├── tlonbot/            # Bot prompts + image-search extension (optional)
+├── tlon-apps/          # Source repo for dev-only local @tloncorp/api overrides
 └── openclaw-tlon/      # This repo
 ```
 
-The tlon-skill is installed via npm and doesn't need to be cloned separately.
+`@tloncorp/api` and `@tloncorp/tlon-skill` are installed via npm for normal installs. During Docker dev, the entrypoint will also link a local `@tloncorp/api` override from `../tlon-apps/packages/api` when that sibling repo has been built.
+
+The dev override uses the real `tlon-apps/packages/api` package, similar to the old `api-beta` workflow. You still rebuild `tlon-apps` separately so its `dist/` stays current, and the container startup will link that local package instead of using the published npm copy.
+
+If you want to modify `@tloncorp/api` locally while working in this repo, first link the sibling package into `openclaw-tlon` so your editor and local TypeScript resolve against `../tlon-apps/packages/api`:
+
+```bash
+pnpm dev:api:link
+```
+
+That makes `openclaw-tlon` resolve `@tloncorp/api` to `../tlon-apps/packages/api` on your machine. After changing the API surface, rebuild it in `tlon-apps`:
+
+```bash
+pnpm --dir ../tlon-apps --filter @tloncorp/api build
+```
+
+To switch back to the published npm package on your host:
+
+```bash
+pnpm dev:api:unlink
+```
 
 ### Making Changes
 
-1. Edit code in either repo
-2. Restart container: `docker compose --env-file .env -f dev/docker-compose.yml up --build`
-3. For faster iteration, run OpenClaw directly on host with npm link
+1. Edit code in this repo or `../tlon-apps/packages/api`
+2. If you changed `tlon-apps`, rebuild the API package there first:
+   `pnpm --dir ../tlon-apps --filter @tloncorp/api build`
+3. Restart container: `docker compose --env-file .env -f dev/docker-compose.yml up --build`
+4. For faster iteration, run OpenClaw directly on host with npm link
 
 ## Testing
 
@@ -207,6 +229,7 @@ pnpm test:integration
 ```
 
 This will:
+
 - Start 3 fakezod ships (~zod as bot, ~ten as test user, ~mug as third party)
 - Build and start an OpenClaw container with the plugin
 - Wait for ships, gateway, and SSE subscriptions
@@ -229,7 +252,7 @@ For iterative development — you manage the ships and gateway yourself, tests r
 ./dev/setup.sh
 ```
 
-This clones `tlonbot` and `api-beta` as sibling directories and creates `.env` from `.env.example` if it doesn't exist.
+This clones `tlonbot` and `tlon-apps` as sibling directories and creates `.env` from `.env.example` if it doesn't exist. `@tloncorp/api` still installs from npm by default, but the dev container will link a local override from `tlon-apps/packages/api` so you can test API changes without publishing first.
 
 **2. Edit `.env`:**
 

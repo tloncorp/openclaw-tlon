@@ -15,33 +15,17 @@ fi
 
 echo "==> Installing plugin dependencies..."
 
-# Install openclaw-tlon plugin dependencies (includes @tloncorp/tlon-skill from npm)
+# Install openclaw-tlon plugin dependencies (includes @tloncorp/api and @tloncorp/tlon-skill from npm)
 cd /workspace/openclaw-tlon
 pnpm install
+./dev/build-local-api-override.sh
 
-# Link api-beta if mounted (for local development)
-if [ -f "/workspace/api-beta/package.json" ]; then
-  cd /workspace/api-beta
-
-  # Only install/build if not already done
-  if [ ! -d "node_modules" ]; then
-    echo "==> Installing api-beta dependencies..."
-    npm install
-  fi
-
-  if [ ! -d "dist" ]; then
-    echo "==> Building api-beta..."
-    npm run build
-  fi
-
-  # Always ensure link is set up
-  npm link 2>/dev/null || true
-  cd /workspace/openclaw-tlon
-  npm link @tloncorp/api 2>/dev/null || true
-fi
+# Expose the plugin at an id-shaped path so OpenClaw's path hint matches the manifest id.
+ln -sfn /workspace/openclaw-tlon /workspace/tlon
 
 # Remove bundled tlon plugin to avoid duplicate ID conflict
 rm -rf "$(npm root -g)/openclaw/extensions/tlon"
+rm -rf "$(npm root -g)/openclaw/dist/extensions/tlon"
 
 # Plugin is loaded from /workspace/openclaw-tlon via plugins.load.paths in config
 # Skill should be discovered via plugin manifest's "skills" field.
@@ -69,6 +53,15 @@ if [ -f "/workspace/tlonbot/openclaw.json" ]; then
   fi
 elif [ -f "/workspace/openclaw-tlon/dev/openclaw.dev.json" ]; then
   cp "/workspace/openclaw-tlon/dev/openclaw.dev.json" "$CONFIG_PATH"
+fi
+
+if [ -f "$CONFIG_PATH" ]; then
+  echo "==> Repointing local tlon plugin path to /workspace/tlon..."
+  jq '
+    .plugins.load.paths |= map(
+      if . == "/workspace/openclaw-tlon" then "/workspace/tlon" else . end
+    )
+  ' "$CONFIG_PATH" > "$CONFIG_PATH.tmp" && mv "$CONFIG_PATH.tmp" "$CONFIG_PATH"
 fi
 
 # Upsert a marked block into a file (preserves content outside the markers)
