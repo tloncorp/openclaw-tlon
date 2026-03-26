@@ -216,7 +216,7 @@ Runs everything in Docker — ships + gateway + tests. Only needs an LLM API key
 # Required: at least one LLM provider key
 OPENROUTER_API_KEY=sk-or-...
 
-# Optional: override the default model (default: openrouter/minimax/minimax-m2.1)
+# Optional: override the default model (default: openrouter/minimax/minimax-m2.5)
 # MODEL=anthropic/claude-sonnet-4-5
 ```
 

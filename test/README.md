@@ -75,6 +75,19 @@ TEST_THIRD_PARTY_CODE=ravsut-bolryd-hapsum-pastul
 
 For `test:integration` (ephemeral mode), ship credentials are hardcoded — only `OPENROUTER_API_KEY` is needed from `.env`.
 
+#### Storage (media upload test)
+
+The media upload test (`09-media.test.ts`) requires S3-compatible storage credentials to verify that the bot uploads and rewrites image URLs. Without these variables, the media test is skipped — all other tests run normally.
+
+```bash
+# S3-compatible storage (e.g., GCS with HMAC keys)
+TEST_STORAGE_ENDPOINT=https://storage.googleapis.com
+TEST_STORAGE_BUCKET=your-bucket-name
+TEST_STORAGE_ACCESS_KEY=GOOG...
+TEST_STORAGE_SECRET_KEY=...
+TEST_STORAGE_REGION=auto    # optional, defaults to "auto"
+```
+
 ## Testing Principles
 
 - Assert from the **bot ship's perspective** (`fixtures.botState`), not the test user's private state
@@ -94,14 +107,16 @@ test/
     fixtures.ts   # Shared test fixtures (groups, DM channels, 3rd party approval)
     index.ts      # Re-exports
   cases/
-    01-connectivity.test.ts   # Basic connection checks
-    02-contacts.test.ts       # Contact/profile tests
-    03-messages.test.ts       # DM tests
-    04-groups.test.ts         # Group tests
-    05-channels.test.ts       # Channel tests
-    06-heartbeat.test.ts      # Heartbeat/cron tests
-    07-security.test.ts       # Security tests (tool access, blocking)
-    99-commands.test.ts       # Admin command tests
+    00-connectivity.test.ts     # Basic connection checks
+    01-commands.test.ts         # Admin command tests
+    02-contacts.test.ts         # Contact/profile tests
+    03-messages.test.ts         # DM tests
+    04-groups.test.ts           # Group tests
+    05-channels.test.ts         # Channel tests
+    06-heartbeat.test.ts        # Heartbeat/cron tests
+    07-security.test.ts         # Security tests (tool access, blocking)
+    08-loop-protection.test.ts  # Loop/recursion protection
+    09-media.test.ts            # Media upload tests (requires TEST_STORAGE_*)
 ```
 
 Tests are numbered for execution order.

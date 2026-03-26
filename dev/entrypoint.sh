@@ -97,16 +97,16 @@ echo "==> Installing prompts..."
 WORKSPACE_DIR=/root/.openclaw/workspace
 mkdir -p "$WORKSPACE_DIR"
 
-# SOUL.md needs variable substitution
+# needs variable substitution
+upsert_block "$WORKSPACE_DIR/BOOTSTRAP.md" "$(envsubst < /workspace/tlonbot/prompts/BOOTSTRAP.md)"
+upsert_block "$WORKSPACE_DIR/IDENTITY.md" "$(envsubst < /workspace/tlonbot/prompts/IDENTITY.md)"
 upsert_block "$WORKSPACE_DIR/SOUL.md" "$(envsubst < /workspace/tlonbot/prompts/SOUL.md)"
-# USER.md and TOOLS.md are static
-upsert_block "$WORKSPACE_DIR/USER.md" "$(cat /workspace/tlonbot/prompts/USER.md)"
-upsert_block "$WORKSPACE_DIR/TOOLS.md" "$(cat /workspace/tlonbot/prompts/TOOLS.md)"
-upsert_block "$WORKSPACE_DIR/HEARTBEAT.md" "$(cat /workspace/tlonbot/prompts/HEARTBEAT.md)"
+upsert_block "$WORKSPACE_DIR/TOOLS.md" "$(envsubst < /workspace/tlonbot/prompts/TOOLS.md)"
+# static, no variable substitution needed
 upsert_block "$WORKSPACE_DIR/AGENTS.md" "$(cat /workspace/tlonbot/prompts/AGENTS.md)"
-upsert_block "$WORKSPACE_DIR/BOOTSTRAP.md" "$(cat /workspace/tlonbot/prompts/BOOTSTRAP.md)"
-upsert_block "$WORKSPACE_DIR/IDENTITY.md" "$(cat /workspace/tlonbot/prompts/IDENTITY.md)"
+upsert_block "$WORKSPACE_DIR/HEARTBEAT.md" "$(cat /workspace/tlonbot/prompts/HEARTBEAT.md)"
 upsert_block "$WORKSPACE_DIR/MEMORY.md" "$(cat /workspace/tlonbot/prompts/MEMORY.md)"
+upsert_block "$WORKSPACE_DIR/USER.md" "$(cat /workspace/tlonbot/prompts/USER.md)"
 
 export WORKSPACE_DIR
 export TLON_RUN_PATH="/workspace/tlonbot/bin/tlon-run"
