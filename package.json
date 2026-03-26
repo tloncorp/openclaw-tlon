@@ -26,6 +26,8 @@
     "clean": "rm -rf dist",
 
     "dev": "./dev/run.sh",
+    "dev:api:link": "./dev/link-local-api.sh",
+    "dev:api:unlink": "./dev/unlink-local-api.sh",
     "format": "oxfmt --check",
     "format:fix": "oxfmt --write",
     "lint": "oxlint --type-aware",
@@ -39,7 +41,7 @@
     "test:all": "vitest run"
   },
   "dependencies": {
-    "@tloncorp/api": "github:tloncorp/api-beta#c121deb",
+    "@tloncorp/api": "0.0.2-alpha.4",
     "@tloncorp/tlon-skill": "^0.2.2",
     "@urbit/aura": "^3.0.0",
     "@urbit/http-api": "^3.0.0",

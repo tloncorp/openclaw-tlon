@@ -15,7 +15,10 @@ find /workspace/openclaw-tlon -not -path '*/.git/*' -exec chown root:root {} \; 
 
 echo "==> Installing plugin dependencies..."
 cd /workspace/openclaw-tlon
-npm install
+pnpm install
+
+# Expose the plugin at an id-shaped path so OpenClaw's path hint matches the manifest id.
+ln -sfn /workspace/openclaw-tlon /workspace/tlon
 
 # tlon-skill comes in as plugin dependency (see package.json)
 echo "==> Checking tlon-skill from plugin dependencies..."
@@ -23,6 +26,7 @@ ls -la /workspace/openclaw-tlon/node_modules/@tloncorp/tlon-skill/ 2>/dev/null |
 
 # Remove bundled tlon plugin to avoid duplicate ID conflict
 rm -rf "$(npm root -g)/openclaw/extensions/tlon"
+rm -rf "$(npm root -g)/openclaw/dist/extensions/tlon"
 
 # Create minimal config for CI
 CONFIG_DIR=/root/.openclaw
@@ -69,7 +73,7 @@ cat > "$CONFIG_DIR/openclaw.json" << EOF
   },
   "plugins": {
     "load": {
-      "paths": ["/workspace/openclaw-tlon"]
+      "paths": ["/workspace/tlon"]
     },
     "entries": {
       "tlon": {
