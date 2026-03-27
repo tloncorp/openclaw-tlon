@@ -143,16 +143,18 @@ if [ -n "$BRAVE_API_KEY" ]; then
     && mv "$CONFIG_DIR/openclaw.json.tmp" "$CONFIG_DIR/openclaw.json"
 fi
 
-echo "==> Config written:"
-cat "$CONFIG_DIR/openclaw.json"
+echo "==> Config written"
 
-# Debug: Dump agent config and heartbeat settings
-echo "==> DEBUG: Agent config:"
-cat "$CONFIG_DIR/openclaw.json" | jq '.agents'
-echo "==> DEBUG: Heartbeat config:"
-cat "$CONFIG_DIR/openclaw.json" | jq '.agents.defaults.heartbeat'
-echo "==> DEBUG: Tlon channel config:"
-cat "$CONFIG_DIR/openclaw.json" | jq '.channels.tlon'
+if [ "${VERBOSE:-0}" = "1" ]; then
+  echo "==> DEBUG: Full config:"
+  cat "$CONFIG_DIR/openclaw.json"
+  echo "==> DEBUG: Agent config:"
+  cat "$CONFIG_DIR/openclaw.json" | jq '.agents'
+  echo "==> DEBUG: Heartbeat config:"
+  cat "$CONFIG_DIR/openclaw.json" | jq '.agents.defaults.heartbeat'
+  echo "==> DEBUG: Tlon channel config:"
+  cat "$CONFIG_DIR/openclaw.json" | jq '.channels.tlon'
+fi
 
 # Create workspace
 WORKSPACE_DIR=/root/.openclaw/workspace
@@ -194,30 +196,31 @@ fi
 echo "==> Workspace contents:"
 ls -la "$WORKSPACE_DIR/"
 
-# Debug: Dump prompt file contents
-echo "==> DEBUG: Prompt files content:"
-for f in SOUL.md TOOLS.md AGENTS.md HEARTBEAT.md USER.md; do
-  if [ -f "$WORKSPACE_DIR/$f" ]; then
-    echo "--- BEGIN $WORKSPACE_DIR/$f ---"
-    cat "$WORKSPACE_DIR/$f"
-    echo "--- END $f ---"
-  fi
-done
-
-# Debug: Dump skill env vars
-echo "==> DEBUG: Skill env vars:"
-echo "  URBIT_URL=${URBIT_URL:-<not set>}"
-echo "  URBIT_SHIP=${URBIT_SHIP:-<not set>}"
-echo "  URBIT_CODE=${URBIT_CODE:-<not set>}"
+if [ "${VERBOSE:-0}" = "1" ]; then
+  echo "==> DEBUG: Prompt files content:"
+  for f in SOUL.md TOOLS.md AGENTS.md HEARTBEAT.md USER.md; do
+    if [ -f "$WORKSPACE_DIR/$f" ]; then
+      echo "--- BEGIN $WORKSPACE_DIR/$f ---"
+      cat "$WORKSPACE_DIR/$f"
+      echo "--- END $f ---"
+    fi
+  done
+  echo "==> DEBUG: Skill env vars:"
+  echo "  URBIT_URL=${URBIT_URL:-<not set>}"
+  echo "  URBIT_SHIP=${URBIT_SHIP:-<not set>}"
+  echo "  URBIT_CODE=${URBIT_CODE:-<not set>}"
+fi
 
 # Create sessions directory
 SESSIONS_DIR=/root/.openclaw/agents/test/sessions
 mkdir -p "$SESSIONS_DIR"
 echo "{}" > "$SESSIONS_DIR/sessions.json"
 
-echo "==> Directory structure:"
-ls -la /root/.openclaw/
-ls -la /root/.openclaw/agents/test/ 2>/dev/null || true
+if [ "${VERBOSE:-0}" = "1" ]; then
+  echo "==> DEBUG: Directory structure:"
+  ls -la /root/.openclaw/
+  ls -la /root/.openclaw/agents/test/ 2>/dev/null || true
+fi
 
 echo "==> Starting OpenClaw gateway..."
 exec openclaw gateway --port 18789 --bind lan --verbose

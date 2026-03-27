@@ -59,6 +59,7 @@ services:
       - BRAVE_API_KEY=${BRAVE_API_KEY}
       - MODEL=${MODEL:-openrouter/minimax/minimax-m2.1}
       - TLONBOT_TOKEN=${TLONBOT_TOKEN}
+      - VERBOSE=${VERBOSE:-0}
     ports:
       - "${OPENCLAW_GATEWAY_PORT:-18789}:18789"
     volumes:
