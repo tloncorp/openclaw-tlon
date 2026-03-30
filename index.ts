@@ -1,9 +1,9 @@
+import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 import { spawn } from "node:child_process";
-import { createRequire } from "node:module";
 import { existsSync } from "node:fs";
+import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 import { PLUGIN_COMMIT } from "./src/version.generated.js";
 
 // Get package version at runtime
@@ -13,8 +13,9 @@ import { emptyPluginConfigSchema } from "openclaw/plugin-sdk";
 import { tlonPlugin } from "./src/channel.js";
 import { resolveBridgeForCommand } from "./src/monitor/command-auth.js";
 import { setTlonRuntime } from "./src/runtime.js";
-import { resolveTlonAccount } from "./src/types.js";
 import { getSessionRole } from "./src/session-roles.js";
+import { recordToolCall } from "./src/telemetry.js";
+import { resolveTlonAccount } from "./src/types.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -42,9 +43,7 @@ const ALLOWED_TLON_COMMANDS = new Set([
 function findTlonBinary(): string {
   // Check in node_modules/.bin
   const skillBin = join(__dirname, "node_modules", ".bin", "tlon");
-  console.log(
-    `[tlon] Checking for binary at: ${skillBin}, exists: ${existsSync(skillBin)}`,
-  );
+  console.log(`[tlon] Checking for binary at: ${skillBin}, exists: ${existsSync(skillBin)}`);
   if (existsSync(skillBin)) return skillBin;
 
   // Check for platform-specific binary directly
@@ -180,9 +179,7 @@ const plugin = {
     if (credentials) {
       api.logger.info(`[tlon] Credentials available for ${account.ship}`);
     } else {
-      api.logger.warn(
-        `[tlon] No credentials configured - tlon tool will rely on env vars`,
-      );
+      api.logger.warn(`[tlon] No credentials configured - tlon tool will rely on env vars`);
     }
 
     api.registerTool({
@@ -227,8 +224,7 @@ const plugin = {
             details: undefined,
           };
         } catch (error: unknown) {
-          const message =
-            error instanceof Error ? error.message : String(error);
+          const message = error instanceof Error ? error.message : String(error);
           return {
             content: [{ type: "text" as const, text: `Error: ${message}` }],
             details: { error: true },
@@ -238,11 +234,7 @@ const plugin = {
     });
 
     // Tool access control: block sensitive tools for non-owners
-    const ownerOnlyTools = new Set([
-      "tlon",
-      "cron",
-      "read",
-    ]);
+    const ownerOnlyTools = new Set(["tlon", "cron", "read"]);
 
     api.on("before_tool_call", (event, ctx) => {
       if (!ownerOnlyTools.has(event.toolName)) {
@@ -267,6 +259,15 @@ const plugin = {
       api.logger.info(
         `[tlon] Allowed ${event.toolName} tool for ${role ?? "internal"} session. Session: ${ctx.sessionKey}`,
       );
+    });
+
+    api.on("after_tool_call", (event, ctx) => {
+      recordToolCall({
+        sessionKey: ctx.sessionKey,
+        toolName: event.toolName,
+        durationMs: event.durationMs,
+        error: event.error,
+      });
     });
 
     // ── Slash commands for approval & admin ────────────────────────────
