@@ -188,9 +188,8 @@ describe("image search", () => {
       // ── Prompt bot to search for an image and send it ──────────────
       const token = `it-imgsearch-${Date.now().toString(36)}`;
       const prompt =
-        `Search for an image of a golden retriever puppy using the image_search tool, ` +
-        `then send it to me in this DM. Include the text "${token}" in your message. ` +
-        `You MUST use the image_search tool, not web_search.`;
+        `Find an image of a golden retriever puppy and send it to me in this DM. ` +
+        `Include the text "${token}" in your message.`;
 
       console.log(`\n[TEST] Sending prompt: "${prompt}"`);
       const response = await fixtures.client.prompt(prompt);
