@@ -143,7 +143,7 @@ if [ ! -d "/workspace/tlonbot/image-search" ] && [ -n "$BRAVE_API_KEY" ] && [ -n
   echo "==> Fetching image-search plugin from GitHub..."
   PLUGIN_DIR="/workspace/image-search"
   mkdir -p "$PLUGIN_DIR"
-  TLONBOT_RAW="https://raw.githubusercontent.com/tloncorp/tlonbot/master/image-search"
+  TLONBOT_RAW="https://raw.githubusercontent.com/tloncorp/tlonbot/main/image-search"
   for f in index.js package.json openclaw.plugin.json; do
     curl -fsSL -H "Authorization: token $TLONBOT_TOKEN" "$TLONBOT_RAW/$f" -o "$PLUGIN_DIR/$f" \
       || { echo "FATAL: Failed to fetch image-search/$f from GitHub"; exit 1; }
@@ -199,13 +199,13 @@ if [ -d "/workspace/tlonbot/prompts" ]; then
   done
 elif [ -n "$TLONBOT_TOKEN" ]; then
   echo "  (fetching from GitHub with TLONBOT_TOKEN)"
-  TLONBOT_RAW="https://raw.githubusercontent.com/tloncorp/tlonbot/master/prompts"
+  TLONBOT_RAW="https://raw.githubusercontent.com/tloncorp/tlonbot/main/prompts"
   for f in SOUL.md TOOLS.md BOOTSTRAP.md USER.md AGENTS.md HEARTBEAT.md; do
     curl -fsSL -H "Authorization: token $TLONBOT_TOKEN" "$TLONBOT_RAW/$f" -o "$WORKSPACE_DIR/$f" 2>/dev/null && echo "  - $f" || echo "  - $f (failed)"
   done
 else
   echo "  (no tlonbot mount or token, trying public GitHub access)"
-  TLONBOT_RAW="https://raw.githubusercontent.com/tloncorp/tlonbot/master/prompts"
+  TLONBOT_RAW="https://raw.githubusercontent.com/tloncorp/tlonbot/main/prompts"
   for f in SOUL.md TOOLS.md BOOTSTRAP.md USER.md AGENTS.md HEARTBEAT.md; do
     curl -fsSL "$TLONBOT_RAW/$f" -o "$WORKSPACE_DIR/$f" 2>/dev/null && echo "  - $f" || true
   done
