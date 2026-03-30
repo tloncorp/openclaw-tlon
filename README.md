@@ -82,24 +82,11 @@ channels:
 
 ## Telemetry
 
-Telemetry is disabled by default. The plugin only sends PostHog events when `channels.tlon.telemetry.enabled`
+Telemetry is disabled by default. The plugin only sends tlemetry events when `channels.tlon.telemetry.enabled`
 is set to `true` and an API key is configured.
 
 When enabled, the plugin captures a single `TlonBot Reply Handled` event each time it enters the OpenClaw reply
-flow. That means telemetry fires only for messages the plugin considers relevant enough to ask the agent about,
-not for every group message seen on the firehose. The event is attributed to the configured `ownerShip` as the
-PostHog `distinctId`, so hosted instances can track analytics against the owning Tlon user rather than the bot
-ship.
-
-Captured properties include:
-
-- Outcome (`responded`, `no_reply`, or `error`)
-- Reply length (`replyCharCount`, `replyWordCount`)
-- End-to-end dispatch timing (`dispatchDurationMs`)
-- Tool usage (`toolNames`, per-tool durations, tool error count)
-- Basic conversation context (`chatType` = `dm` or `groupChannel`, `isThreadReply`, `attachmentCount`)
-- Model metadata when OpenClaw exposes it (`provider`, `model`, `thinkLevel`)
-- Source tagging (`logSource: "openclawPlugin"`)
+flow. The event summarizes OpenClaw usage (tools used, character count, etc.), but does not log message content.
 
 The plugin does not enable telemetry automatically just because an API key is present. `enabled: true` is
 required so open-source installs do not phone home by default.
@@ -343,12 +330,14 @@ pnpm test:manual
 ```
 
 This will:
+
 - Start 3 fakezod ships and the OpenClaw gateway in Docker
 - Wait for everything to be ready
 - Print ship URLs, access codes, and gateway address
 - Tail gateway logs (Ctrl+C to stop and tear down)
 
 Ships are accessible via browser:
+
 - **~zod** (bot): http://localhost:8080 — code: `lidlut-tabwed-pillex-ridrup`
 - **~ten** (user): http://localhost:8081 — code: `lapseg-nolmel-riswen-hopryc`
 - **~mug** (3rd party): http://localhost:8082 — code: `ravsut-bolryd-hapsum-pastul`
