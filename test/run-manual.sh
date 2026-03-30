@@ -131,8 +131,8 @@ for i in $(seq 1 120); do
   sleep 1
 done
 
-# Cleanup on Ctrl+C
-trap 'echo ""; echo "==> Stopping..."; docker compose $COMPOSE_FILES down -v; exit 0' INT TERM
+# Cleanup on Ctrl+C, timeout, or other failure
+trap 'echo ""; echo "==> Stopping..."; docker compose $COMPOSE_FILES down -v 2>/dev/null || true' EXIT INT TERM
 
 # Show recent startup logs then re-print info
 docker compose $COMPOSE_FILES logs --tail=20 openclaw 2>/dev/null || true
