@@ -298,6 +298,37 @@ pnpm test:integration:dev test/cases/dm.test.ts    # Specific test
 pnpm test:integration:dev --watch                  # Watch mode
 ```
 
+#### Manual Testing (`test:manual`)
+
+Starts the full Docker environment (ships + gateway) without running vitest, so you can interact with the bot manually — send DMs from ~ten's Landscape, poke around, etc.
+
+```bash
+pnpm test:manual
+```
+
+This will:
+- Start 3 fakezod ships and the OpenClaw gateway in Docker
+- Wait for everything to be ready
+- Print ship URLs, access codes, and gateway address
+- Tail gateway logs (Ctrl+C to stop and tear down)
+
+Ships are accessible via browser:
+- **~zod** (bot): http://localhost:8080 — code: `lidlut-tabwed-pillex-ridrup`
+- **~ten** (user): http://localhost:8081 — code: `lapseg-nolmel-riswen-hopryc`
+- **~mug** (3rd party): http://localhost:8082 — code: `ravsut-bolryd-hapsum-pastul`
+
+To tear down without attaching to logs:
+
+```bash
+pnpm test:manual -- --stop
+```
+
+**Verbose mode:** To see full debug output from the OpenClaw entrypoint (config dumps, prompt files, env vars):
+
+```bash
+VERBOSE=1 pnpm test:manual
+```
+
 #### Optional: Image Search & Brave API
 
 To test the `image_search` tool and Brave-powered `web_search`:

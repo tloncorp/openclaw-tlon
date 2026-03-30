@@ -37,6 +37,7 @@
     "test:integration": "bash ./test/run.sh",
     "test:integration:dev": "./test/run-dev.sh",
     "test:integration:watch": "./test/run-dev.sh --watch",
+    "test:manual": "bash ./test/run-manual.sh",
     "test:all": "vitest run"
   },
   "dependencies": {
