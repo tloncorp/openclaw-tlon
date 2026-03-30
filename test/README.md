@@ -73,11 +73,20 @@ TEST_THIRD_PARTY_SHIP=~mug
 TEST_THIRD_PARTY_CODE=ravsut-bolryd-hapsum-pastul
 ```
 
-For `test:integration` (ephemeral mode), ship credentials are hardcoded — only `OPENROUTER_API_KEY` is needed from `.env`.
+For `test:integration` (ephemeral mode), ship credentials are hardcoded. Required environment:
 
-#### Storage (media upload test)
+- `OPENROUTER_API_KEY` — required for all tests (LLM provider)
+- `TLONBOT_TOKEN` — required when `../tlonbot` is not mounted (always the case in CI). Used to fetch prompts and the `image-search` plugin from GitHub. Not needed when `../tlonbot` is locally available
+- `TEST_STORAGE_*` — required for media upload (`09-media`) and image search (`11-image-search`) tests. `09-media` skips when absent; `11-image-search` fails explicitly in compose mode
+- `BRAVE_API_KEY` — required for the image search (`11-image-search`) test. Fails explicitly in compose mode when absent
 
-The media upload test (`09-media.test.ts`) requires S3-compatible storage credentials to verify that the bot uploads and rewrites image URLs. Without these variables, the media test is skipped — all other tests run normally.
+In CI, all of these should be configured as GitHub Actions secrets. Locally with `../tlonbot` mounted, only `OPENROUTER_API_KEY`, `BRAVE_API_KEY`, and `TEST_STORAGE_*` are needed.
+
+#### Storage (media upload + image search tests)
+
+The media upload test (`09-media.test.ts`) and image search test (`11-image-search.test.ts`) require S3-compatible storage credentials to verify that the bot uploads and rewrites image URLs. Without these variables, `09-media.test.ts` is skipped. `11-image-search.test.ts` fails explicitly in CI (`pnpm test:integration`) when storage env is missing — it uses a definition-time check that prevents silent skipping in CI. In dev mode (`test:integration:dev`), both tests skip when storage env is absent.
+
+The difference: `11-image-search` is the subject of TLON-5519 and must not silently skip in CI, so it enforces env presence. `09-media` predates this requirement and retains its original skip behavior.
 
 ```bash
 # S3-compatible storage (e.g., GCS with HMAC keys)
@@ -86,6 +95,16 @@ TEST_STORAGE_BUCKET=your-bucket-name
 TEST_STORAGE_ACCESS_KEY=GOOG...
 TEST_STORAGE_SECRET_KEY=...
 TEST_STORAGE_REGION=auto    # optional, defaults to "auto"
+```
+
+#### Brave API key (image search test)
+
+The image search test (`11-image-search.test.ts`) additionally requires a Brave Search API key. In CI (`pnpm test:integration`), a missing `BRAVE_API_KEY` fails the test explicitly. In dev mode, the test is skipped.
+
+**Note:** When `../tlonbot` is not mounted (always the case in CI), both `BRAVE_API_KEY` and `TLONBOT_TOKEN` must be present for the `image-search` plugin to be fetched and loaded. `BRAVE_API_KEY` alone is not sufficient — the entrypoint uses `TLONBOT_TOKEN` to authenticate the GitHub API request that fetches the plugin code. When `../tlonbot` is locally mounted, `TLONBOT_TOKEN` is not needed for this test — the plugin loads from the volume mount.
+
+```bash
+BRAVE_API_KEY=BSA...
 ```
 
 ## Testing Principles
@@ -117,6 +136,8 @@ test/
     07-security.test.ts         # Security tests (tool access, blocking)
     08-loop-protection.test.ts  # Loop/recursion protection
     09-media.test.ts            # Media upload tests (requires TEST_STORAGE_*)
+    10-outbound-messages.test.ts # Outbound messaging
+    11-image-search.test.ts     # Image search E2E (requires BRAVE_API_KEY + TEST_STORAGE_*)
 ```
 
 Tests are numbered for execution order.
