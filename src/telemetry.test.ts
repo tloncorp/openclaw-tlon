@@ -19,11 +19,8 @@ vi.mock("posthog-node", () => ({
 
 import {
   _testing,
-  collectToolUsageSince,
   createTlonTelemetry,
-  createToolTraceCursor,
   recordToolCall,
-  resolveReplyOutcome,
 } from "./telemetry.js";
 
 describe("telemetry tool tracking", () => {
@@ -35,8 +32,68 @@ describe("telemetry tool tracking", () => {
     postHogMocks.shutdown.mockClear();
   });
 
-  it("collects tool calls recorded after a cursor", () => {
-    const cursor = createToolTraceCursor("session-1");
+  function createEnabledTelemetry() {
+    return createTlonTelemetry({
+      config: {
+        enabled: true,
+        apiKey: "phc_test",
+        host: "https://us.i.posthog.com",
+      },
+    });
+  }
+
+  async function captureReply(params?: {
+    sessionKey?: string;
+    deliveredMessageCount?: number;
+    dispatchError?: unknown;
+  }) {
+    const telemetry = createEnabledTelemetry();
+    const replyTelemetry = telemetry?.startReply({
+      sessionKey: params?.sessionKey ?? "session-1",
+      ownerShip: "~zod",
+      botShip: "~nec",
+      chatType: "dm",
+      isThreadReply: false,
+      senderRole: "owner",
+      attachmentCount: 1,
+    });
+
+    await replyTelemetry?.capture({
+      deliveredMessageCount: params?.deliveredMessageCount ?? 1,
+      replyCharCount: 42,
+      replyWordCount: 7,
+      replyMediaCount: 0,
+      dispatchDurationMs: 250,
+      queuedFinal: false,
+      queuedFinalCount: 1,
+      queuedBlockCount: 0,
+      provider: "anthropic",
+      model: "claude-test",
+      thinkLevel: null,
+      dispatchError: params?.dispatchError,
+    });
+
+    await telemetry?.close();
+    return postHogMocks.capture.mock.calls.at(-1)?.[0];
+  }
+
+  it("captures only tool calls recorded after reply tracking starts", async () => {
+    recordToolCall({
+      sessionKey: "session-1",
+      toolName: "read",
+      durationMs: 25,
+    });
+
+    const telemetry = createEnabledTelemetry();
+    const replyTelemetry = telemetry?.startReply({
+      sessionKey: "session-1",
+      ownerShip: "~zod",
+      botShip: "~nec",
+      chatType: "dm",
+      isThreadReply: false,
+      senderRole: "owner",
+      attachmentCount: 1,
+    });
 
     recordToolCall({
       sessionKey: "session-1",
@@ -49,65 +106,7 @@ describe("telemetry tool tracking", () => {
       error: "tool failed",
     });
 
-    expect(collectToolUsageSince("session-1", cursor)).toEqual({
-      calls: [
-        {
-          toolName: "web_search",
-          durationMs: 125,
-          error: null,
-        },
-        {
-          toolName: "read",
-          durationMs: null,
-          error: "tool failed",
-        },
-      ],
-      names: ["web_search", "read"],
-      totalDurationMs: 125,
-      errorCount: 1,
-    });
-  });
-
-  it("ignores missing session keys", () => {
-    recordToolCall({
-      sessionKey: "",
-      toolName: "web_search",
-      durationMs: 50,
-    });
-
-    expect(collectToolUsageSince("session-2", 0)).toEqual({
-      calls: [],
-      names: [],
-      totalDurationMs: 0,
-      errorCount: 0,
-    });
-  });
-
-  it("classifies reply outcomes", () => {
-    expect(resolveReplyOutcome({ deliveredMessageCount: 1 })).toBe("responded");
-    expect(resolveReplyOutcome({ deliveredMessageCount: 0 })).toBe("no_reply");
-    expect(
-      resolveReplyOutcome({ deliveredMessageCount: 0, dispatchError: new Error("boom") }),
-    ).toBe("error");
-  });
-
-  it("captures camelCase telemetry properties without routing metadata", async () => {
-    const telemetry = createTlonTelemetry({
-      config: {
-        enabled: true,
-        apiKey: "phc_test",
-        host: "https://us.i.posthog.com",
-      },
-    });
-
-    telemetry?.captureReplyOutcome({
-      ownerShip: "~zod",
-      botShip: "~nec",
-      outcome: "responded",
-      chatType: "dm",
-      isThreadReply: false,
-      senderRole: "owner",
-      attachmentCount: 1,
+    await replyTelemetry?.capture({
       deliveredMessageCount: 1,
       replyCharCount: 42,
       replyWordCount: 7,
@@ -119,18 +118,94 @@ describe("telemetry tool tracking", () => {
       provider: "anthropic",
       model: "claude-test",
       thinkLevel: null,
-      toolUsage: {
-        calls: [
+    });
+
+    expect(postHogMocks.capture).toHaveBeenCalledWith({
+      distinctId: "~zod",
+      event: "TlonBot Reply Handled",
+      properties: expect.objectContaining({
+        toolCount: 2,
+        toolNames: ["web_search", "read"],
+        toolTotalDurationMs: 125,
+        toolErrorCount: 1,
+        toolCalls: [
           {
             toolName: "web_search",
             durationMs: 125,
             error: null,
           },
+          {
+            toolName: "read",
+            durationMs: null,
+            error: "tool failed",
+          },
         ],
-        names: ["web_search"],
-        totalDurationMs: 125,
-        errorCount: 0,
-      },
+      }),
+    });
+
+    await telemetry?.close();
+  });
+
+  it("ignores missing session keys", async () => {
+    recordToolCall({
+      sessionKey: "",
+      toolName: "web_search",
+      durationMs: 50,
+    });
+
+    const capturedEvent = await captureReply({ sessionKey: "session-2" });
+
+    expect(capturedEvent?.properties.toolCalls).toEqual([]);
+    expect(capturedEvent?.properties.toolNames).toEqual([]);
+    expect(capturedEvent?.properties.toolCount).toBe(0);
+    expect(capturedEvent?.properties.toolTotalDurationMs).toBe(0);
+    expect(capturedEvent?.properties.toolErrorCount).toBe(0);
+  });
+
+  it("classifies reply outcomes", async () => {
+    await captureReply({ deliveredMessageCount: 1 });
+    expect(postHogMocks.capture.mock.calls.at(-1)?.[0]?.properties.outcome).toBe("responded");
+
+    await captureReply({ deliveredMessageCount: 0 });
+    expect(postHogMocks.capture.mock.calls.at(-1)?.[0]?.properties.outcome).toBe("no_reply");
+
+    await captureReply({
+      deliveredMessageCount: 0,
+      dispatchError: new Error("boom"),
+    });
+    expect(postHogMocks.capture.mock.calls.at(-1)?.[0]?.properties.outcome).toBe("error");
+  });
+
+  it("captures camelCase telemetry properties without routing metadata", async () => {
+    const telemetry = createEnabledTelemetry();
+    const replyTelemetry = telemetry?.startReply({
+      sessionKey: "session-1",
+      ownerShip: "~zod",
+      botShip: "~nec",
+      chatType: "dm",
+      isThreadReply: false,
+      senderRole: "owner",
+      attachmentCount: 1,
+    });
+
+    recordToolCall({
+      sessionKey: "session-1",
+      toolName: "web_search",
+      durationMs: 125,
+    });
+
+    await replyTelemetry?.capture({
+      deliveredMessageCount: 1,
+      replyCharCount: 42,
+      replyWordCount: 7,
+      replyMediaCount: 0,
+      dispatchDurationMs: 250,
+      queuedFinal: false,
+      queuedFinalCount: 1,
+      queuedBlockCount: 0,
+      provider: "anthropic",
+      model: "claude-test",
+      thinkLevel: null,
     });
 
     expect(postHogMocks.identify).toHaveBeenCalledWith({

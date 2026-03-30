@@ -49,8 +49,37 @@ export type TlonReplyOutcomeEvent = {
   toolUsage: ToolUsageSummary;
 };
 
+export type TlonReplyTelemetryStart = {
+  sessionKey: string;
+  ownerShip: string | null;
+  botShip: string;
+  chatType: "dm" | "groupChannel";
+  isThreadReply: boolean;
+  senderRole: "owner" | "user";
+  attachmentCount: number;
+};
+
+export type TlonReplyTelemetryResult = {
+  deliveredMessageCount: number;
+  replyCharCount: number;
+  replyWordCount: number;
+  replyMediaCount: number;
+  dispatchDurationMs: number;
+  queuedFinal: boolean;
+  queuedFinalCount: number;
+  queuedBlockCount: number;
+  provider: string | null;
+  model: string | null;
+  thinkLevel: string | null;
+  dispatchError?: unknown;
+};
+
+export interface TlonReplyTelemetrySession {
+  capture(result: TlonReplyTelemetryResult): Promise<void>;
+}
+
 export interface TlonTelemetryClient {
-  captureReplyOutcome(event: TlonReplyOutcomeEvent): void;
+  startReply(params: TlonReplyTelemetryStart): TlonReplyTelemetrySession;
   close(): Promise<void>;
 }
 
@@ -103,12 +132,12 @@ export function recordToolCall(params: {
   toolCallsBySession.set(sessionKey, trace);
 }
 
-export function createToolTraceCursor(sessionKey: string): number {
+function createToolTraceCursor(sessionKey: string): number {
   cleanupToolCalls();
   return toolCallsBySession.get(sessionKey)?.calls.length ?? 0;
 }
 
-export function collectToolUsageSince(sessionKey: string, cursor: number): ToolUsageSummary {
+function collectToolUsageSince(sessionKey: string, cursor: number): ToolUsageSummary {
   cleanupToolCalls();
 
   const calls =
@@ -129,7 +158,7 @@ export function collectToolUsageSince(sessionKey: string, cursor: number): ToolU
   };
 }
 
-export function resolveReplyOutcome(params: {
+function resolveReplyOutcome(params: {
   deliveredMessageCount: number;
   dispatchError?: unknown;
 }): TlonReplyOutcome {
@@ -158,7 +187,43 @@ class PostHogTlonTelemetry implements TlonTelemetryClient {
     });
   }
 
-  captureReplyOutcome(event: TlonReplyOutcomeEvent): void {
+  startReply(params: TlonReplyTelemetryStart): TlonReplyTelemetrySession {
+    const toolTraceCursor = createToolTraceCursor(params.sessionKey);
+
+    return {
+      capture: async (result) => {
+        // Yield once so after_tool_call hooks for the just-finished reply have time to run.
+        await new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+        this.captureReplyOutcome({
+          ownerShip: params.ownerShip,
+          botShip: params.botShip,
+          outcome: resolveReplyOutcome({
+            deliveredMessageCount: result.deliveredMessageCount,
+            dispatchError: result.dispatchError,
+          }),
+          chatType: params.chatType,
+          isThreadReply: params.isThreadReply,
+          senderRole: params.senderRole,
+          attachmentCount: params.attachmentCount,
+          deliveredMessageCount: result.deliveredMessageCount,
+          replyCharCount: result.replyCharCount,
+          replyWordCount: result.replyWordCount,
+          replyMediaCount: result.replyMediaCount,
+          dispatchDurationMs: result.dispatchDurationMs,
+          queuedFinal: result.queuedFinal,
+          queuedFinalCount: result.queuedFinalCount,
+          queuedBlockCount: result.queuedBlockCount,
+          provider: result.provider,
+          model: result.model,
+          thinkLevel: result.thinkLevel,
+          toolUsage: collectToolUsageSince(params.sessionKey, toolTraceCursor),
+        });
+      },
+    };
+  }
+
+  private captureReplyOutcome(event: TlonReplyOutcomeEvent): void {
     if (!event.ownerShip) {
       if (!this.missingOwnerWarningLogged) {
         this.missingOwnerWarningLogged = true;

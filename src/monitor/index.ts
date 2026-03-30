@@ -34,12 +34,7 @@ import { getTlonRuntime } from "../runtime.js";
 import { setSessionRole } from "../session-roles.js";
 import { createSettingsManager, type TlonSettingsStore } from "../settings.js";
 import { normalizeShip, parseChannelNest } from "../targets.js";
-import {
-  collectToolUsageSince,
-  createToolTraceCursor,
-  createTlonTelemetry,
-  resolveReplyOutcome,
-} from "../telemetry.js";
+import { createTlonTelemetry } from "../telemetry.js";
 import { resolveTlonAccount } from "../types.js";
 import { authenticate } from "../urbit/auth.js";
 import { ssrfPolicyFromAllowPrivateNetwork } from "../urbit/context.js";
@@ -1399,7 +1394,15 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     });
 
     const dispatchStartTime = Date.now();
-    const toolTraceCursor = createToolTraceCursor(route.sessionKey);
+    const replyTelemetry = telemetry?.startReply({
+      sessionKey: route.sessionKey,
+      ownerShip: effectiveOwnerShip,
+      botShip: botShipName,
+      chatType: isGroup ? "groupChannel" : "dm",
+      isThreadReply: Boolean(isThreadReply),
+      senderRole,
+      attachmentCount,
+    });
     let selectedProvider: string | null = null;
     let selectedModel: string | null = null;
     let selectedThinkLevel: string | null = null;
@@ -1515,33 +1518,20 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       dispatchError = error;
       throw error;
     } finally {
-      if (telemetry) {
-        await new Promise<void>((resolve) => setTimeout(resolve, 0));
-        telemetry.captureReplyOutcome({
-          ownerShip: effectiveOwnerShip,
-          botShip: botShipName,
-          outcome: resolveReplyOutcome({
-            deliveredMessageCount,
-            dispatchError,
-          }),
-          chatType: isGroup ? "groupChannel" : "dm",
-          isThreadReply: Boolean(isThreadReply),
-          senderRole,
-          attachmentCount,
-          deliveredMessageCount,
-          replyCharCount,
-          replyWordCount,
-          replyMediaCount,
-          dispatchDurationMs: Date.now() - dispatchStartTime,
-          queuedFinal: dispatchResult?.queuedFinal ?? false,
-          queuedFinalCount: dispatchResult?.counts.final ?? 0,
-          queuedBlockCount: dispatchResult?.counts.block ?? 0,
-          provider: selectedProvider,
-          model: selectedModel,
-          thinkLevel: selectedThinkLevel,
-          toolUsage: collectToolUsageSince(route.sessionKey, toolTraceCursor),
-        });
-      }
+      await replyTelemetry?.capture({
+        deliveredMessageCount,
+        replyCharCount,
+        replyWordCount,
+        replyMediaCount,
+        dispatchDurationMs: Date.now() - dispatchStartTime,
+        queuedFinal: dispatchResult?.queuedFinal ?? false,
+        queuedFinalCount: dispatchResult?.counts.final ?? 0,
+        queuedBlockCount: dispatchResult?.counts.block ?? 0,
+        provider: selectedProvider,
+        model: selectedModel,
+        thinkLevel: selectedThinkLevel,
+        dispatchError,
+      });
     }
   };
 
