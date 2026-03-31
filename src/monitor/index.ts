@@ -1655,8 +1655,24 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       // Resolve any cited/quoted messages first
       const citedContent = await resolveAllCites(content.content);
       const rawText = extractMessageText(content.content);
-      const messageText = citedContent + rawText;
+      let messageText = citedContent + rawText;
       const hasBlob = Boolean((content as any).blob);
+
+      // Inject voice memo transcription into messageText BEFORE processMessage
+      // so it survives as rawMessageText (OpenClaw core uses raw text, not enriched body)
+      if (hasBlob) {
+        const blobTranscriptions = extractTranscriptions((content as any).blob);
+        if (blobTranscriptions.length > 0) {
+          const transcriptionText = blobTranscriptions
+            .map((t) => `[Voice memo: "${t}"]`)
+            .join("\n");
+          messageText = messageText.trim()
+            ? transcriptionText + "\n" + messageText
+            : transcriptionText;
+          runtime.log?.(`[tlon] Injected ${blobTranscriptions.length} voice memo transcription(s) into messageText`);
+        }
+      }
+
       if (!messageText.trim() && !hasBlob) {
         return;
       }
