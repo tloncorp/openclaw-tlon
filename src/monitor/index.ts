@@ -4,7 +4,7 @@ import type { Memo, Story } from "@tloncorp/api";
 // Local structural types — @tloncorp/api defines these internally but
 // does not export them from its public entrypoint.
 type Author = string | { ship: string };
-type PostEssay = { content: Story; author: Author; sent: number };
+type PostEssay = { content: Story; author: Author; sent: number; blob?: string | null };
 type Seal = { "parent-id"?: string; parent?: string; [k: string]: unknown };
 type ChannelResponse = {
   post?: {
@@ -58,8 +58,8 @@ import {
 } from "./approval.js";
 import { setBridge, removeBridge, type ApprovalCommandBridge } from "./command-bridge.js";
 import { fetchAllChannels, fetchInitData } from "./discovery.js";
-import { cacheMessage, lookupCachedMessage, getChannelHistory, fetchChannelHistory, fetchThreadHistory } from "./history.js";
-import { downloadMessageImages } from "./media.js";
+import { cacheMessage, lookupCachedMessage, getChannelHistory, fetchChannelHistory, fetchThreadHistory, fetchPostBlob } from "./history.js";
+import { downloadMessageImages, extractTranscriptions, downloadBlobFiles, extractPdfText } from "./media.js";
 import { createProcessedMessageTracker } from "./processed-messages.js";
 import {
   extractMessageText,
@@ -1056,6 +1056,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     senderShip: string;
     messageText: string;
     messageContent?: unknown; // Raw Tlon content for media extraction
+    messageBlob?: string | null; // essay.blob JSON string for voice memos / file attachments
     isGroup: boolean;
     channelNest?: string;
     hostShip?: string;
@@ -1076,6 +1077,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       parentId,
       isThreadReply,
       messageContent,
+      messageBlob,
     } = params;
     // replyParentId overrides parentId for the deliver callback (thread reply routing)
     // but doesn't affect the ctx payload (MessageThreadId/ReplyToId).
@@ -1141,6 +1143,69 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         }
       } catch (error: any) {
         runtime.log?.(`[tlon] Failed to download images: ${error?.message ?? String(error)}`);
+      }
+    }
+
+    // Extract voice memo transcriptions from blob
+    const transcriptions = extractTranscriptions(messageBlob);
+    if (transcriptions.length > 0) {
+      const transcriptionText = transcriptions
+        .map((t) => `[Voice memo transcription: "${t}"]`)
+        .join("\n");
+      messageText = transcriptionText + "\n" + messageText;
+      runtime.log?.(`[tlon] Extracted ${transcriptions.length} voice memo transcription(s)`);
+    }
+
+    // Download file attachments from blob (PDFs, docs, etc.)
+    // Blob may arrive via SSE event payload, or may need a delayed v4 scry retry
+    // (blobs are NOT available via v1 scry — the v7 conversion strips them)
+    let effectiveBlob = messageBlob;
+    if (messageBlob) {
+      try {
+        const blobAttachments = await downloadBlobFiles(messageBlob);
+        if (blobAttachments.length > 0) {
+          attachments.push(...blobAttachments);
+          runtime.log?.(`[tlon] Downloaded ${blobAttachments.length} file(s) from blob`);
+        }
+      } catch (error: any) {
+        runtime.log?.(`[tlon] Failed to download blob files: ${error?.message ?? String(error)}`);
+      }
+    }
+
+    // Blob retry: if no blob came via SSE, wait and check v4 scry
+    // (PDF uploads can complete after the message SSE event fires)
+    const hasBlobAttachments = attachments.some(
+      (a) => a.contentType === "application/pdf" || a.path.toLowerCase().endsWith(".pdf"),
+    );
+    if (!hasBlobAttachments && !effectiveBlob && isGroup && channelNest && messageId) {
+      try {
+        // Wait 5 seconds for blob upload to complete
+        await new Promise((resolve) => setTimeout(resolve, 5000));
+        const retryBlob = await fetchPostBlob(api, channelNest, messageId, runtime);
+        if (retryBlob) {
+          effectiveBlob = retryBlob;
+          runtime.log?.(`[tlon] Blob retry succeeded for post ${messageId}`);
+          const blobAttachments = await downloadBlobFiles(retryBlob);
+          if (blobAttachments.length > 0) {
+            attachments.push(...blobAttachments);
+            runtime.log?.(`[tlon] Downloaded ${blobAttachments.length} file(s) from blob retry`);
+          }
+        }
+      } catch (error: any) {
+        runtime.log?.(`[tlon] Blob retry failed: ${error?.message ?? String(error)}`);
+      }
+    }
+
+    // Extract text from PDF attachments and prepend to message
+    if (attachments.length > 0) {
+      try {
+        const pdfText = await extractPdfText(attachments);
+        if (pdfText) {
+          messageText = pdfText + "\n\n" + messageText;
+          runtime.log?.(`[tlon] Extracted PDF text (${pdfText.length} chars) and prepended to message`);
+        }
+      } catch (error: any) {
+        runtime.log?.(`[tlon] Failed to extract PDF text: ${error?.message ?? String(error)}`);
       }
     }
 
@@ -1348,6 +1413,8 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         bodyWithAttachments += `\n[Group members available via: tlon groups info ${groupFlag}]`;
       }
     }
+
+
 
     const body = core.channel.reply.formatAgentEnvelope({
       channel: "Tlon",
@@ -1589,7 +1656,8 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       const citedContent = await resolveAllCites(content.content);
       const rawText = extractMessageText(content.content);
       const messageText = citedContent + rawText;
-      if (!messageText.trim()) {
+      const hasBlob = Boolean((content as any).blob);
+      if (!messageText.trim() && !hasBlob) {
         return;
       }
 
@@ -1625,16 +1693,23 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       // Check if we should respond:
       // 1. Direct mention always triggers response
       // 2. Thread replies where we've participated - respond if relevant (let agent decide)
+      // 3. Owner voice memos / file attachments (can't include mentions)
       const mentioned = isBotMentioned(messageText, botShipName, botNickname ?? undefined);
       const inParticipatedThread =
         isThreadReply && parentId && participatedThreads.has(String(parentId));
 
-      if (!mentioned && !inParticipatedThread) {
+      // Owner blobs (voice memos, PDFs) auto-trigger without mention
+      const contentBlob = (content as any).blob;
+      const isOwnerBlob = Boolean(contentBlob) && isOwner(senderShip);
+
+      if (!mentioned && !inParticipatedThread && !isOwnerBlob) {
         return;
       }
 
       // Log why we're responding
-      if (inParticipatedThread && !mentioned) {
+      if (isOwnerBlob && !mentioned && !inParticipatedThread) {
+        runtime.log?.(`[tlon] Owner blob from ${senderShip} in ${nest}: auto-responding (no mention needed)`);
+      } else if (inParticipatedThread && !mentioned) {
         runtime.log?.(`[tlon] Responding to thread we participated in (no mention): ${parentId}`);
       }
 
@@ -1696,6 +1771,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         senderShip,
         messageText,
         messageContent: content.content, // Pass raw content for media extraction
+        messageBlob: (content as any).blob, // essay has blob, memo doesn't
         isGroup: true,
         channelNest: nest,
         hostShip: parsed?.hostShip,
@@ -1944,6 +2020,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
           senderShip,
           messageText,
           messageContent: dmContent.content,
+          messageBlob: (dmContent as any).blob,
           isGroup: false,
           timestamp: dmContent.sent || Date.now(),
           parentId: dmReplyParentId,
@@ -1979,6 +2056,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         senderShip,
         messageText,
         messageContent: dmContent.content, // Pass raw content for media extraction
+        messageBlob: (dmContent as any).blob,
         isGroup: false,
         timestamp: dmContent.sent || Date.now(),
         parentId: dmReplyParentId,

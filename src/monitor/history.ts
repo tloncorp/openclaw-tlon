@@ -1,6 +1,8 @@
 import type { RuntimeEnv } from "openclaw/plugin-sdk";
 import { extractMessageText } from "./utils.js";
 
+export { formatUd };
+
 /**
  * Format a number as @ud (with dots every 3 digits from the right)
  * e.g., 170141184507799509469114119040828178432 -> 170.141.184.507.799.509.469.114.119.040.828.178.432
@@ -80,9 +82,28 @@ export async function fetchChannelHistory(
         const essay = item.essay || item["r-post"]?.set?.essay;
         const seal = item.seal || item["r-post"]?.set?.seal;
 
+        let content = extractMessageText(essay?.content || []);
+
+        // Extract voice memo transcriptions and file info from blob
+        if (essay?.blob) {
+          try {
+            const blobData = typeof essay.blob === "string" ? JSON.parse(essay.blob) : essay.blob;
+            if (Array.isArray(blobData)) {
+              for (const entry of blobData) {
+                if (entry.type === "voicememo" && entry.transcription) {
+                  const dur = entry.duration ? ` (${Math.round(entry.duration)}s)` : "";
+                  content = `[Voice memo${dur}: "${entry.transcription}"] ${content}`.trim();
+                } else if (entry.type === "file" && entry.name) {
+                  content = `[File attached: ${entry.name}] ${content}`.trim();
+                }
+              }
+            }
+          } catch { /* ignore malformed blob */ }
+        }
+
         return {
           author: essay?.author || "unknown",
-          content: extractMessageText(essay?.content || []),
+          content,
           timestamp: essay?.sent || Date.now(),
           id: seal?.id,
         } as TlonHistoryEntry;
@@ -194,5 +215,59 @@ export async function fetchThreadHistory(
       runtime?.log?.(`[tlon] Alternate path also failed: ${altError?.message ?? String(altError)}`);
     }
     return [];
+  }
+}
+
+/**
+ * Fetch the blob field for a specific post via v4 scry.
+ * v1 scry strips blobs during conversion; v4 preserves them.
+ * Returns the raw blob JSON string, or null if no blob.
+ */
+export async function fetchPostBlob(
+  api: { scry: (path: string) => Promise<unknown> },
+  channelNest: string,
+  postId: string,
+  runtime?: RuntimeEnv,
+): Promise<string | null> {
+  try {
+    const formattedId = formatUd(postId);
+    // Use around/1 to get the post in a paged response (v4 post.json for single post is unreliable)
+    const scryPath = `/channels/v4/${channelNest}/posts/around/${formattedId}/1/post.json`;
+    runtime?.log?.(`[tlon] Fetching blob for post ${postId}: ${scryPath}`);
+
+    const data: any = await api.scry(scryPath);
+    if (!data) return null;
+
+    // Parse the response — could be array or object with posts key
+    let posts: any[] = [];
+    if (Array.isArray(data)) {
+      posts = data;
+    } else if (data.posts && typeof data.posts === "object") {
+      posts = Object.values(data.posts);
+    } else if (typeof data === "object") {
+      posts = Object.values(data);
+    }
+
+    // Find the matching post
+    const normalizedId = String(postId).replace(/\./g, "");
+    for (const post of posts) {
+      const seal = post.seal || {};
+      const sealId = String(seal.id || "").replace(/\./g, "");
+      if (sealId === normalizedId || posts.length === 1) {
+        const essay = post.essay || {};
+        const blob = essay.blob;
+        if (blob != null) {
+          const blobStr = typeof blob === "string" ? blob : JSON.stringify(blob);
+          runtime?.log?.(`[tlon] Found blob on post ${postId} (${blobStr.length} chars)`);
+          return blobStr;
+        }
+      }
+    }
+
+    runtime?.log?.(`[tlon] No blob found on post ${postId}`);
+    return null;
+  } catch (error: any) {
+    runtime?.log?.(`[tlon] Error fetching blob for post ${postId}: ${error?.message ?? String(error)}`);
+    return null;
   }
 }
