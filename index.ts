@@ -31,6 +31,7 @@ const ALLOWED_TLON_COMMANDS = new Set([
   "settings",
   "help",
   "version",
+  "upload",
 ]);
 
 /**
