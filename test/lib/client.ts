@@ -146,7 +146,7 @@ export function createTlonClient(config: TlonClientConfig): TestClient {
 
   return {
     async prompt(text, opts = {}) {
-      const timeoutMs = opts.timeoutMs ?? 60_000;
+      const timeoutMs = opts.timeoutMs ?? 120_000;
 
       try {
         const botShipNorm = bot.shipName.startsWith("~") ? bot.shipName : `~${bot.shipName}`;
