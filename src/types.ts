@@ -1,5 +1,11 @@
 import type { OpenClawConfig } from "openclaw/plugin-sdk";
 
+export type TlonTelemetryConfig = {
+  enabled: boolean;
+  apiKey: string | null;
+  host: string | null;
+};
+
 export type TlonResolvedAccount = {
   accountId: string;
   name: string | null;
@@ -24,7 +30,25 @@ export type TlonResolvedAccount = {
   reactionLevel: string | null;
   /** Max consecutive responses to another bot before stopping (default: 3) */
   maxConsecutiveBotResponses: number | null;
+  telemetry: TlonTelemetryConfig;
 };
+
+type TlonTelemetryInput = {
+  enabled?: boolean;
+  apiKey?: string;
+  host?: string;
+};
+
+function resolveTelemetryConfig(
+  base: TlonTelemetryInput | null | undefined,
+  account: TlonTelemetryInput | null | undefined,
+): TlonTelemetryConfig {
+  return {
+    enabled: account?.enabled ?? base?.enabled ?? false,
+    apiKey: account?.apiKey ?? base?.apiKey ?? null,
+    host: account?.host ?? base?.host ?? null,
+  };
+}
 
 export function resolveTlonAccount(
   cfg: OpenClawConfig,
@@ -48,6 +72,7 @@ export function resolveTlonAccount(
         ownerShip?: string;
         reactionLevel?: string;
         maxConsecutiveBotResponses?: number;
+        telemetry?: TlonTelemetryInput;
         accounts?: Record<string, Record<string, unknown>>;
       }
     | undefined;
@@ -73,6 +98,11 @@ export function resolveTlonAccount(
       ownerShip: null,
       reactionLevel: null,
       maxConsecutiveBotResponses: null,
+      telemetry: {
+        enabled: false,
+        apiKey: null,
+        host: null,
+      },
     };
   }
 
@@ -104,9 +134,14 @@ export function resolveTlonAccount(
     null) as boolean | null;
   const ownerShip = (account?.ownerShip ?? base.ownerShip ?? null) as string | null;
   const reactionLevel = (account?.reactionLevel ?? base.reactionLevel ?? null) as string | null;
-  const maxConsecutiveBotResponses = ((account as Record<string, unknown>)?.maxConsecutiveBotResponses ??
+  const maxConsecutiveBotResponses = ((account as Record<string, unknown>)
+    ?.maxConsecutiveBotResponses ??
     base.maxConsecutiveBotResponses ??
     null) as number | null;
+  const telemetry = resolveTelemetryConfig(
+    base.telemetry,
+    (account as { telemetry?: TlonTelemetryInput } | undefined)?.telemetry,
+  );
   const defaultAuthorizedShips = ((account as Record<string, unknown>)?.defaultAuthorizedShips ??
     (base as Record<string, unknown>)?.defaultAuthorizedShips ??
     []) as string[];
@@ -132,6 +167,7 @@ export function resolveTlonAccount(
     ownerShip,
     reactionLevel,
     maxConsecutiveBotResponses,
+    telemetry,
   };
 }
 

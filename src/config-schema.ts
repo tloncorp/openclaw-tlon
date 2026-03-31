@@ -14,6 +14,11 @@ export const TlonAuthorizationSchema = z.object({
 });
 
 export const ReactionLevelSchema = z.enum(["off", "ack", "minimal", "extensive"]);
+export const TlonTelemetrySchema = z.object({
+  enabled: z.boolean().optional(),
+  apiKey: z.string().min(1).optional(),
+  host: z.string().min(1).optional(),
+});
 
 export const TlonAccountSchema = z.object({
   name: z.string().optional(),
@@ -35,6 +40,7 @@ export const TlonAccountSchema = z.object({
   reactionLevel: ReactionLevelSchema.optional(),
   // Rate limiting for bot-to-bot responses
   maxConsecutiveBotResponses: z.number().int().min(0).optional(), // Max consecutive responses to another bot (default: 3)
+  telemetry: TlonTelemetrySchema.optional(),
 });
 
 export const TlonConfigSchema = z.object({
@@ -60,6 +66,7 @@ export const TlonConfigSchema = z.object({
   reactionLevel: ReactionLevelSchema.optional(),
   // Rate limiting for bot-to-bot responses
   maxConsecutiveBotResponses: z.number().int().min(0).optional(), // Max consecutive responses to another bot (default: 3)
+  telemetry: TlonTelemetrySchema.optional(),
 });
 
 export const tlonChannelConfigSchema = buildChannelConfigSchema(TlonConfigSchema);

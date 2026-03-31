@@ -147,6 +147,25 @@ if [ -n "$BRAVE_API_KEY" ]; then
     && mv "$CONFIG_DIR/openclaw.json.tmp" "$CONFIG_DIR/openclaw.json"
 fi
 
+telemetry_enabled="${TLON_TELEMETRY_ENABLED:-${TLON_POSTHOG_ENABLED:-}}"
+telemetry_api_key="${TLON_TELEMETRY_API_KEY:-${TLON_POSTHOG_API_KEY:-}}"
+telemetry_host="${TLON_TELEMETRY_HOST:-${TLON_POSTHOG_HOST:-}}"
+
+if [ "$telemetry_enabled" = "true" ] && [ -n "$telemetry_api_key" ]; then
+  echo "==> Patching config: enabling Tlon telemetry..."
+  jq \
+    --arg apiKey "$telemetry_api_key" \
+    --arg host "$telemetry_host" \
+    '.channels.tlon.telemetry = (
+      {
+        enabled: true,
+        apiKey: $apiKey
+      } + (if $host != "" then { host: $host } else {} end)
+    )' \
+    "$CONFIG_DIR/openclaw.json" > "$CONFIG_DIR/openclaw.json.tmp" \
+    && mv "$CONFIG_DIR/openclaw.json.tmp" "$CONFIG_DIR/openclaw.json"
+fi
+
 echo "==> Config written"
 
 if [ "${VERBOSE:-0}" = "1" ]; then

@@ -14,6 +14,7 @@ Tlon/Urbit channel plugin for [OpenClaw](https://github.com/openclaw/openclaw). 
 - **Settings Store**: Hot-reload config via Urbit settings-store (no restart needed)
 - **Auto-Discovery**: Automatically monitors all channels in joined groups
 - **Cite Resolution**: Parse and fetch quoted message content
+- **Optional Telemetry**: Explicit PostHog opt-in for hosted analytics
 
 ## Installation
 
@@ -71,7 +72,24 @@ channels:
 
     # Show model info in responses
     showModelSignature: false
+
+    # Optional PostHog telemetry. Disabled unless explicitly enabled.
+    telemetry:
+      enabled: true
+      apiKey: "phc_your_project_api_key"
+      host: "https://us.i.posthog.com"
 ```
+
+## Telemetry
+
+Telemetry is disabled by default. The plugin only sends tlemetry events when `channels.tlon.telemetry.enabled`
+is set to `true` and an API key is configured.
+
+When enabled, the plugin captures a single `TlonBot Reply Handled` event each time it enters the OpenClaw reply
+flow. The event summarizes OpenClaw usage (tools used, character count, etc.), but does not log message content.
+
+The plugin does not enable telemetry automatically just because an API key is present. `enabled: true` is
+required so open-source installs do not phone home by default.
 
 ## Approval System
 
@@ -280,6 +298,11 @@ OPENCLAW_GATEWAY_PORT=18789
 # Optional: Brave Search API key (enables web_search + image_search tools)
 # BRAVE_API_KEY=BSA...
 
+# Optional: telemetry (explicit opt-in only)
+# TLON_TELEMETRY_ENABLED=true
+# TLON_TELEMETRY_API_KEY=phc_...
+# TLON_TELEMETRY_HOST=https://us.i.posthog.com
+
 # Optional: tlonbot GitHub token (if not using local clone)
 # TLONBOT_TOKEN=ghp_...
 ```
@@ -307,12 +330,14 @@ pnpm test:manual
 ```
 
 This will:
+
 - Start 3 fakezod ships and the OpenClaw gateway in Docker
 - Wait for everything to be ready
 - Print ship URLs, access codes, and gateway address
 - Tail gateway logs (Ctrl+C to stop and tear down)
 
 Ships are accessible via browser:
+
 - **~zod** (bot): http://localhost:8080 — code: `lidlut-tabwed-pillex-ridrup`
 - **~ten** (user): http://localhost:8081 — code: `lapseg-nolmel-riswen-hopryc`
 - **~mug** (3rd party): http://localhost:8082 — code: `ravsut-bolryd-hapsum-pastul`

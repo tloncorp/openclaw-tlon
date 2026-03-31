@@ -51,6 +51,24 @@ if [ -f "/workspace/tlonbot/openclaw.json" ]; then
     jq --arg key "$BRAVE_API_KEY" '.tools.web.search.apiKey = $key' \
       "$CONFIG_PATH" > "$CONFIG_PATH.tmp" && mv "$CONFIG_PATH.tmp" "$CONFIG_PATH"
   fi
+
+  telemetry_enabled="${TLON_TELEMETRY_ENABLED:-${TLON_POSTHOG_ENABLED:-}}"
+  telemetry_api_key="${TLON_TELEMETRY_API_KEY:-${TLON_POSTHOG_API_KEY:-}}"
+  telemetry_host="${TLON_TELEMETRY_HOST:-${TLON_POSTHOG_HOST:-}}"
+
+  if [ "$telemetry_enabled" = "true" ] && [ -n "$telemetry_api_key" ]; then
+    echo "==> Patching Tlon telemetry config..."
+    jq \
+      --arg apiKey "$telemetry_api_key" \
+      --arg host "$telemetry_host" \
+      '.channels.tlon.telemetry = (
+        {
+          enabled: true,
+          apiKey: $apiKey
+        } + (if $host != "" then { host: $host } else {} end)
+      )' \
+      "$CONFIG_PATH" > "$CONFIG_PATH.tmp" && mv "$CONFIG_PATH.tmp" "$CONFIG_PATH"
+  fi
 elif [ -f "/workspace/openclaw-tlon/dev/openclaw.dev.json" ]; then
   cp "/workspace/openclaw-tlon/dev/openclaw.dev.json" "$CONFIG_PATH"
 fi
