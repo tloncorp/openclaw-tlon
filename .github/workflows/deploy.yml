@@ -38,7 +38,8 @@ jobs:
           curl -LO "https://dl.k8s.io/release/$(curl -sL https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
           chmod +x kubectl
           sudo mv kubectl /usr/local/bin/
-          sudo apt-get install -y -qq jq google-cloud-cli-gke-gcloud-auth-plugin
+          sudo apt-get install -y -qq jq
+          gcloud components install gke-gcloud-auth-plugin --quiet
 
       - name: Determine mode
         id: mode
