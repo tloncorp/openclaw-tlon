@@ -30,6 +30,8 @@ export interface AgentResponse {
 export interface TestClient {
   /** Send a prompt to the agent and wait for response */
   prompt(text: string, opts?: { timeoutMs?: number }): Promise<AgentResponse>;
+  /** Send a DM without waiting for a bot response */
+  sendDm(text: string): Promise<void>;
   /** Ship state client for assertions (checks BOT state) */
   state: StateClient;
 }
@@ -144,7 +146,29 @@ export function createTlonClient(config: TlonClientConfig): TestClient {
     });
   };
 
+  const sendDmWithRetry = async (text: string): Promise<void> => {
+    let lastSendError = "";
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      try {
+        await sendTestUserDm(bot.shipName, text);
+        return;
+      } catch (err) {
+        lastSendError = String(err);
+        console.log(`Send DM attempt ${attempt}/3 failed: ${lastSendError}`);
+        connected = false;
+        if (attempt < 3) {
+          await sleep(1000);
+        }
+      }
+    }
+
+    throw new Error(`Failed to send DM after 3 attempts: ${lastSendError}`);
+  };
+
   return {
+    async sendDm(text) {
+      await sendDmWithRetry(text);
+    },
     async prompt(text, opts = {}) {
       const timeoutMs = opts.timeoutMs ?? 120_000;
 
@@ -166,23 +190,11 @@ export function createTlonClient(config: TlonClientConfig): TestClient {
 
         // Send DM via direct poke (can't use plugin's sendDm since it uses global API client)
         // Retry transient channel failures so tests don't fail fast and cascade prompts.
-        let sent = false;
         let lastSendError = "";
-        for (let attempt = 1; attempt <= 3; attempt += 1) {
-          try {
-            await sendTestUserDm(bot.shipName, text);
-            sent = true;
-            break;
-          } catch (err) {
-            lastSendError = String(err);
-            console.log(`Send DM attempt ${attempt}/3 failed: ${lastSendError}`);
-            connected = false;
-            if (attempt < 3) {
-              await sleep(1000);
-            }
-          }
-        }
-        if (!sent) {
+        try {
+          await sendDmWithRetry(text);
+        } catch (err) {
+          lastSendError = err instanceof Error ? err.message : String(err);
           return {
             success: false,
             error: `Failed to send DM after 3 attempts: ${lastSendError}`,

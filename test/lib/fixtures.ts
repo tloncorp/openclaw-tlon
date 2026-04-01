@@ -152,13 +152,12 @@ async function setupFixtures(): Promise<TestFixtures> {
     console.log(`[FIXTURES] Warning: Failed to create group: ${err}`);
   }
 
-  // 3. Ensure DM channel exists by sending a message
-  console.log("[FIXTURES] Ensuring DM channel exists...");
+  // 3. Ensure DM channel exists by sending a raw seed message
+  console.log("[FIXTURES] Seeding DM channel...");
   try {
-    // The test client sends via DM, so just sending any prompt establishes the channel
-    await client.prompt("Hello, this is a test setup message.", { timeoutMs: 60_000 });
+    await client.sendDm("Hello, this is a test setup message.");
     await sleep(2000);
-    console.log("[FIXTURES] ✓ DM channel established");
+    console.log("[FIXTURES] ✓ DM channel seeded");
   } catch (err) {
     console.log(`[FIXTURES] Warning: DM setup failed: ${err}`);
   }
