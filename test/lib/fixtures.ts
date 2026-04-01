@@ -152,17 +152,15 @@ async function setupFixtures(): Promise<TestFixtures> {
     console.log(`[FIXTURES] Warning: Failed to create group: ${err}`);
   }
 
-  // 3. Ensure DM channel exists by sending a raw seed message
-  console.log("[FIXTURES] Seeding DM channel...");
-  try {
-    await client.sendDm("Hello, this is a test setup message.");
-    await sleep(2000);
-    console.log("[FIXTURES] ✓ DM channel seeded");
-  } catch (err) {
-    console.log(`[FIXTURES] Warning: DM setup failed: ${err}`);
-  }
+  // NOTE: No DM channel seeding here. The DM channel is created implicitly by
+  // Urbit's chat agent when the first prompt() call sends a DM. A fire-and-forget
+  // seed DM causes response-shift flakes: the bot replies asynchronously and that
+  // reply is consumed by the first real prompt(), shifting all subsequent responses.
+  //
+  // The timestamp-only matcher in client.ts is permissive (accepts any new bot DM)
+  // and could be hardened with prompt correlation in a future pass.
 
-  // 4. Set up third-party (non-owner) ship if configured
+  // 3. Set up third-party (non-owner) ship if configured
   let thirdPartyClient: TestClient | undefined;
   let thirdPartyState: StateClient | undefined;
   let thirdPartyShip: string | undefined;
