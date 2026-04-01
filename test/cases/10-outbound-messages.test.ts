@@ -18,6 +18,7 @@ import {
   getFixtures,
   waitFor,
   requireThirdParty,
+  ensureThirdPartyDmAccess,
   type TestFixtures,
 } from "../lib/index.js";
 
@@ -26,6 +27,7 @@ describe("outbound DM delivery", () => {
 
   beforeAll(async () => {
     fixtures = await getFixtures();
+    await ensureThirdPartyDmAccess(fixtures);
   });
 
   test("bot delivers DM to third-party ship despite tlon-tool prompt", async () => {

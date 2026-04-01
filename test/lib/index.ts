@@ -25,6 +25,13 @@ export {
 
 export { getTestConfig, type TestEnvConfig } from "./config.js";
 
-export { waitFor, getFixtures, requireFixtureGroup, requireThirdParty, type TestFixtures } from "./fixtures.js";
+export {
+  waitFor,
+  getFixtures,
+  requireFixtureGroup,
+  requireThirdParty,
+  ensureThirdPartyDmAccess,
+  type TestFixtures,
+} from "./fixtures.js";
 
 export { getContainerLogsSince, toolWasInvoked } from "./docker-logs.js";
