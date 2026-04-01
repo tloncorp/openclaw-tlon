@@ -30,7 +30,7 @@ describe("outbound DM delivery", () => {
     await ensureThirdPartyDmAccess(fixtures);
   });
 
-  test("bot delivers DM to third-party ship despite tlon-tool prompt", async () => {
+  test("bot delivers DM to third-party ship without tlon tool", async () => {
     requireThirdParty(fixtures);
 
     // Baseline: snapshot latest bot DM timestamp in ~mug's channel
@@ -76,7 +76,9 @@ describe("outbound DM delivery", () => {
         );
         const found = (posts ?? []).some((post: any) => {
           const text = (
-            post.textContent ?? getTextContent(post.content) ?? ""
+            post.textContent ??
+            getTextContent(post.content) ??
+            ""
           ).toLowerCase();
           return (
             post.authorId === fixtures.botShip &&
