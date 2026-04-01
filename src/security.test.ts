@@ -162,10 +162,21 @@ describe("Security: Bot Mention Detection", () => {
       expect(isBotMentioned("hello ~sampel-palnet how are you", botShip)).toBe(true);
     });
 
-    it("detects @all mention", () => {
-      expect(isBotMentioned("@all please respond", botShip)).toBe(true);
-      expect(isBotMentioned("hey @all", botShip)).toBe(true);
-      expect(isBotMentioned("@ALL uppercase", botShip)).toBe(true);
+    it("does NOT trigger on @all mention", () => {
+      expect(isBotMentioned("@all please respond", botShip)).toBe(false);
+      expect(isBotMentioned("hey @all", botShip)).toBe(false);
+      expect(isBotMentioned("@ALL uppercase", botShip)).toBe(false);
+    });
+
+    it("still detects real mentions when @all is also present", () => {
+      // @all + direct ship mention → detected via ship match
+      expect(isBotMentioned("@all ~sampel-palnet help", botShip)).toBe(true);
+      // @all + nickname mention → detected via nickname match
+      expect(isBotMentioned("@all nimbus help", botShip, nickname)).toBe(true);
+      // direct ship mention without @all still works (sanity)
+      expect(isBotMentioned("hey ~sampel-palnet", botShip)).toBe(true);
+      // nickname without @all still works (sanity)
+      expect(isBotMentioned("hey nimbus", botShip, nickname)).toBe(true);
     });
 
     it("detects nickname mention", () => {
