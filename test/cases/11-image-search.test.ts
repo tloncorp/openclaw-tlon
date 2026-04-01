@@ -192,7 +192,7 @@ describe("image search", () => {
         `Include the text "${token}" in your message.`;
 
       console.log(`\n[TEST] Sending prompt: "${prompt}"`);
-      const response = await fixtures.client.prompt(prompt);
+      const response = await fixtures.client.prompt(prompt, { correlate: false });
       console.log(`[TEST] Response success: ${response.success}`);
       console.log(`[TEST] Response text: ${response.text?.slice(0, 500)}`);
 

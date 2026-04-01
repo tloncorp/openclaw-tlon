@@ -47,7 +47,8 @@ describe("groups", () => {
   test("creates a new group on the bot ship", async () => {
     const uniqueTitle = `OpenClaw IT Group ${Date.now().toString(36)}`;
     const response = await fixtures.client.prompt(
-      `Create a new private group on your own ship with title "${uniqueTitle}". Reply with only the new group id.`
+      `Create a new private group on your own ship with title "${uniqueTitle}". Reply with only the new group id.`,
+      { correlate: false }
     );
 
     if (!response.success) {

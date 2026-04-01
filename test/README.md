@@ -12,6 +12,12 @@ Starts ephemeral fakezod ships (~zod, ~ten, ~mug), runs tests, then cleans up:
 pnpm test:integration
 ```
 
+Capture the full run output to a file:
+
+```bash
+pnpm test:integration 2>&1 | tee full-suite-run.txt
+```
+
 Run a specific test file:
 
 ```bash
@@ -187,6 +193,16 @@ test("non-owner is restricted", async () => {
 ```
 
 `requireThirdParty` throws a descriptive error if `TEST_THIRD_PARTY_*` env vars are not set.
+
+### Prompt matching modes
+
+`fixtures.client.prompt()` uses mixed-mode matching in Tlon integration tests:
+
+- Default freeform prompts use hidden correlation tags so delayed bot replies are not consumed by later prompts.
+- Slash commands use timestamp matching automatically.
+- Exact-output prompts and prompts that trigger tool-sent media/message side effects may need `{ correlate: false }`.
+
+Use `{ correlate: false }` when the bot must reply with a strict exact string like `Done`, or when the expected bot output is a tool-sent DM whose visible content is already verified separately.
 
 ## State Client Methods
 

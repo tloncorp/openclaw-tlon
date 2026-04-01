@@ -118,47 +118,64 @@ async function setupFixtures(): Promise<TestFixtures> {
   console.log("[FIXTURES] Creating test group...");
   let group: TestFixtures["group"] = null;
 
-  try {
-    // Check for existing fixture group first
-    const existingGroups = await botState.groups();
-    const existing = (existingGroups ?? []).find((g) => {
-      const gr = g as { title?: string };
-      return gr.title?.startsWith("OpenClaw Test Fixtures");
-    }) as { id?: string; title?: string; channels?: Array<{ id?: string }> } | undefined;
+  {
+    // Bounded poll-and-retry: the fakezod groups agent may not be ready
+    // immediately after SSE subscriptions connect. Re-check for an existing
+    // fixture group on every iteration to catch partial creates or groups
+    // created by a concurrent vitest process.
+    const GROUP_TITLE_PREFIX = "OpenClaw Test Fixtures";
+    const groupTitle = `${GROUP_TITLE_PREFIX} ${Date.now().toString(36)}`;
+    const budgetMs = 60_000;
+    const intervalMs = 5_000;
+    const started = Date.now();
 
-    if (existing?.id) {
-      console.log(`[FIXTURES] ✓ Using existing group: ${existing.id}`);
-      const channels = existing.channels ?? [];
-      const chatChannel = channels.find((c) => c.id?.includes("chat"))?.id;
-      group = {
-        id: existing.id,
-        title: existing.title ?? "OpenClaw Test Fixtures",
-        chatChannel: chatChannel ?? `chat/${existing.id}/general`,
-      };
-    } else {
-      // Create new group directly via API (more reliable than prompting agent)
-      const suffix = Date.now().toString(36);
-      const groupTitle = `OpenClaw Test Fixtures ${suffix}`;
+    while (Date.now() - started < budgetMs) {
+      try {
+        const existingGroups = await botState.groups();
+        const existing = (existingGroups ?? []).find((g) => {
+          const gr = g as { title?: string };
+          return gr.title?.startsWith(GROUP_TITLE_PREFIX);
+        }) as { id?: string; title?: string; channels?: Array<{ id?: string }> } | undefined;
 
-      const { groupId, chatChannel } = await botState.createGroup(groupTitle);
-      group = {
-        id: groupId,
-        title: groupTitle,
-        chatChannel,
-      };
-      console.log(`[FIXTURES] ✓ Created group: ${groupId}`);
+        if (existing?.id) {
+          const channels = existing.channels ?? [];
+          const chatChannel = channels.find((c) => c.id?.includes("chat"))?.id;
+          group = {
+            id: existing.id,
+            title: existing.title ?? GROUP_TITLE_PREFIX,
+            chatChannel: chatChannel ?? `chat/${existing.id}/general`,
+          };
+          console.log(`[FIXTURES] ✓ Using existing group: ${existing.id}`);
+          break;
+        }
+
+        const { groupId, chatChannel } = await botState.createGroup(groupTitle);
+        group = { id: groupId, title: groupTitle, chatChannel };
+        console.log(`[FIXTURES] ✓ Created group: ${groupId}`);
+        break;
+      } catch (err) {
+        const elapsed = ((Date.now() - started) / 1000).toFixed(1);
+        console.log(`[FIXTURES] Group setup failed (${elapsed}s elapsed): ${err}`);
+        if (Date.now() - started + intervalMs < budgetMs) {
+          await sleep(intervalMs);
+        }
+      }
     }
-  } catch (err) {
-    console.log(`[FIXTURES] Warning: Failed to create group: ${err}`);
+
+    if (!group) {
+      const elapsed = ((Date.now() - started) / 1000).toFixed(1);
+      console.log(`[FIXTURES] Warning: Could not create or find fixture group after ${elapsed}s`);
+    }
   }
 
   // NOTE: No DM channel seeding here. The DM channel is created implicitly by
   // Urbit's chat agent when the first prompt() call sends a DM. A fire-and-forget
   // seed DM causes response-shift flakes: the bot replies asynchronously and that
-  // reply is consumed by the first real prompt(), shifting all subsequent responses.
+  // reply can be consumed by a later prompt.
   //
-  // The timestamp-only matcher in client.ts is permissive (accepts any new bot DM)
-  // and could be hardened with prompt correlation in a future pass.
+  // Prompt matching in client.ts now uses mixed-mode correlation:
+  // default freeform prompts inject a hidden reference tag, while slash commands
+  // and exact-output prompts can use timestamp matching with tagged-post exclusion.
 
   // 3. Set up third-party (non-owner) ship if configured
   let thirdPartyClient: TestClient | undefined;

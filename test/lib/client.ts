@@ -6,10 +6,14 @@
  * - Tlon mode: Send actual DM to bot (tests full plugin/skill stack)
  */
 
+import crypto from "node:crypto";
 import { Urbit, getTextContent } from "@tloncorp/api";
 import { scot, da } from "@urbit/aura";
 import { createStateClient, type StateClient, type StateClientConfig } from "./state.js";
 import { markdownToStory, type Story } from "../../src/urbit/story.js";
+
+/** Matches the correlation tag format injected by prompt(). */
+const CORRELATION_TAG_RE = /\[ref-[a-f0-9]{8}\]/;
 
 /** Ship connection credentials */
 export interface ShipCredentials {
@@ -29,7 +33,7 @@ export interface AgentResponse {
 
 export interface TestClient {
   /** Send a prompt to the agent and wait for response */
-  prompt(text: string, opts?: { timeoutMs?: number }): Promise<AgentResponse>;
+  prompt(text: string, opts?: { timeoutMs?: number; correlate?: boolean }): Promise<AgentResponse>;
   /** Send a DM without waiting for a bot response */
   sendDm(text: string): Promise<void>;
   /** Ship state client for assertions (checks BOT state) */
@@ -174,34 +178,38 @@ export function createTlonClient(config: TlonClientConfig): TestClient {
 
       try {
         const botShipNorm = bot.shipName.startsWith("~") ? bot.shipName : `~${bot.shipName}`;
-        // Snapshot latest bot DM timestamp before sending, so we only accept truly new replies.
-        let baselineBotSentAt = 0;
-        try {
-          const beforePosts = await testUserState.channelPosts(botShipNorm, 30);
-          baselineBotSentAt = (beforePosts ?? [])
-            .map((post) => {
-              const p = post as { authorId?: string; sentAt?: number };
-              return p.authorId === botShipNorm && typeof p.sentAt === "number" ? p.sentAt : 0;
-            })
-            .reduce((max, ts) => (ts > max ? ts : max), 0);
-        } catch (err) {
-          console.log(`DM baseline poll failed: ${err}`);
+
+        // Determine correlation mode:
+        //   slash commands  → no token, wall-clock baseline
+        //   correlate:false → no token, wall-clock baseline, skip tagged posts
+        //   default         → inject token, match by token
+        const isSlash = text.trimStart().startsWith("/");
+        const useToken = !isSlash && opts.correlate !== false;
+
+        let tag: string | null = null;
+        let textToSend = text;
+        if (useToken) {
+          const token = crypto.randomUUID().slice(0, 8);
+          tag = `[ref-${token}]`;
+          textToSend = `${text}\n\n(Include reference: ${tag} in your reply.)`;
         }
+
+        const sendBaseline = Date.now();
+        const mode = useToken ? "correlated" : "timestamp";
 
         // Send DM via direct poke (can't use plugin's sendDm since it uses global API client)
         // Retry transient channel failures so tests don't fail fast and cascade prompts.
-        let lastSendError = "";
         try {
-          await sendDmWithRetry(text);
+          await sendDmWithRetry(textToSend);
         } catch (err) {
-          lastSendError = err instanceof Error ? err.message : String(err);
+          const lastSendError = err instanceof Error ? err.message : String(err);
           return {
             success: false,
             error: `Failed to send DM after 3 attempts: ${lastSendError}`,
           };
         }
 
-        // Poll for response using the activity feed
+        // Poll for response
         const startTime = Date.now();
         let lastPollError = "";
         let attempts = 0;
@@ -211,9 +219,8 @@ export function createTlonClient(config: TlonClientConfig): TestClient {
           await sleep(2000);
 
           try {
-            // Poll DM channel directly to avoid activity timestamp parsing edge cases.
             const dmPosts = await testUserState.channelPosts(botShipNorm, 30);
-            const botDmPosts = (dmPosts ?? [])
+            const allBotPosts = (dmPosts ?? [])
               .map((post) => {
                 const p = post as {
                   authorId?: string;
@@ -229,32 +236,48 @@ export function createTlonClient(config: TlonClientConfig): TestClient {
                 };
               })
               .filter((post) => post.authorId === botShipNorm)
-              .filter((post) => typeof post.sentAt === "number" && post.sentAt > baselineBotSentAt)
               .filter((post) => post.text.length > 0);
 
-            // Diagnostic: log poll state on first and every 5th attempt
-            if (attempts === 1 || attempts % 5 === 0) {
-              const allBotPosts = (dmPosts ?? [])
-                .map((post) => {
-                  const p = post as { authorId?: string; sentAt?: number; textContent?: string | null; content?: unknown };
-                  return { authorId: p.authorId, sentAt: p.sentAt, text: ((p.textContent ?? getTextContent(p.content)) ?? "").trim().slice(0, 40) };
-                })
-                .filter((p) => p.authorId === botShipNorm);
-              console.log(`[poll #${attempts}] baseline=${baselineBotSentAt} totalPosts=${(dmPosts ?? []).length} botPosts=${allBotPosts.length} newBotPosts=${botDmPosts.length} latestBotSentAt=${allBotPosts.length > 0 ? Math.max(...allBotPosts.map(p => p.sentAt ?? 0)) : "none"}`);
-              if (allBotPosts.length > 0) {
-                console.log(`[poll #${attempts}] last 3 bot posts: ${JSON.stringify(allBotPosts.slice(-3))}`);
+            if (useToken) {
+              // Correlated path: accept only posts containing this prompt's tag.
+              // No sentAt filter needed — the tag IS the correlation.
+              const matched = allBotPosts.find((p) => p.text.includes(tag!));
+
+              if (attempts === 1 || attempts % 5 === 0) {
+                console.log(`[poll #${attempts}] mode=${mode} token=${tag} matched=${!!matched} botPosts=${allBotPosts.length}`);
+                if (allBotPosts.length > 0) {
+                  console.log(`[poll #${attempts}] last 3 bot posts: ${JSON.stringify(allBotPosts.slice(-3).map((p) => ({ sentAt: p.sentAt, text: p.text.slice(0, 40) })))}`);
+                }
+              }
+
+              if (matched) {
+                const cleanText = matched.text.replace(CORRELATION_TAG_RE, "").trim();
+                return { success: true, text: cleanText };
+              }
+            } else {
+              // No-token path (slash commands and correlate:false):
+              // Accept posts newer than sendBaseline, but skip any post bearing
+              // a correlation tag — those belong to a correlated prompt.
+              const candidates = allBotPosts
+                .filter((p) => typeof p.sentAt === "number" && p.sentAt > sendBaseline)
+                .filter((p) => !CORRELATION_TAG_RE.test(p.text));
+              const skippedTagged = allBotPosts
+                .filter((p) => typeof p.sentAt === "number" && p.sentAt > sendBaseline)
+                .filter((p) => CORRELATION_TAG_RE.test(p.text)).length;
+
+              if (attempts === 1 || attempts % 5 === 0) {
+                console.log(`[poll #${attempts}] mode=${mode} baseline=${sendBaseline} candidates=${candidates.length} skippedTagged=${skippedTagged} botPosts=${allBotPosts.length}`);
+                if (allBotPosts.length > 0) {
+                  console.log(`[poll #${attempts}] last 3 bot posts: ${JSON.stringify(allBotPosts.slice(-3).map((p) => ({ sentAt: p.sentAt, text: p.text.slice(0, 40) })))}`);
+                }
+              }
+
+              if (candidates.length > 0) {
+                const latest = candidates.sort((a, b) => (b.sentAt ?? 0) - (a.sentAt ?? 0))[0];
+                return { success: true, text: latest.text };
               }
             }
-
-            if (botDmPosts.length > 0) {
-              const latest = botDmPosts.sort((a, b) => (b.sentAt ?? 0) - (a.sentAt ?? 0))[0];
-              return {
-                success: true,
-                text: latest.text,
-              };
-            }
           } catch (err) {
-            // Poll failed, continue retrying until timeout.
             lastPollError = String(err);
             console.log(`DM poll failed: ${err}`);
           }
@@ -264,8 +287,10 @@ export function createTlonClient(config: TlonClientConfig): TestClient {
           success: false,
           error:
             `Timeout waiting for bot response after ${timeoutMs}ms ` +
-            `(attempts=${attempts}, baselineBotSentAt=${baselineBotSentAt})` +
-            (lastPollError ? `, lastPollError=${lastPollError}` : ""),
+            `(mode=${mode}, attempts=${attempts}` +
+            (tag ? `, token=${tag}` : `, baseline=${sendBaseline}`) +
+            (lastPollError ? `, lastPollError=${lastPollError}` : "") +
+            `)`,
         };
       } catch (err) {
         console.log(`Failed to send DM: ${err}`);
