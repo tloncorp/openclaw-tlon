@@ -35,8 +35,7 @@ const ALLOWED_TLON_COMMANDS = new Set([
   "settings",
   "upload",
   "help",
-  "version",
-  "upload",
+  "version"
 ]);
 
 /** Credential flags that the tlon skill binary accepts before the subcommand. */
