@@ -17,8 +17,8 @@ clone_if_missing() {
 # Clone tlonbot for config and prompts
 clone_if_missing ../tlonbot tlonbot
 
-# Clone api-beta for local development (optional - can comment out to use npm version)
-clone_if_missing ../api-beta api-beta
+# Clone tlon-apps for the dev-only local @tloncorp/api override flow
+clone_if_missing ../tlon-apps tlon-apps
 # Note: tlon-skill is installed from npm, no clone needed
 
 # Create .env if missing

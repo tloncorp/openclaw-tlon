@@ -11,17 +11,9 @@
 #
 # Usage:
 #   pnpm test:integration
+#   TEN_PORT=9081 pnpm test:integration    # use different port for ~ten
 
 set -euo pipefail
-
-# Fakezod credentials - these are the standard deterministic codes for ephemeral Urbit ships
-# ~zod is the bot ship, ~ten is the test user that sends DMs
-ZOD_URL="http://localhost:8080"
-ZOD_CODE="lidlut-tabwed-pillex-ridrup"
-TEN_URL="http://localhost:8081"
-TEN_CODE="lapseg-nolmel-riswen-hopryc"
-MUG_URL="http://localhost:8082"
-MUG_CODE="ravsut-bolryd-hapsum-pastul"
 
 cd "$(dirname "$0")/.."
 
@@ -33,11 +25,25 @@ if [ -f .env ]; then
   set +a
 fi
 
+# Fakezod credentials - these are the standard deterministic codes for ephemeral Urbit ships
+# ~zod is the bot ship, ~ten is the test user that sends DMs
+# Host ports can be overridden via env vars (container-internal ports stay fixed)
+ZOD_PORT="${ZOD_PORT:-8080}"
+TEN_PORT="${TEN_PORT:-8081}"
+MUG_PORT="${MUG_PORT:-8082}"
+
+ZOD_URL="http://localhost:$ZOD_PORT"
+ZOD_CODE="lidlut-tabwed-pillex-ridrup"
+TEN_URL="http://localhost:$TEN_PORT"
+TEN_CODE="lapseg-nolmel-riswen-hopryc"
+MUG_URL="http://localhost:$MUG_PORT"
+MUG_CODE="ravsut-bolryd-hapsum-pastul"
+
 # Gateway port can be overridden via env var (matches docker-compose.test.yml)
 GATEWAY_PORT="${OPENCLAW_GATEWAY_PORT:-18789}"
 
 # Check for port conflicts before starting
-for port in 8080 8081 8082 $GATEWAY_PORT; do
+for port in $ZOD_PORT $TEN_PORT $MUG_PORT $GATEWAY_PORT; do
   if lsof -Pi ":$port" -sTCP:LISTEN -t >/dev/null 2>&1; then
     echo "Error: Port $port is already in use"
     if [ "$port" = "$GATEWAY_PORT" ]; then
@@ -48,6 +54,9 @@ for port in 8080 8081 8082 $GATEWAY_PORT; do
     exit 1
   fi
 done
+
+# Export port vars for docker-compose interpolation
+export ZOD_PORT TEN_PORT MUG_PORT
 
 # Use test compose file, add local override if tlonbot repo exists
 COMPOSE_FILES="-f dev/docker-compose.test.yml"
@@ -133,7 +142,7 @@ docker compose $COMPOSE_FILES up -d openclaw
 echo "==> Container startup logs:"
 docker compose $COMPOSE_FILES logs openclaw
 
-# Gateway timeout needs to account for npm install inside container (can take 60+ seconds on slow machines)
+# Gateway timeout needs to account for pnpm install inside container (can take 60+ seconds on slow machines)
 GATEWAY_TIMEOUT=90
 echo "==> Waiting for gateway (port $GATEWAY_PORT)..."
 for i in $(seq 1 $GATEWAY_TIMEOUT); do

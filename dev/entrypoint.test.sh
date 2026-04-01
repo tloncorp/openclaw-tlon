@@ -15,7 +15,10 @@ find /workspace/openclaw-tlon -not -path '*/.git/*' -exec chown root:root {} \; 
 
 echo "==> Installing plugin dependencies..."
 cd /workspace/openclaw-tlon
-npm install
+pnpm install
+
+# Expose the plugin at an id-shaped path so OpenClaw's path hint matches the manifest id.
+ln -sfn /workspace/openclaw-tlon /workspace/tlon
 
 # tlon-skill comes in as plugin dependency (see package.json)
 echo "==> Checking tlon-skill from plugin dependencies..."
@@ -23,6 +26,7 @@ ls -la /workspace/openclaw-tlon/node_modules/@tloncorp/tlon-skill/ 2>/dev/null |
 
 # Remove bundled tlon plugin to avoid duplicate ID conflict
 rm -rf "$(npm root -g)/openclaw/extensions/tlon"
+rm -rf "$(npm root -g)/openclaw/dist/extensions/tlon"
 
 # Create minimal config for CI
 CONFIG_DIR=/root/.openclaw
@@ -69,7 +73,7 @@ cat > "$CONFIG_DIR/openclaw.json" << EOF
   },
   "plugins": {
     "load": {
-      "paths": ["/workspace/openclaw-tlon"]
+      "paths": ["/workspace/tlon"]
     },
     "entries": {
       "tlon": {
@@ -81,6 +85,7 @@ cat > "$CONFIG_DIR/openclaw.json" << EOF
     "allow": [
       "web_fetch",
       "web_search",
+      "image_search",
       "read",
       "cron",
       "tlon",
@@ -124,8 +129,55 @@ cat > "$CONFIG_DIR/openclaw.json" << EOF
 }
 EOF
 
-echo "==> Config written:"
-cat "$CONFIG_DIR/openclaw.json"
+# Patch in image-search plugin if tlonbot is mounted
+if [ -d "/workspace/tlonbot/image-search" ]; then
+  echo "==> Patching config: adding image-search plugin..."
+  jq '.plugins.load.paths += ["/workspace/tlonbot/image-search"]
+    | .plugins.entries["image-search"] = {"enabled": true}' \
+    "$CONFIG_DIR/openclaw.json" > "$CONFIG_DIR/openclaw.json.tmp" \
+    && mv "$CONFIG_DIR/openclaw.json.tmp" "$CONFIG_DIR/openclaw.json"
+fi
+
+# Patch in Brave API key for web search if available
+if [ -n "$BRAVE_API_KEY" ]; then
+  echo "==> Patching config: adding Brave search API key..."
+  jq --arg key "$BRAVE_API_KEY" \
+    '.tools.web.search = {"provider": "brave", "apiKey": $key}' \
+    "$CONFIG_DIR/openclaw.json" > "$CONFIG_DIR/openclaw.json.tmp" \
+    && mv "$CONFIG_DIR/openclaw.json.tmp" "$CONFIG_DIR/openclaw.json"
+fi
+
+telemetry_enabled="${TLON_TELEMETRY_ENABLED:-${TLON_POSTHOG_ENABLED:-}}"
+telemetry_api_key="${TLON_TELEMETRY_API_KEY:-${TLON_POSTHOG_API_KEY:-}}"
+telemetry_host="${TLON_TELEMETRY_HOST:-${TLON_POSTHOG_HOST:-}}"
+
+if [ "$telemetry_enabled" = "true" ] && [ -n "$telemetry_api_key" ]; then
+  echo "==> Patching config: enabling Tlon telemetry..."
+  jq \
+    --arg apiKey "$telemetry_api_key" \
+    --arg host "$telemetry_host" \
+    '.channels.tlon.telemetry = (
+      {
+        enabled: true,
+        apiKey: $apiKey
+      } + (if $host != "" then { host: $host } else {} end)
+    )' \
+    "$CONFIG_DIR/openclaw.json" > "$CONFIG_DIR/openclaw.json.tmp" \
+    && mv "$CONFIG_DIR/openclaw.json.tmp" "$CONFIG_DIR/openclaw.json"
+fi
+
+echo "==> Config written"
+
+if [ "${VERBOSE:-0}" = "1" ]; then
+  echo "==> DEBUG: Full config:"
+  cat "$CONFIG_DIR/openclaw.json"
+  echo "==> DEBUG: Agent config:"
+  cat "$CONFIG_DIR/openclaw.json" | jq '.agents'
+  echo "==> DEBUG: Heartbeat config:"
+  cat "$CONFIG_DIR/openclaw.json" | jq '.agents.defaults.heartbeat'
+  echo "==> DEBUG: Tlon channel config:"
+  cat "$CONFIG_DIR/openclaw.json" | jq '.channels.tlon'
+fi
 
 # Debug: Dump agent config and heartbeat settings
 echo "==> DEBUG: Agent config:"
@@ -175,30 +227,31 @@ fi
 echo "==> Workspace contents:"
 ls -la "$WORKSPACE_DIR/"
 
-# Debug: Dump prompt file contents
-echo "==> DEBUG: Prompt files content:"
-for f in SOUL.md TOOLS.md AGENTS.md HEARTBEAT.md USER.md; do
-  if [ -f "$WORKSPACE_DIR/$f" ]; then
-    echo "--- BEGIN $WORKSPACE_DIR/$f ---"
-    cat "$WORKSPACE_DIR/$f"
-    echo "--- END $f ---"
-  fi
-done
-
-# Debug: Dump skill env vars
-echo "==> DEBUG: Skill env vars:"
-echo "  URBIT_URL=${URBIT_URL:-<not set>}"
-echo "  URBIT_SHIP=${URBIT_SHIP:-<not set>}"
-echo "  URBIT_CODE=${URBIT_CODE:-<not set>}"
+if [ "${VERBOSE:-0}" = "1" ]; then
+  echo "==> DEBUG: Prompt files content:"
+  for f in SOUL.md TOOLS.md AGENTS.md HEARTBEAT.md USER.md; do
+    if [ -f "$WORKSPACE_DIR/$f" ]; then
+      echo "--- BEGIN $WORKSPACE_DIR/$f ---"
+      cat "$WORKSPACE_DIR/$f"
+      echo "--- END $f ---"
+    fi
+  done
+  echo "==> DEBUG: Skill env vars:"
+  echo "  URBIT_URL=${URBIT_URL:-<not set>}"
+  echo "  URBIT_SHIP=${URBIT_SHIP:-<not set>}"
+  echo "  URBIT_CODE=${URBIT_CODE:-<not set>}"
+fi
 
 # Create sessions directory
 SESSIONS_DIR=/root/.openclaw/agents/test/sessions
 mkdir -p "$SESSIONS_DIR"
 echo "{}" > "$SESSIONS_DIR/sessions.json"
 
-echo "==> Directory structure:"
-ls -la /root/.openclaw/
-ls -la /root/.openclaw/agents/test/ 2>/dev/null || true
+if [ "${VERBOSE:-0}" = "1" ]; then
+  echo "==> DEBUG: Directory structure:"
+  ls -la /root/.openclaw/
+  ls -la /root/.openclaw/agents/test/ 2>/dev/null || true
+fi
 
 echo "==> Starting OpenClaw gateway..."
 exec openclaw gateway --port 18789 --bind lan --verbose

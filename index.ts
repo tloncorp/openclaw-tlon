@@ -1,9 +1,10 @@
+import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 import { spawn } from "node:child_process";
 import { createRequire } from "node:module";
 import { existsSync } from "node:fs";
+import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 import { PLUGIN_COMMIT } from "./src/version.generated.js";
 
 // Get package version at runtime
@@ -13,6 +14,9 @@ import { emptyPluginConfigSchema } from "openclaw/plugin-sdk";
 import { tlonPlugin } from "./src/channel.js";
 import { resolveBridgeForCommand } from "./src/monitor/command-auth.js";
 import { setTlonRuntime } from "./src/runtime.js";
+import { getSessionRole } from "./src/session-roles.js";
+import { recordToolCall } from "./src/telemetry.js";
+import { checkBlockedSendOperation } from "./src/tlon-tool-guard.js";
 import { resolveTlonAccount } from "./src/types.js";
 import { getSessionRole } from "./src/session-roles.js";
 
@@ -23,12 +27,15 @@ const ALLOWED_TLON_COMMANDS = new Set([
   "activity",
   "channels",
   "contacts",
-  "groups",
-  "messages",
   "dms",
-  "posts",
+  "expose",
+  "groups",
+  "hooks",
+  "messages",
   "notebook",
+  "posts",
   "settings",
+  "upload",
   "help",
   "version",
   "upload",
@@ -187,7 +194,8 @@ const plugin = {
       name: "tlon",
       label: "Tlon CLI",
       description:
-        "Tlon/Urbit API operations: activity, channels, contacts, groups, messages, dms, posts, notebook, settings. " +
+        "Tlon/Urbit API for reading data and administration: activity, channels, contacts, groups, messages, posts, settings, upload, expose, hooks. " +
+        "DO NOT use this tool to send messages — use the `message` tool instead. " +
         "Examples: 'activity mentions --limit 10', 'channels groups', 'contacts self', 'groups list'",
       parameters: {
         type: "object",
@@ -195,8 +203,9 @@ const plugin = {
           command: {
             type: "string",
             description:
-              "The tlon command and arguments. " +
-              "Examples: 'activity mentions --limit 10', 'contacts get ~sampel-palnet', 'groups list'",
+              "The tlon command and arguments (read/admin operations). " +
+              "To send messages, use the `message` tool, not this tool. " +
+              "Examples: 'activity mentions --limit 10', 'contacts get ~sampel-palnet', 'groups list', 'messages dm ~ship --limit 20'",
           },
         },
         required: ["command"],
@@ -219,14 +228,22 @@ const plugin = {
             };
           }
 
+          // Check for blocked send operations that should use the `message` tool
+          const blocked = checkBlockedSendOperation(args);
+          if (blocked) {
+            return {
+              content: [{ type: "text" as const, text: blocked }],
+              details: { blocked: true, reason: "send_operation" },
+            };
+          }
+
           const output = await runTlonCommand(tlonBinary, args, credentials);
           return {
             content: [{ type: "text" as const, text: output }],
             details: undefined,
           };
         } catch (error: unknown) {
-          const message =
-            error instanceof Error ? error.message : String(error);
+          const message = error instanceof Error ? error.message : String(error);
           return {
             content: [{ type: "text" as const, text: `Error: ${message}` }],
             details: { error: true },
@@ -236,13 +253,7 @@ const plugin = {
     });
 
     // Tool access control: block sensitive tools for non-owners
-    const ownerOnlyTools = new Set([
-      "tlon",
-      "tlon_run",
-      "tlon-run",
-      "cron",
-      "read",
-    ]);
+    const ownerOnlyTools = new Set(["tlon", "cron", "read"]);
 
     api.on("before_tool_call", (event, ctx) => {
       if (!ownerOnlyTools.has(event.toolName)) {
@@ -267,6 +278,15 @@ const plugin = {
       api.logger.info(
         `[tlon] Allowed ${event.toolName} tool for ${role ?? "internal"} session. Session: ${ctx.sessionKey}`,
       );
+    });
+
+    api.on("after_tool_call", (event, ctx) => {
+      recordToolCall({
+        sessionKey: ctx.sessionKey,
+        toolName: event.toolName,
+        durationMs: event.durationMs,
+        error: event.error,
+      });
     });
 
     // ── Slash commands for approval & admin ────────────────────────────
