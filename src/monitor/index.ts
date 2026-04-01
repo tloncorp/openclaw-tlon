@@ -4,7 +4,7 @@ import type { Memo, Story } from "@tloncorp/api";
 // Local structural types — @tloncorp/api defines these internally but
 // does not export them from its public entrypoint.
 type Author = string | { ship: string };
-type PostEssay = { content: Story; author: Author; sent: number };
+type PostEssay = { content: Story; author: Author; sent: number; blob?: string | null };
 type Seal = { "parent-id"?: string; parent?: string; [k: string]: unknown };
 type ChannelResponse = {
   post?: {
@@ -14,7 +14,7 @@ type ChannelResponse = {
       reply?: {
         id?: string;
         "r-reply"?: {
-          set?: { memo?: Memo; seal?: Seal };
+          set?: { memo?: Memo & { blob?: string | null }; seal?: Seal };
           reacts?: Record<string, unknown>;
         };
       };
@@ -24,7 +24,7 @@ type ChannelResponse = {
 };
 type WritResponseDelta =
   | { add?: { essay?: PostEssay }; reply?: never; "add-react"?: never; "del-react"?: never }
-  | { reply?: { id?: string; delta?: { add?: { memo?: Memo; id?: string } } }; add?: never; "add-react"?: never; "del-react"?: never }
+  | { reply?: { id?: string; delta?: { add?: { memo?: Memo & { blob?: string | null }; id?: string } } }; add?: never; "add-react"?: never; "del-react"?: never }
   | { "add-react"?: { react: string; author: string; ship?: string }; add?: never; reply?: never; "del-react"?: never }
   | { "del-react"?: { author?: string; ship?: string }; add?: never; reply?: never; "add-react"?: never };
 type WritResponse = { whom: string; id: string; response: WritResponseDelta };
@@ -60,7 +60,7 @@ import {
 import { setBridge, removeBridge, type ApprovalCommandBridge } from "./command-bridge.js";
 import { fetchAllChannels, fetchInitData } from "./discovery.js";
 import { cacheMessage, lookupCachedMessage, getChannelHistory, fetchChannelHistory, fetchThreadHistory } from "./history.js";
-import { downloadMessageImages } from "./media.js";
+import { downloadMessageImages, parseBlobData, formatBlobAnnotations, downloadBlobAttachments } from "./media.js";
 import { createProcessedMessageTracker } from "./processed-messages.js";
 import {
   extractMessageText,
@@ -1061,6 +1061,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     senderShip: string;
     messageText: string;
     messageContent?: unknown; // Raw Tlon content for media extraction
+    blobField?: string | null; // Raw blob JSON from post/reply
     isGroup: boolean;
     channelNest?: string;
     hostShip?: string;
@@ -1146,6 +1147,28 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         }
       } catch (error: any) {
         runtime.log?.(`[tlon] Failed to download images: ${error?.message ?? String(error)}`);
+      }
+    }
+
+    // Parse and handle blob attachments (files, voice memos, videos)
+    const blobData = parseBlobData(params.blobField);
+    if (blobData) {
+      // Add text annotations so the agent knows what was attached
+      const blobAnnotations = formatBlobAnnotations(blobData);
+      if (blobAnnotations) {
+        messageText = blobAnnotations + "\n" + messageText;
+        runtime.log?.(`[tlon] Added blob annotations: ${blobData.length} attachment(s)`);
+      }
+
+      // Download blob files as attachments
+      try {
+        const blobAttachments = await downloadBlobAttachments(blobData);
+        if (blobAttachments.length > 0) {
+          attachments = attachments.concat(blobAttachments);
+          runtime.log?.(`[tlon] Downloaded ${blobAttachments.length} blob attachment(s)`);
+        }
+      } catch (error: any) {
+        runtime.log?.(`[tlon] Failed to download blob attachments: ${error?.message ?? String(error)}`);
       }
     }
 
@@ -1765,6 +1788,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         senderShip,
         messageText,
         messageContent: content.content, // Pass raw content for media extraction
+        blobField: content.blob,
         isGroup: true,
         channelNest: nest,
         hostShip: parsed?.hostShip,
@@ -2013,6 +2037,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
           senderShip,
           messageText,
           messageContent: dmContent.content,
+          blobField: (dmContent as any).blob,
           isGroup: false,
           timestamp: dmContent.sent || Date.now(),
           parentId: dmReplyParentId,
@@ -2048,6 +2073,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         senderShip,
         messageText,
         messageContent: dmContent.content, // Pass raw content for media extraction
+        blobField: (dmContent as any).blob,
         isGroup: false,
         timestamp: dmContent.sent || Date.now(),
         parentId: dmReplyParentId,

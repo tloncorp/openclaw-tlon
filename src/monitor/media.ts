@@ -6,6 +6,8 @@ import * as path from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { fetchWithSsrFGuard } from "openclaw/plugin-sdk";
+import { parsePostBlob } from "@tloncorp/api";
+import type { ClientPostBlobData } from "@tloncorp/api";
 import { getDefaultSsrFPolicy } from "../urbit/context.js";
 
 // Default to OpenClaw workspace media directory
@@ -122,8 +124,16 @@ function getExtensionFromContentType(contentType: string): string | null {
     "image/svg+xml": "svg",
     "video/mp4": "mp4",
     "video/webm": "webm",
+    "video/quicktime": "mov",
     "audio/mpeg": "mp3",
+    "audio/mp4": "m4a",
+    "audio/aac": "aac",
     "audio/ogg": "ogg",
+    "audio/wav": "wav",
+    "audio/x-m4a": "m4a",
+    "application/pdf": "pdf",
+    "application/zip": "zip",
+    "text/plain": "txt",
   };
   return map[contentType.split(";")[0].trim()] ?? null;
 }
@@ -164,4 +174,100 @@ export async function downloadMessageImages(
   }
 
   return attachments;
+}
+
+/**
+ * Parse a post's blob field into structured blob data.
+ * Returns null if blob is empty/missing or unparseable.
+ */
+export function parseBlobData(blob: string | null | undefined): ClientPostBlobData | null {
+  if (!blob) return null;
+  try {
+    const parsed = parsePostBlob(blob);
+    return parsed.length > 0 ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Format blob data as text annotations for the agent.
+ * Returns a string like:
+ *   📎 [report.pdf] (application/pdf, 245KB) https://storage.example.com/report.pdf
+ *   🎙️ [voice memo] (12s) "Hey, check this out"
+ *   🎬 [clip.mp4] (video/mp4, 1.2MB)
+ */
+export function formatBlobAnnotations(blobData: ClientPostBlobData): string {
+  const lines: string[] = [];
+
+  for (const entry of blobData) {
+    if (entry.type === "file") {
+      const name = entry.name || "file";
+      const mime = entry.mimeType || "unknown";
+      const size = entry.size ? formatFileSize(entry.size) : "?";
+      let line = `📎 [${name}] (${mime}, ${size})`;
+      if (entry.fileUri) line += ` ${entry.fileUri}`;
+      lines.push(line);
+    } else if (entry.type === "voicememo") {
+      const dur = entry.duration ? `${Math.round(entry.duration)}s` : "?";
+      let line = `🎙️ [voice memo] (${dur})`;
+      if (entry.fileUri) line += ` ${entry.fileUri}`;
+      lines.push(line);
+      if (entry.transcription) {
+        lines.push(`  "${entry.transcription}"`);
+      }
+    } else if (entry.type === "video") {
+      const name = entry.name || "video";
+      const mime = entry.mimeType || "video";
+      const size = entry.size ? formatFileSize(entry.size) : "?";
+      let line = `🎬 [${name}] (${mime}, ${size})`;
+      if (entry.fileUri) line += ` ${entry.fileUri}`;
+      lines.push(line);
+    }
+    // Skip unknown types silently
+  }
+
+  return lines.join("\n");
+}
+
+/**
+ * Download all downloadable blob attachments (files, voice memos, videos)
+ * and return attachment metadata for OpenClaw.
+ */
+export async function downloadBlobAttachments(
+  blobData: ClientPostBlobData,
+  mediaDir?: string,
+): Promise<Array<{ path: string; contentType: string }>> {
+  const attachments: Array<{ path: string; contentType: string }> = [];
+
+  for (const entry of blobData) {
+    if (entry.type === "unknown") continue;
+
+    const uri = "fileUri" in entry ? entry.fileUri : undefined;
+    if (!uri) continue;
+
+    // Only download http/https URIs
+    try {
+      const parsed = new URL(uri);
+      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") continue;
+    } catch {
+      continue;
+    }
+
+    const downloaded = await downloadMedia(uri, mediaDir);
+    if (downloaded) {
+      attachments.push({
+        path: downloaded.localPath,
+        contentType: downloaded.contentType,
+      });
+    }
+  }
+
+  return attachments;
+}
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes}B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)}KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
 }
