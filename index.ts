@@ -41,6 +41,42 @@ const ALLOWED_TLON_COMMANDS = new Set([
   "upload",
 ]);
 
+/** Credential flags that the tlon skill binary accepts before the subcommand. */
+const CREDENTIAL_FLAGS_WITH_VALUE = new Set([
+  "--config",
+  "--url",
+  "--ship",
+  "--code",
+  "--cookie",
+]);
+
+/**
+ * Find the first positional argument (subcommand) by skipping credential flags
+ * and their values. Returns the index into `args`, or -1 if none found.
+ */
+function findSubcommandIndex(args: string[]): number {
+  let i = 0;
+  while (i < args.length) {
+    const arg = args[i];
+    // --flag=value form: skip one token
+    if (arg.startsWith("--") && arg.includes("=")) {
+      const flag = arg.slice(0, arg.indexOf("="));
+      if (CREDENTIAL_FLAGS_WITH_VALUE.has(flag)) {
+        i += 1;
+        continue;
+      }
+    }
+    // --flag value form: skip two tokens
+    if (CREDENTIAL_FLAGS_WITH_VALUE.has(arg)) {
+      i += 2;
+      continue;
+    }
+    // Not a credential flag — this is the subcommand
+    return i;
+  }
+  return -1;
+}
+
 /**
  * Find the tlon binary from the skill package
  */
@@ -214,22 +250,24 @@ const plugin = {
         try {
           const args = shellSplit(params.command);
 
-          // Validate first argument is a whitelisted tlon subcommand
-          const subcommand = args[0];
-          if (!ALLOWED_TLON_COMMANDS.has(subcommand)) {
+          // Skip credential flags (--config, --url, --ship, --code, --cookie)
+          // to find the actual subcommand, matching what the skill binary does.
+          const subIdx = findSubcommandIndex(args);
+          const subcommand = subIdx >= 0 ? args[subIdx] : undefined;
+          if (!subcommand || !ALLOWED_TLON_COMMANDS.has(subcommand)) {
             return {
               content: [
                 {
                   type: "text" as const,
-                  text: `Error: Unknown tlon subcommand '${subcommand}'. Allowed: ${[...ALLOWED_TLON_COMMANDS].join(", ")}`,
+                  text: `Error: Unknown tlon subcommand '${subcommand ?? "(none)"}'. Allowed: ${[...ALLOWED_TLON_COMMANDS].join(", ")}`,
                 },
               ],
               details: { error: true },
             };
           }
 
-          // Check for blocked send operations that should use the `message` tool
-          const blocked = checkBlockedSendOperation(args);
+          // Check for blocked send operations (uses args from subcommand onward)
+          const blocked = checkBlockedSendOperation(args.slice(subIdx));
           if (blocked) {
             return {
               content: [{ type: "text" as const, text: blocked }],

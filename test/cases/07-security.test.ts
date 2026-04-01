@@ -12,7 +12,13 @@
  *   ~mug = third-party ship (non-owner, for security tests)
  */
 import { describe, test, expect, beforeAll } from "vitest";
-import { getFixtures, waitFor, requireThirdParty, type TestFixtures } from "../lib/index.js";
+import {
+  getFixtures,
+  waitFor,
+  requireThirdParty,
+  ensureThirdPartyDmAccess,
+  type TestFixtures,
+} from "../lib/index.js";
 
 describe("security", () => {
   let fixtures: TestFixtures;
@@ -47,6 +53,19 @@ describe("security", () => {
   async function getBlockedShips(): Promise<string[]> {
     const raw = await fixtures.botState.scry<string[]>("chat", "/blocked");
     return Array.isArray(raw) ? raw : [];
+  }
+
+  async function ensureThirdPartyUnblocked(): Promise<void> {
+    requireThirdParty(fixtures);
+    const blocked = await getBlockedShips();
+    if (blocked.includes(fixtures.thirdPartyShip)) {
+      await fixtures.botState.poke({
+        app: "chat",
+        mark: "chat-unblock-ship",
+        json: { ship: fixtures.thirdPartyShip },
+      });
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+    }
   }
 
   // =========================================================================
@@ -88,6 +107,7 @@ describe("security", () => {
 
     test("non-owner cannot use restricted tools", async () => {
       requireThirdParty(fixtures);
+      await ensureThirdPartyDmAccess(fixtures);
 
       // Snapshot current bot nickname via scry
       const beforeProfile = await fixtures.botState.scry<Record<string, unknown>>(
@@ -215,6 +235,7 @@ describe("security", () => {
   describe("blocking", () => {
     test("blocked non-owner DMs are silently ignored", async () => {
       requireThirdParty(fixtures);
+      await ensureThirdPartyDmAccess(fixtures);
 
       // Block ~mug via direct poke (Urbit-level block — chat agent drops messages)
       console.log(`\n[TEST] Blocking ${fixtures.thirdPartyShip}...`);
@@ -291,14 +312,26 @@ describe("security", () => {
       return raw?.all?.moltbot?.tlon?.dmAllowlist ?? [];
     }
 
-    test("blocked ship on allowlist is still blocked (Urbit-level)", async () => {
+    async function ensureThirdPartyOnAllowlist(): Promise<void> {
       requireThirdParty(fixtures);
-
-      // Ensure the third party ship is on the allowlist
       const currentList = await getDmAllowlist();
       if (!currentList.includes(fixtures.thirdPartyShip)) {
         await seedDmAllowlist([...currentList, fixtures.thirdPartyShip]);
       }
+    }
+
+    async function ensureThirdPartyOffAllowlist(): Promise<void> {
+      requireThirdParty(fixtures);
+      const currentList = await getDmAllowlist();
+      if (currentList.includes(fixtures.thirdPartyShip)) {
+        await seedDmAllowlist(currentList.filter((ship) => ship !== fixtures.thirdPartyShip));
+      }
+    }
+
+    test("blocked ship on allowlist is still blocked (Urbit-level)", async () => {
+      requireThirdParty(fixtures);
+      await ensureThirdPartyUnblocked();
+      await ensureThirdPartyOnAllowlist();
 
       // Block the ship via Tlon's native blocking
       // Urbit's chat agent drops messages from blocked ships at the protocol
@@ -338,13 +371,11 @@ describe("security", () => {
 
     test("emoji reaction on notification approves DM request", async () => {
       requireThirdParty(fixtures);
+      await ensureThirdPartyUnblocked();
 
       // 1. Remove third party from DM allowlist so their next DM triggers approval
-      const currentList = await getDmAllowlist();
-      if (currentList.includes(fixtures.thirdPartyShip)) {
-        await seedDmAllowlist(currentList.filter((s) => s !== fixtures.thirdPartyShip));
-        console.log(`\n[TEST] Removed ${fixtures.thirdPartyShip} from DM allowlist`);
-      }
+      await ensureThirdPartyOffAllowlist();
+      console.log(`\n[TEST] Removed ${fixtures.thirdPartyShip} from DM allowlist`);
 
       // 2. Third party sends DM — should trigger an approval request to owner
       console.log(`[TEST] ${fixtures.thirdPartyShip} sending DM to trigger approval...`);
@@ -451,22 +482,9 @@ describe("security", () => {
       requireThirdParty(fixtures);
 
       // 1. Ensure third party is not blocked and not on the allowlist
-      try {
-        await fixtures.botState.poke({
-          app: "chat",
-          mark: "chat-unblock-ship",
-          json: { ship: fixtures.thirdPartyShip },
-        });
-        await new Promise((resolve) => setTimeout(resolve, 2000));
-      } catch {
-        // Ignore if ship was not blocked
-      }
-
-      const currentList = await getDmAllowlist();
-      if (currentList.includes(fixtures.thirdPartyShip)) {
-        await seedDmAllowlist(currentList.filter((s) => s !== fixtures.thirdPartyShip));
-        console.log(`\n[TEST] Removed ${fixtures.thirdPartyShip} from DM allowlist`);
-      }
+      await ensureThirdPartyUnblocked();
+      await ensureThirdPartyOffAllowlist();
+      console.log(`\n[TEST] Removed ${fixtures.thirdPartyShip} from DM allowlist`);
 
       // 2. Third party sends DM — should trigger an approval request to owner
       console.log(`[TEST] ${fixtures.thirdPartyShip} sending DM to trigger deny reaction...`);
@@ -559,26 +577,20 @@ describe("security", () => {
       }
 
       // Clean up: restore allowlist baseline for later tests
-      const cleanList = await getDmAllowlist();
-      if (!cleanList.includes(fixtures.thirdPartyShip)) {
-        await seedDmAllowlist([...cleanList, fixtures.thirdPartyShip]);
-      }
+      await ensureThirdPartyOnAllowlist();
       await new Promise((resolve) => setTimeout(resolve, 2000));
     }, 120_000);
 
     test("removing ship from allowlist triggers approval instead of response", async () => {
       requireThirdParty(fixtures);
+      await ensureThirdPartyUnblocked();
 
       // 1. Ensure third party IS on the allowlist
-      const currentList = await getDmAllowlist();
-      if (!currentList.includes(fixtures.thirdPartyShip)) {
-        await seedDmAllowlist([...currentList, fixtures.thirdPartyShip]);
-        console.log(`\n[TEST] Added ${fixtures.thirdPartyShip} to DM allowlist`);
-      }
+      await ensureThirdPartyOnAllowlist();
+      console.log(`\n[TEST] Added ${fixtures.thirdPartyShip} to DM allowlist`);
 
       // 2. Remove third party from allowlist via settings poke
-      const listBefore = await getDmAllowlist();
-      await seedDmAllowlist(listBefore.filter((s) => s !== fixtures.thirdPartyShip));
+      await ensureThirdPartyOffAllowlist();
       console.log(`[TEST] Removed ${fixtures.thirdPartyShip} from DM allowlist`);
 
       // 3. Third party sends DM — should trigger approval, not a bot response
@@ -606,10 +618,7 @@ describe("security", () => {
       console.log(`[TEST] Approval created: #${approval!.id} — allowlist removal propagated correctly`);
 
       // Clean up: re-add to allowlist and clear pending approvals
-      const afterList = await getDmAllowlist();
-      if (!afterList.includes(fixtures.thirdPartyShip)) {
-        await seedDmAllowlist([...afterList, fixtures.thirdPartyShip]);
-      }
+      await ensureThirdPartyOnAllowlist();
       // Clear the pending approval so it doesn't interfere with later tests
       await fixtures.botState.poke({
         app: "settings",
@@ -630,17 +639,14 @@ describe("security", () => {
 
     test("block reaction removes ship from allowlist", async () => {
       requireThirdParty(fixtures);
+      await ensureThirdPartyUnblocked();
 
       // 1. Ensure third party is on the allowlist but not blocked
-      const currentList = await getDmAllowlist();
-      if (!currentList.includes(fixtures.thirdPartyShip)) {
-        await seedDmAllowlist([...currentList, fixtures.thirdPartyShip]);
-        console.log(`\n[TEST] Added ${fixtures.thirdPartyShip} to DM allowlist`);
-      }
+      await ensureThirdPartyOnAllowlist();
+      console.log(`\n[TEST] Added ${fixtures.thirdPartyShip} to DM allowlist`);
 
       // 2. Remove from allowlist to trigger approval flow
-      const listBefore = await getDmAllowlist();
-      await seedDmAllowlist(listBefore.filter((s) => s !== fixtures.thirdPartyShip));
+      await ensureThirdPartyOffAllowlist();
       console.log(`[TEST] Removed ${fixtures.thirdPartyShip} from allowlist to trigger approval`);
 
       // 3. Third party sends DM — triggers approval
@@ -735,10 +741,7 @@ describe("security", () => {
         mark: "chat-unblock-ship",
         json: { ship: fixtures.thirdPartyShip },
       });
-      const cleanList = await getDmAllowlist();
-      if (!cleanList.includes(fixtures.thirdPartyShip)) {
-        await seedDmAllowlist([...cleanList, fixtures.thirdPartyShip]);
-      }
+      await ensureThirdPartyOnAllowlist();
       await new Promise((resolve) => setTimeout(resolve, 3000));
 
       try { await dmPromise; } catch { /* timeout OK */ }

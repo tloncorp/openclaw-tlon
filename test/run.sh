@@ -2,12 +2,14 @@
 # Run integration tests with ephemeral fakezod ships
 #
 # Works in both CI and local environments:
-#   - CI: Uses TLONBOT_TOKEN to fetch prompts from GitHub
-#   - Local: Uses ../tlonbot volume mount for prompts
+#   - With ../tlonbot mounted: uses volume mount for prompts and plugins
+#   - Without ../tlonbot: uses TLONBOT_TOKEN to fetch prompts and image-search plugin from GitHub
 #
 # Prerequisites:
 #   - OPENROUTER_API_KEY (in .env locally, or CI secret)
-#   - Local only: ../tlonbot repo cloned
+#   - BRAVE_API_KEY + TEST_STORAGE_* for image search / media tests
+#   - TLONBOT_TOKEN when ../tlonbot is not mounted (always needed in CI)
+#   - Local only: ../tlonbot repo cloned (removes TLONBOT_TOKEN requirement)
 #
 # Usage:
 #   pnpm test:integration
@@ -62,6 +64,7 @@ export ZOD_PORT TEN_PORT MUG_PORT
 COMPOSE_FILES="-f dev/docker-compose.test.yml"
 if [ -f "dev/docker-compose.local.yml" ] && [ -d "../tlonbot" ]; then
   COMPOSE_FILES="$COMPOSE_FILES -f dev/docker-compose.local.yml"
+  export TEST_TLONBOT_MOUNTED=1
   echo "==> Using local tlonbot volume mount"
 fi
 
@@ -190,6 +193,7 @@ export TEST_THIRD_PARTY_SHIP="~mug"
 export TEST_THIRD_PARTY_CODE="$MUG_CODE"
 export TEST_MODE="tlon"
 export TEST_GATEWAY_URL="http://localhost:$GATEWAY_PORT"
+export TEST_COMPOSE_FILE="dev/docker-compose.test.yml"
 
 # Debug: show env vars
 echo "Env vars:"

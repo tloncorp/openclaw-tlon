@@ -58,7 +58,7 @@ describe("messages", () => {
     const prompt = `Post this exact text into your channel ${fixtures.group.chatChannel}: "${token}" — You MUST respond with exactly 'Done' after posting`;
     console.log(`\n[TEST] Sending prompt: "${prompt}"`);
 
-    const response = await fixtures.client.prompt(prompt);
+    const response = await fixtures.client.prompt(prompt, { correlate: false });
     console.log(`[TEST] Response success: ${response.success}`);
     console.log(`[TEST] Response text: ${response.text?.slice(0, 500)}`);
 
