@@ -15,49 +15,71 @@ fi
 
 echo "==> Installing plugin dependencies..."
 
-# Install openclaw-tlon plugin dependencies (includes @tloncorp/tlon-skill from npm)
+# Install openclaw-tlon plugin dependencies (includes @tloncorp/api and @tloncorp/tlon-skill from npm)
 cd /workspace/openclaw-tlon
 pnpm install
+./dev/build-local-api-override.sh
 
-# Link api-beta if mounted (for local development)
-if [ -f "/workspace/api-beta/package.json" ]; then
-  cd /workspace/api-beta
-
-  # Only install/build if not already done
-  if [ ! -d "node_modules" ]; then
-    echo "==> Installing api-beta dependencies..."
-    npm install
-  fi
-
-  if [ ! -d "dist" ]; then
-    echo "==> Building api-beta..."
-    npm run build
-  fi
-
-  # Always ensure link is set up
-  npm link 2>/dev/null || true
-  cd /workspace/openclaw-tlon
-  npm link @tloncorp/api 2>/dev/null || true
-fi
+# Expose the plugin at an id-shaped path so OpenClaw's path hint matches the manifest id.
+ln -sfn /workspace/openclaw-tlon /workspace/tlon
 
 # Remove bundled tlon plugin to avoid duplicate ID conflict
 rm -rf "$(npm root -g)/openclaw/extensions/tlon"
+rm -rf "$(npm root -g)/openclaw/dist/extensions/tlon"
 
 # Plugin is loaded from /workspace/openclaw-tlon via plugins.load.paths in config
-# Install tlon skill to workspace skills directory (most reliable discovery method)
-echo "==> Installing tlon skill to workspace..."
-WORKSPACE_DIR=/root/.openclaw/workspace
-mkdir -p "$WORKSPACE_DIR/skills"
-# Symlink the skill package to workspace skills (recreate if exists)
-rm -rf "$WORKSPACE_DIR/skills/tlon"
-ln -s /workspace/openclaw-tlon/node_modules/@tloncorp/tlon-skill "$WORKSPACE_DIR/skills/tlon"
+# Skill should be discovered via plugin manifest's "skills" field.
+# Commenting out manual symlink to test manifest-based discovery.
+# echo "==> Installing tlon skill to workspace..."
+# WORKSPACE_DIR=/root/.openclaw/workspace
+# mkdir -p "$WORKSPACE_DIR/skills"
+# rm -rf "$WORKSPACE_DIR/skills/tlon"
+# ln -s /workspace/openclaw-tlon/node_modules/@tloncorp/tlon-skill "$WORKSPACE_DIR/skills/tlon"
 
-# Ensure default OpenClaw config path exists to avoid ENOENT in gateway health refresh.
+# Copy and patch config from tlonbot
 CONFIG_DIR=/root/.openclaw
 CONFIG_PATH="$CONFIG_DIR/openclaw.json"
 mkdir -p "$CONFIG_DIR"
-if [ ! -f "$CONFIG_PATH" ] && [ -f "/workspace/openclaw-tlon/dev/openclaw.dev.json" ]; then
+
+if [ -f "/workspace/tlonbot/openclaw.json" ]; then
+  echo "==> Copying config from tlonbot..."
+  cp /workspace/tlonbot/openclaw.json "$CONFIG_PATH"
+
+  # Patch in Brave API key if available
+  if [ -n "$BRAVE_API_KEY" ]; then
+    echo "==> Patching Brave API key into config..."
+    jq --arg key "$BRAVE_API_KEY" '.tools.web.search.apiKey = $key' \
+      "$CONFIG_PATH" > "$CONFIG_PATH.tmp" && mv "$CONFIG_PATH.tmp" "$CONFIG_PATH"
+  fi
+
+  telemetry_enabled="${TLON_TELEMETRY_ENABLED:-${TLON_POSTHOG_ENABLED:-}}"
+  telemetry_api_key="${TLON_TELEMETRY_API_KEY:-${TLON_POSTHOG_API_KEY:-}}"
+  telemetry_host="${TLON_TELEMETRY_HOST:-${TLON_POSTHOG_HOST:-}}"
+
+  if [ "$telemetry_enabled" = "true" ] && [ -n "$telemetry_api_key" ]; then
+    echo "==> Patching Tlon telemetry config..."
+    jq \
+      --arg apiKey "$telemetry_api_key" \
+      --arg host "$telemetry_host" \
+      '.channels.tlon.telemetry = (
+        {
+          enabled: true,
+          apiKey: $apiKey
+        } + (if $host != "" then { host: $host } else {} end)
+      )' \
+      "$CONFIG_PATH" > "$CONFIG_PATH.tmp" && mv "$CONFIG_PATH.tmp" "$CONFIG_PATH"
+  fi
+elif [ -f "/workspace/openclaw-tlon/dev/openclaw.dev.json" ]; then
   cp "/workspace/openclaw-tlon/dev/openclaw.dev.json" "$CONFIG_PATH"
+fi
+
+if [ -f "$CONFIG_PATH" ]; then
+  echo "==> Repointing local tlon plugin path to /workspace/tlon..."
+  jq '
+    .plugins.load.paths |= map(
+      if . == "/workspace/openclaw-tlon" then "/workspace/tlon" else . end
+    )
+  ' "$CONFIG_PATH" > "$CONFIG_PATH.tmp" && mv "$CONFIG_PATH.tmp" "$CONFIG_PATH"
 fi
 
 # Upsert a marked block into a file (preserves content outside the markers)
@@ -93,12 +115,16 @@ echo "==> Installing prompts..."
 WORKSPACE_DIR=/root/.openclaw/workspace
 mkdir -p "$WORKSPACE_DIR"
 
-# SOUL.md needs variable substitution
+# needs variable substitution
+upsert_block "$WORKSPACE_DIR/BOOTSTRAP.md" "$(envsubst < /workspace/tlonbot/prompts/BOOTSTRAP.md)"
+upsert_block "$WORKSPACE_DIR/IDENTITY.md" "$(envsubst < /workspace/tlonbot/prompts/IDENTITY.md)"
 upsert_block "$WORKSPACE_DIR/SOUL.md" "$(envsubst < /workspace/tlonbot/prompts/SOUL.md)"
-# USER.md and TOOLS.md are static
-upsert_block "$WORKSPACE_DIR/USER.md" "$(cat /workspace/tlonbot/prompts/USER.md)"
-upsert_block "$WORKSPACE_DIR/TOOLS.md" "$(cat /workspace/tlonbot/prompts/TOOLS.md)"
+upsert_block "$WORKSPACE_DIR/TOOLS.md" "$(envsubst < /workspace/tlonbot/prompts/TOOLS.md)"
+# static, no variable substitution needed
+upsert_block "$WORKSPACE_DIR/AGENTS.md" "$(cat /workspace/tlonbot/prompts/AGENTS.md)"
 upsert_block "$WORKSPACE_DIR/HEARTBEAT.md" "$(cat /workspace/tlonbot/prompts/HEARTBEAT.md)"
+upsert_block "$WORKSPACE_DIR/MEMORY.md" "$(cat /workspace/tlonbot/prompts/MEMORY.md)"
+upsert_block "$WORKSPACE_DIR/USER.md" "$(cat /workspace/tlonbot/prompts/USER.md)"
 
 export WORKSPACE_DIR
 export TLON_RUN_PATH="/workspace/tlonbot/bin/tlon-run"

@@ -34,6 +34,7 @@ import { getTlonRuntime } from "../runtime.js";
 import { setSessionRole } from "../session-roles.js";
 import { createSettingsManager, type TlonSettingsStore } from "../settings.js";
 import { normalizeShip, parseChannelNest } from "../targets.js";
+import { createTlonTelemetry } from "../telemetry.js";
 import { resolveTlonAccount } from "../types.js";
 import { authenticate } from "../urbit/auth.js";
 import { ssrfPolicyFromAllowPrivateNetwork } from "../urbit/context.js";
@@ -58,7 +59,7 @@ import {
 } from "./approval.js";
 import { setBridge, removeBridge, type ApprovalCommandBridge } from "./command-bridge.js";
 import { fetchAllChannels, fetchInitData } from "./discovery.js";
-import { cacheMessage, lookupCachedMessage, getChannelHistory, fetchThreadHistory } from "./history.js";
+import { cacheMessage, lookupCachedMessage, getChannelHistory, fetchChannelHistory, fetchThreadHistory } from "./history.js";
 import { downloadMessageImages } from "./media.js";
 import { createProcessedMessageTracker } from "./processed-messages.js";
 import {
@@ -258,6 +259,10 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     : null;
   let pendingApprovals: PendingApproval[] = [];
   let currentSettings: TlonSettingsStore = {};
+  const telemetry = createTlonTelemetry({
+    config: account.telemetry,
+    runtime,
+  });
 
   // Track threads we've participated in (by parentId) - respond without mention requirement
   const participatedThreads = new Set<string>();
@@ -1150,8 +1155,8 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         const threadHistory = await fetchThreadHistory(api, groupChannel, parentId, 20, runtime);
         if (threadHistory.length > 0) {
           const threadContext = threadHistory
-            .slice(-10) // Last 10 messages for context
-            .map((msg) => `${msg.author}: ${sanitizeMessageText(msg.content)}`)
+            .slice(-20) // Last 20 thread messages for context
+            .map((msg) => `${formatShipWithNickname(msg.author)}: ${sanitizeMessageText(msg.content)}`)
             .join("\n");
 
           // Prepend thread context to the message
@@ -1165,6 +1170,34 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       } catch (error: any) {
         runtime?.log?.(`[tlon] Could not fetch thread context: ${error?.message ?? String(error)}`);
         // Continue without thread context - not critical
+      }
+    }
+
+    // Fetch recent channel history on mention (non-thread) so the agent has
+    // context about what the channel has been discussing.
+    if (isGroup && groupChannel && !isThreadReply) {
+      try {
+        const recentHistory = await fetchChannelHistory(api, groupChannel, 20, runtime);
+        if (recentHistory.length > 0) {
+          // Filter out the current message itself (avoid duplication)
+          const contextMessages = recentHistory
+            .filter((msg) => msg.id !== params.messageId)
+            .slice(0, 20)
+            .reverse() // oldest first for natural reading order
+            .map((msg) => `${formatShipWithNickname(msg.author)}: ${sanitizeMessageText(msg.content)}`)
+            .join("\n");
+
+          if (contextMessages) {
+            const contextNote = `[Recent channel activity - ${recentHistory.length} messages. Use this context to understand what's being discussed.]`;
+            messageText = `${contextNote}\n\n${contextMessages}\n\n[Current message (mentioned you)]\n${messageText}`;
+            runtime?.log?.(
+              `[tlon] Added channel context (${recentHistory.length} messages) to mention in ${groupChannel}`,
+            );
+          }
+        }
+      } catch (error: any) {
+        runtime?.log?.(`[tlon] Could not fetch channel context: ${error?.message ?? String(error)}`);
+        // Continue without channel context - not critical
       }
     }
 
@@ -1278,6 +1311,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     const fromLabel = isGroup
       ? `${senderDisplay} [${senderRole}] in ${channelNest}`
       : `${senderDisplay} [${senderRole}]`;
+    const attachmentCount = attachments.length;
 
     // Compute command authorization for slash commands (owner-only)
     const shouldComputeAuth = core.channel.commands.shouldComputeCommandAuthorized(
@@ -1360,6 +1394,22 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     });
 
     const dispatchStartTime = Date.now();
+    const replyTelemetry = telemetry?.startReply({
+      sessionKey: route.sessionKey,
+      ownerShip: effectiveOwnerShip,
+      botShip: botShipName,
+      chatType: isGroup ? "groupChannel" : "dm",
+      isThreadReply: Boolean(isThreadReply),
+      senderRole,
+      attachmentCount,
+    });
+    let selectedProvider: string | null = null;
+    let selectedModel: string | null = null;
+    let selectedThinkLevel: string | null = null;
+    let deliveredMessageCount = 0;
+    let replyCharCount = 0;
+    let replyWordCount = 0;
+    let replyMediaCount = 0;
 
     const responsePrefix = core.channel.reply.resolveEffectiveMessagesConfig(
       cfg,
@@ -1367,75 +1417,122 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     ).responsePrefix;
     const humanDelay = core.channel.reply.resolveHumanDelayConfig(cfg, route.agentId);
 
-    await core.channel.reply.dispatchReplyWithBufferedBlockDispatcher({
-      ctx: ctxPayload,
-      cfg,
-      dispatcherOptions: {
-        responsePrefix,
-        humanDelay,
-        deliver: async (payload: ReplyPayload) => {
-          let replyText = payload.text;
-          if (!replyText) {
-            return;
-          }
+    let dispatchResult:
+      | {
+          queuedFinal: boolean;
+          counts: Record<string, number>;
+        }
+      | undefined;
+    let dispatchError: unknown;
 
-          // Process any block directives in the response (strips them from text)
-          replyText = await processBlockDirectives(replyText, senderShip);
-          if (!replyText) {return;} // Response was only a directive
-
-          // Use settings store value if set, otherwise fall back to file config
-          const showSignature = effectiveShowModelSig;
-          if (showSignature) {
-            const modelCfg = cfg.agents?.defaults?.model;
-            const modelInfo =
-              (payload as { metadata?: { model?: string } }).metadata?.model ||
-              (payload as { model?: string }).model ||
-              (route as { model?: string }).model ||
-              (typeof modelCfg === "string" ? modelCfg : modelCfg?.primary);
-            replyText = `${replyText}\n\n_[Generated by ${formatModelName(modelInfo)}]_`;
-          }
-
-          // Add addendum if this is the last response before bot rate limit
-          if (isGroup && groupChannel && knownBotShips.has(senderShip)) {
-            const count = consecutiveBotMessages.get(groupChannel) ?? 0;
-            if (maxBotResponses > 0 && count === maxBotResponses) {
-              const otherBot = formatShipWithNickname(senderShip);
-              replyText += `\n\n---\n_This is my last response to ${otherBot} for now. To continue our conversation, someone will need to mention me._`;
-            }
-          }
-
-          if (isGroup && groupChannel) {
-            // Send to any channel type (chat, heap, diary) using the nest directly
-            await sendChannelPost({
-              botProfile: getBotProfile(),
-              fromShip: botShipName,
-              nest: groupChannel,
-              story: markdownToStory(replyText),
-              replyToId: deliverParentId ?? undefined,
-            });
-            // Track thread participation for future replies without mention
-            if (deliverParentId) {
-              participatedThreads.add(String(deliverParentId));
-              runtime.log?.(`[tlon] Now tracking thread for future replies: ${deliverParentId}`);
-            }
-          } else {
-            await sendDm({
-              botProfile: getBotProfile(),
-              fromShip: botShipName,
-              toShip: senderShip,
-              text: replyText,
-              replyToId: deliverParentId ? String(deliverParentId) : undefined,
-            });
-          }
+    try {
+      dispatchResult = await core.channel.reply.dispatchReplyWithBufferedBlockDispatcher({
+        ctx: ctxPayload,
+        cfg,
+        replyOptions: {
+          onModelSelected: ({ provider, model, thinkLevel }) => {
+            selectedProvider = provider;
+            selectedModel = model;
+            selectedThinkLevel = thinkLevel ?? null;
+          },
         },
-        onError: (err, info) => {
-          const dispatchDuration = Date.now() - dispatchStartTime;
-          runtime.error?.(
-            `[tlon] ${info.kind} reply failed after ${dispatchDuration}ms: ${String(err)}`,
-          );
+        dispatcherOptions: {
+          responsePrefix,
+          humanDelay,
+          deliver: async (payload: ReplyPayload) => {
+            let replyText = payload.text;
+            if (!replyText) {
+              return;
+            }
+
+            // Process any block directives in the response (strips them from text)
+            replyText = await processBlockDirectives(replyText, senderShip);
+            if (!replyText) {
+              return;
+            } // Response was only a directive
+
+            // Use settings store value if set, otherwise fall back to file config
+            const showSignature = effectiveShowModelSig;
+            if (showSignature) {
+              const modelCfg = cfg.agents?.defaults?.model;
+              const modelInfo =
+                selectedModel ||
+                (payload as { metadata?: { model?: string } }).metadata?.model ||
+                (payload as { model?: string }).model ||
+                (route as { model?: string }).model ||
+                (typeof modelCfg === "string" ? modelCfg : modelCfg?.primary);
+              replyText = `${replyText}\n\n_[Generated by ${formatModelName(modelInfo)}]_`;
+            }
+
+            // Add addendum if this is the last response before bot rate limit
+            if (isGroup && groupChannel && knownBotShips.has(senderShip)) {
+              const count = consecutiveBotMessages.get(groupChannel) ?? 0;
+              if (maxBotResponses > 0 && count === maxBotResponses) {
+                const otherBot = formatShipWithNickname(senderShip);
+                replyText += `\n\n---\n_This is my last response to ${otherBot} for now. To continue our conversation, someone will need to mention me._`;
+              }
+            }
+
+            if (isGroup && groupChannel) {
+              // Send to any channel type (chat, heap, diary) using the nest directly
+              await sendChannelPost({
+                botProfile: getBotProfile(),
+                fromShip: botShipName,
+                nest: groupChannel,
+                story: markdownToStory(replyText),
+                replyToId: deliverParentId ?? undefined,
+              });
+              // Track thread participation for future replies without mention
+              if (deliverParentId) {
+                participatedThreads.add(String(deliverParentId));
+                runtime.log?.(`[tlon] Now tracking thread for future replies: ${deliverParentId}`);
+              }
+            } else {
+              await sendDm({
+                botProfile: getBotProfile(),
+                fromShip: botShipName,
+                toShip: senderShip,
+                text: replyText,
+                replyToId: deliverParentId ? String(deliverParentId) : undefined,
+              });
+            }
+
+            deliveredMessageCount += 1;
+            replyCharCount += replyText.length;
+            replyWordCount += replyText.trim() ? replyText.trim().split(/\s+/).length : 0;
+            replyMediaCount += Array.isArray(payload.mediaUrls)
+              ? payload.mediaUrls.length
+              : payload.mediaUrl
+                ? 1
+                : 0;
+          },
+          onError: (err, info) => {
+            const dispatchDuration = Date.now() - dispatchStartTime;
+            runtime.error?.(
+              `[tlon] ${info.kind} reply failed after ${dispatchDuration}ms: ${String(err)}`,
+            );
+          },
         },
-      },
-    });
+      });
+    } catch (error) {
+      dispatchError = error;
+      throw error;
+    } finally {
+      await replyTelemetry?.capture({
+        deliveredMessageCount,
+        replyCharCount,
+        replyWordCount,
+        replyMediaCount,
+        dispatchDurationMs: Date.now() - dispatchStartTime,
+        queuedFinal: dispatchResult?.queuedFinal ?? false,
+        queuedFinalCount: dispatchResult?.counts.final ?? 0,
+        queuedBlockCount: dispatchResult?.counts.block ?? 0,
+        provider: selectedProvider,
+        model: selectedModel,
+        thinkLevel: selectedThinkLevel,
+        dispatchError,
+      });
+    }
   };
 
   // Track which channels we're interested in for filtering firehose events
@@ -2527,6 +2624,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     }
   } finally {
     removeBridge(accountKey, commandBridge);
+    await telemetry?.close();
     try {
       await api?.close();
     } catch (error: any) {

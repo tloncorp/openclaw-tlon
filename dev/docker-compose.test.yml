@@ -41,9 +41,9 @@ services:
     volumes:
       - ships-data:/data
     ports:
-      - "8080:8080"
-      - "8081:8081"
-      - "8082:8082"
+      - "${ZOD_PORT:-8080}:8080"
+      - "${TEN_PORT:-8081}:8081"
+      - "${MUG_PORT:-8082}:8082"
 
   # OpenClaw gateway with plugin
   openclaw:
@@ -56,8 +56,10 @@ services:
       - TLON_CODE=lidlut-tabwed-pillex-ridrup
       - TLON_DM_ALLOWLIST=~ten
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
-      - MODEL=${MODEL:-openrouter/minimax/minimax-m2.1}
+      - BRAVE_API_KEY=${BRAVE_API_KEY}
+      - MODEL=${MODEL:-openrouter/minimax/minimax-m2.5}
       - TLONBOT_TOKEN=${TLONBOT_TOKEN}
+      - VERBOSE=${VERBOSE:-0}
     ports:
       - "${OPENCLAW_GATEWAY_PORT:-18789}:18789"
     volumes:

@@ -28,4 +28,28 @@ describe("Tlon config schema", () => {
 
     expect(parsed.accounts?.primary?.ship).toBe("~zod");
   });
+
+  it("accepts opt-in telemetry configuration", () => {
+    const parsed = TlonConfigSchema.parse({
+      telemetry: {
+        enabled: true,
+        apiKey: "phc_base",
+        host: "https://us.i.posthog.com",
+      },
+      accounts: {
+        hosted: {
+          ship: "~zod",
+          url: "https://example.com",
+          code: "code-123",
+          telemetry: {
+            enabled: true,
+            apiKey: "phc_account",
+          },
+        },
+      },
+    });
+
+    expect(parsed.telemetry?.enabled).toBe(true);
+    expect(parsed.accounts?.hosted?.telemetry?.apiKey).toBe("phc_account");
+  });
 });

@@ -1,3 +1,4 @@
 packages: []
+
 onlyBuiltDependencies:
-  - "@tloncorp/api"
+  - '@tloncorp/api'
