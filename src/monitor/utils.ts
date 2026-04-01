@@ -100,11 +100,6 @@ export function isBotMentioned(
     return false;
   }
 
-  // Check for @all mention
-  if (/@all\b/i.test(messageText)) {
-    return true;
-  }
-
   // Check for ship mention
   const normalizedBotShip = normalizeShip(botShipName);
   const escapedShip = normalizedBotShip.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

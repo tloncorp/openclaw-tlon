@@ -85,7 +85,7 @@ Malicious actors could invite the bot to groups containing:
 | -------------------------------------- | --------------- |
 | Direct ship mention (`~bot-ship`)      | ✅ Yes          |
 | Nickname mention (`nimbus`)            | ✅ Yes          |
-| `@all` mention                         | ✅ Yes          |
+| `@all` mention                         | ❌ No           |
 | Random message without mention         | ❌ No           |
 | Partial ship match (`~bot-ship-extra`) | ❌ No           |
 | Substring nickname (`nimbusly`)        | ❌ No           |
@@ -94,7 +94,6 @@ Malicious actors could invite the bot to groups containing:
 
 - Ship mentions: case-insensitive
 - Nickname mentions: case-insensitive
-- `@all`: case-insensitive
 
 ---
 
