@@ -1,6 +1,5 @@
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 import { spawn } from "node:child_process";
-import { createRequire } from "node:module";
 import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
@@ -18,7 +17,6 @@ import { getSessionRole } from "./src/session-roles.js";
 import { recordToolCall } from "./src/telemetry.js";
 import { checkBlockedSendOperation } from "./src/tlon-tool-guard.js";
 import { resolveTlonAccount } from "./src/types.js";
-import { getSessionRole } from "./src/session-roles.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
