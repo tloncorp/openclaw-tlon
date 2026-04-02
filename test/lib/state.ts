@@ -22,6 +22,7 @@ import {
   sendPost,
   sendReply,
   joinGroup,
+  inviteGroupMembers,
 } from "@tloncorp/api";
 import type { Story } from "@tloncorp/api";
 
@@ -65,8 +66,14 @@ export interface StateClient {
   /** Create a group with a default chat channel */
   createGroup(title: string, memberIds?: string[]): Promise<{ groupId: string; chatChannel: string }>;
 
+  /** Invite ships to a group */
+  inviteToGroup(groupId: string, contactIds: string[]): Promise<void>;
+
   /** Join a group (accept invite) */
   joinGroup(groupId: string): Promise<void>;
+
+  /** Check if this ship is a member of a group */
+  isMemberOfGroup(groupId: string): Promise<boolean>;
 
   /** Send a post (DM or channel) via @tloncorp/api sendPost */
   sendPost(params: {
@@ -208,9 +215,22 @@ export function createStateClient(config: StateClientConfig): StateClient {
       });
     },
 
+    async inviteToGroup(groupId: string, contactIds: string[]) {
+      return withClient(async () => {
+        await inviteGroupMembers({ groupId, contactIds });
+      });
+    },
+
     async joinGroup(groupId: string) {
       return withClient(async () => {
         await joinGroup(groupId);
+      });
+    },
+
+    async isMemberOfGroup(groupId: string) {
+      return withClient(async () => {
+        const groups = await getGroups();
+        return (groups ?? []).some((g: any) => g.id === groupId);
       });
     },
 

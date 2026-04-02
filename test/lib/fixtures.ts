@@ -128,14 +128,24 @@ async function setupFixtures(): Promise<TestFixtures> {
         chatChannel,
       };
       console.log(`[FIXTURES] ✓ Created group: ${groupId}`);
+    }
 
-      // Have the test user accept the invite and join the group
+    // Ensure the test user is a member of the group
+    if (group) {
       try {
-        await userState.joinGroup(groupId);
-        await sleep(2000);
-        console.log(`[FIXTURES] ✓ Test user joined group: ${groupId}`);
+        const isMember = await userState.isMemberOfGroup(group.id);
+        if (!isMember) {
+          console.log(`[FIXTURES] Test user not in group, inviting...`);
+          await botState.inviteToGroup(group.id, [userShip]);
+          await sleep(1000);
+          await userState.joinGroup(group.id);
+          await sleep(2000);
+          console.log(`[FIXTURES] ✓ Test user joined group: ${group.id}`);
+        } else {
+          console.log(`[FIXTURES] ✓ Test user already in group: ${group.id}`);
+        }
       } catch (joinErr) {
-        console.log(`[FIXTURES] Warning: User failed to join group: ${joinErr}`);
+        console.log(`[FIXTURES] Warning: Failed to ensure user in group: ${joinErr}`);
       }
     }
   } catch (err) {
