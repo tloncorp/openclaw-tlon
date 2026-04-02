@@ -146,7 +146,7 @@ echo "==> Container startup logs:"
 docker compose $COMPOSE_FILES logs openclaw
 
 # Gateway timeout needs to account for pnpm install inside container (can take 60+ seconds on slow machines)
-GATEWAY_TIMEOUT=90
+GATEWAY_TIMEOUT=180
 echo "==> Waiting for gateway (port $GATEWAY_PORT)..."
 for i in $(seq 1 $GATEWAY_TIMEOUT); do
   if curl -s "http://localhost:$GATEWAY_PORT/" | grep -qi openclaw; then
