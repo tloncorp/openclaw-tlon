@@ -38,7 +38,7 @@ describe("loop protection", () => {
       // This should reset any consecutive bot counter for this channel
       const response = await fixtures.client.prompt(
         `Hey @${fixtures.botShip}, just checking in as a human`,
-        { timeoutMs: 45_000 }
+        { timeoutMs: 45_000, correlate: false }
       );
 
       expect(response.success).toBe(true);
@@ -52,7 +52,7 @@ describe("loop protection", () => {
       for (let i = 1; i <= 3; i++) {
         const response = await fixtures.client.prompt(
           `Human message ${i} of 3`,
-          { timeoutMs: 30_000 }
+          { timeoutMs: 30_000, correlate: false }
         );
 
         expect(response.success).toBe(true);
