@@ -145,7 +145,7 @@ describe("media", () => {
       `Do not fetch, inspect, validate, or substitute the image.`;
 
     console.log(`\n[TEST] Sending prompt: "${prompt}"`);
-    const response = await fixtures.client.prompt(prompt);
+    const response = await fixtures.client.prompt(prompt, { correlate: false });
     console.log(`[TEST] Response success: ${response.success}`);
     console.log(`[TEST] Response text: ${response.text?.slice(0, 500)}`);
 

@@ -12,7 +12,7 @@ type ScryFn = (params: { app: string; path: string }) => Promise<unknown>;
  * The @tloncorp/api configureClient accepts a `client` that looks like an Urbit instance.
  * Includes stubs for connect/eventSource/scryWithInfo so configureClient never crashes.
  */
-function createClientShim(pokeFn: PokeFn, scryFn?: ScryFn) {
+function createClientShim(pokeFn: PokeFn, shipUrl: string, scryFn?: ScryFn) {
   return {
     poke: (params: { app: string; mark: string; json: unknown }) => pokeFn(params),
     on: () => ({ on: () => ({}) }),
@@ -34,6 +34,7 @@ function createClientShim(pokeFn: PokeFn, scryFn?: ScryFn) {
     // Properties configureClient may access
     verbose: false,
     nodeId: "",
+    url: shipUrl,
   } as any;
 }
 
@@ -47,7 +48,7 @@ export function configureTlonApiWithPoke(
   shipUrl: string,
   scryFn?: ScryFn,
 ): void {
-  const shim = createClientShim(pokeFn, scryFn);
+  const shim = createClientShim(pokeFn, shipUrl, scryFn);
   configureClient({
     shipName: ship.replace(/^~/, ""),
     shipUrl,
@@ -98,7 +99,7 @@ export async function withAuthenticatedTlonApi<T>(
     }
   };
 
-  const shim = createClientShim(api.poke, scryFn);
+  const shim = createClientShim(api.poke, params.url, scryFn);
   configureClient({
     shipName: params.ship.replace(/^~/, ""),
     shipUrl: params.url,

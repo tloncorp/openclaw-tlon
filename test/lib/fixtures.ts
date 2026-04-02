@@ -39,6 +39,25 @@ export interface TestFixtures {
   thirdPartyShip?: string;
 }
 
+interface SettingsAllResponse {
+  all?: Record<
+    string,
+    Record<
+      string,
+      {
+        dmAllowlist?: string[];
+        pendingApprovals?: string;
+      }
+    >
+  >;
+}
+
+interface PendingApproval {
+  id: string;
+  requestingShip: string;
+  notificationMessageId?: string;
+}
+
 let cachedFixtures: TestFixtures | null = null;
 let setupPromise: Promise<TestFixtures> | null = null;
 
@@ -99,35 +118,53 @@ async function setupFixtures(): Promise<TestFixtures> {
   console.log("[FIXTURES] Creating test group...");
   let group: TestFixtures["group"] = null;
 
-  try {
-    // Check for existing fixture group first
-    const existingGroups = await botState.groups();
-    const existing = (existingGroups ?? []).find((g) => {
-      const gr = g as { title?: string };
-      return gr.title?.startsWith("OpenClaw Test Fixtures");
-    }) as { id?: string; title?: string; channels?: Array<{ id?: string }> } | undefined;
+  {
+    // Bounded poll-and-retry: the fakezod groups agent may not be ready
+    // immediately after SSE subscriptions connect. Re-check for an existing
+    // fixture group on every iteration to catch partial creates or groups
+    // created by a concurrent vitest process.
+    const GROUP_TITLE_PREFIX = "OpenClaw Test Fixtures";
+    const groupTitle = `${GROUP_TITLE_PREFIX} ${Date.now().toString(36)}`;
+    const budgetMs = 60_000;
+    const intervalMs = 5_000;
+    const started = Date.now();
 
-    if (existing?.id) {
-      console.log(`[FIXTURES] ✓ Using existing group: ${existing.id}`);
-      const channels = existing.channels ?? [];
-      const chatChannel = channels.find((c) => c.id?.includes("chat"))?.id;
-      group = {
-        id: existing.id,
-        title: existing.title ?? "OpenClaw Test Fixtures",
-        chatChannel: chatChannel ?? `chat/${existing.id}/general`,
-      };
-    } else {
-      // Create new group directly via API (more reliable than prompting agent)
-      const suffix = Date.now().toString(36);
-      const groupTitle = `OpenClaw Test Fixtures ${suffix}`;
+    while (Date.now() - started < budgetMs) {
+      try {
+        const existingGroups = await botState.groups();
+        const existing = (existingGroups ?? []).find((g) => {
+          const gr = g as { title?: string };
+          return gr.title?.startsWith(GROUP_TITLE_PREFIX);
+        }) as { id?: string; title?: string; channels?: Array<{ id?: string }> } | undefined;
 
-      const { groupId, chatChannel } = await botState.createGroup(groupTitle, [userShip]);
-      group = {
-        id: groupId,
-        title: groupTitle,
-        chatChannel,
-      };
-      console.log(`[FIXTURES] ✓ Created group: ${groupId}`);
+        if (existing?.id) {
+          const channels = existing.channels ?? [];
+          const chatChannel = channels.find((c) => c.id?.includes("chat"))?.id;
+          group = {
+            id: existing.id,
+            title: existing.title ?? GROUP_TITLE_PREFIX,
+            chatChannel: chatChannel ?? `chat/${existing.id}/general`,
+          };
+          console.log(`[FIXTURES] ✓ Using existing group: ${existing.id}`);
+          break;
+        }
+
+        const { groupId, chatChannel } = await botState.createGroup(groupTitle, [userShip]);
+        group = { id: groupId, title: groupTitle, chatChannel };
+        console.log(`[FIXTURES] ✓ Created group: ${groupId}`);
+        break;
+      } catch (err) {
+        const elapsed = ((Date.now() - started) / 1000).toFixed(1);
+        console.log(`[FIXTURES] Group setup failed (${elapsed}s elapsed): ${err}`);
+        if (Date.now() - started + intervalMs < budgetMs) {
+          await sleep(intervalMs);
+        }
+      }
+    }
+
+    if (!group) {
+      const elapsed = ((Date.now() - started) / 1000).toFixed(1);
+      console.log(`[FIXTURES] Warning: Could not create or find fixture group after ${elapsed}s`);
     }
 
     // Ensure the test user is a member of the group
@@ -148,22 +185,18 @@ async function setupFixtures(): Promise<TestFixtures> {
         console.log(`[FIXTURES] Warning: Failed to ensure user in group: ${joinErr}`);
       }
     }
-  } catch (err) {
-    console.log(`[FIXTURES] Warning: Failed to create group: ${err}`);
   }
 
-  // 3. Ensure DM channel exists by sending a message
-  console.log("[FIXTURES] Ensuring DM channel exists...");
-  try {
-    // The test client sends via DM, so just sending any prompt establishes the channel
-    await client.prompt("Hello, this is a test setup message.", { timeoutMs: 60_000 });
-    await sleep(2000);
-    console.log("[FIXTURES] ✓ DM channel established");
-  } catch (err) {
-    console.log(`[FIXTURES] Warning: DM setup failed: ${err}`);
-  }
+  // NOTE: No DM channel seeding here. The DM channel is created implicitly by
+  // Urbit's chat agent when the first prompt() call sends a DM. A fire-and-forget
+  // seed DM causes response-shift flakes: the bot replies asynchronously and that
+  // reply can be consumed by a later prompt.
+  //
+  // Prompt matching in client.ts now uses mixed-mode correlation:
+  // default freeform prompts inject a hidden reference tag, while slash commands
+  // and exact-output prompts can use timestamp matching with tagged-post exclusion.
 
-  // 4. Set up third-party (non-owner) ship if configured
+  // 3. Set up third-party (non-owner) ship if configured
   let thirdPartyClient: TestClient | undefined;
   let thirdPartyState: StateClient | undefined;
   let thirdPartyShip: string | undefined;
@@ -177,40 +210,6 @@ async function setupFixtures(): Promise<TestFixtures> {
       testUser: config.thirdParty,
       bot: config.bot,
     });
-
-    console.log(`[FIXTURES] Establishing DM access for ${thirdPartyShip} via approval flow...`);
-    try {
-      // ~mug sends DM (not on allowlist, triggers approval request to owner)
-      const mugPromise = thirdPartyClient.prompt(
-        "Hello, requesting DM access for integration tests.",
-        { timeoutMs: 90_000 },
-      );
-
-      // Wait for the approval notification to reach the owner
-      await sleep(8000);
-
-      // Owner (~ten) approves the DM request via slash command
-      const approvalResponse = await client.prompt("/allow");
-      console.log(
-        `[FIXTURES] Approval response: ${approvalResponse.text?.slice(0, 200)}`,
-      );
-
-      // Wait for ~mug's original message to be processed
-      const mugResponse = await mugPromise;
-      console.log(
-        `[FIXTURES] ${thirdPartyShip} DM response: ${mugResponse.text?.slice(0, 200)}`,
-      );
-
-      if (mugResponse.success) {
-        console.log(`[FIXTURES] ✓ ${thirdPartyShip} DM access established via approval`);
-      } else {
-        console.log(
-          `[FIXTURES] Warning: ${thirdPartyShip} approval flow incomplete: ${mugResponse.error}`,
-        );
-      }
-    } catch (err) {
-      console.log(`[FIXTURES] Warning: ${thirdPartyShip} DM setup failed: ${String(err)}`);
-    }
   }
 
   console.log("[FIXTURES] Setup complete!\n");
@@ -276,6 +275,147 @@ export function requireThirdParty(
       "Test requires third-party ship but it was not configured. " +
         "Set TEST_THIRD_PARTY_URL, TEST_THIRD_PARTY_SHIP, TEST_THIRD_PARTY_CODE env vars."
     );
+  }
+}
+
+export async function ensureThirdPartyDmAccess(fixtures: TestFixtures): Promise<void> {
+  requireThirdParty(fixtures);
+
+  const { botState, client, thirdPartyClient, thirdPartyState, thirdPartyShip, botShip } =
+    fixtures;
+
+  console.log(`[FIXTURES] Ensuring DM access for ${thirdPartyShip}...`);
+
+  await ensureShipUnblocked(botState, thirdPartyShip);
+  await ensureShipOnDmAllowlist(botState, thirdPartyShip);
+
+  if (await hasPriorBotDm(thirdPartyState, botShip)) {
+    console.log(`[FIXTURES] ✓ ${thirdPartyShip} already has prior DM access`);
+    return;
+  }
+
+  const probeToken = `fixture-dm-check-${Date.now().toString(36)}`;
+  const probeResponse = await thirdPartyClient.prompt(
+    `Hello, this is a DM access check for integration tests. Reply with "${probeToken}".`,
+    { timeoutMs: 45_000 },
+  );
+
+  if (probeResponse.success) {
+    console.log(`[FIXTURES] ✓ ${thirdPartyShip} DM access confirmed`);
+    return;
+  }
+
+  console.log(
+    `[FIXTURES] DM probe failed for ${thirdPartyShip}: ${probeResponse.error ?? "no response"}`,
+  );
+
+  const pendingApproval = await waitFor(
+    async () => getPendingApproval(botState, thirdPartyShip),
+    20_000,
+    2000,
+    `pending approval for ${thirdPartyShip}`,
+  ).catch(() => undefined);
+
+  if (!pendingApproval) {
+    throw new Error(
+      `Failed to confirm DM access for ${thirdPartyShip}: ` +
+        `${probeResponse.error ?? "probe did not succeed"}, and no pending approval was found.`,
+    );
+  }
+
+  console.log(
+    `[FIXTURES] Pending approval ${pendingApproval.id} found for ${thirdPartyShip}; approving...`,
+  );
+  const approvalResponse = await client.prompt("/allow", { timeoutMs: 45_000 });
+  console.log(
+    `[FIXTURES] Approval response: ${approvalResponse.text?.slice(0, 200)}`,
+  );
+
+  const confirmToken = `fixture-dm-confirm-${Date.now().toString(36)}`;
+  const confirmResponse = await thirdPartyClient.prompt(
+    `Hello again, this is a DM access confirmation. Reply with "${confirmToken}".`,
+    { timeoutMs: 60_000 },
+  );
+
+  if (!confirmResponse.success) {
+    throw new Error(
+      `DM access approval did not complete for ${thirdPartyShip}: ` +
+        `${confirmResponse.error ?? "no response after approval"}`,
+    );
+  }
+
+  console.log(`[FIXTURES] ✓ ${thirdPartyShip} DM access established`);
+}
+
+async function getDmAllowlist(botState: StateClient): Promise<string[]> {
+  const raw = await botState.scry<SettingsAllResponse>("settings", "/all");
+  return raw?.all?.moltbot?.tlon?.dmAllowlist ?? [];
+}
+
+async function setDmAllowlist(botState: StateClient, ships: string[]): Promise<void> {
+  await botState.poke({
+    app: "settings",
+    mark: "settings-event",
+    json: {
+      "put-entry": {
+        desk: "moltbot",
+        "bucket-key": "tlon",
+        "entry-key": "dmAllowlist",
+        value: ships,
+      },
+    },
+  });
+  await sleep(3000);
+}
+
+async function ensureShipOnDmAllowlist(
+  botState: StateClient,
+  ship: string,
+): Promise<void> {
+  const currentList = await getDmAllowlist(botState);
+  if (!currentList.includes(ship)) {
+    await setDmAllowlist(botState, [...currentList, ship]);
+  }
+}
+
+async function getPendingApproval(
+  botState: StateClient,
+  ship: string,
+): Promise<PendingApproval | undefined> {
+  const raw = await botState.scry<SettingsAllResponse>("settings", "/all");
+  const serialized = raw?.all?.moltbot?.tlon?.pendingApprovals;
+  if (!serialized) {
+    return undefined;
+  }
+
+  const approvals = JSON.parse(serialized) as PendingApproval[];
+  return approvals.find((approval) => approval.requestingShip === ship);
+}
+
+async function ensureShipUnblocked(botState: StateClient, ship: string): Promise<void> {
+  const blocked = await botState.scry<string[]>("chat", "/blocked");
+  if (Array.isArray(blocked) && blocked.includes(ship)) {
+    await botState.poke({
+      app: "chat",
+      mark: "chat-unblock-ship",
+      json: { ship },
+    });
+    await sleep(3000);
+  }
+}
+
+async function hasPriorBotDm(
+  thirdPartyState: StateClient,
+  botShip: string,
+): Promise<boolean> {
+  try {
+    const posts = await thirdPartyState.channelPosts(botShip, 10);
+    return (posts ?? []).some((post) => {
+      const p = post as { authorId?: string; sentAt?: number };
+      return p.authorId === botShip && typeof p.sentAt === "number";
+    });
+  } catch {
+    return false;
   }
 }
 

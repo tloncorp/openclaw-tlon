@@ -9,7 +9,12 @@
  * The current test environment only has one bot, so loop scenarios are skipped.
  */
 import { describe, test, expect, beforeAll } from "vitest";
-import { getFixtures, requireFixtureGroup, type TestFixtures } from "../lib/index.js";
+import {
+  getFixtures,
+  requireFixtureGroup,
+  ensureThirdPartyDmAccess,
+  type TestFixtures,
+} from "../lib/index.js";
 
 describe("loop protection", () => {
   let fixtures: TestFixtures;
@@ -20,7 +25,9 @@ describe("loop protection", () => {
     requireFixtureGroup(fixtures);
     hasThirdParty = !!fixtures.thirdPartyClient;
 
-    if (!hasThirdParty) {
+    if (hasThirdParty) {
+      await ensureThirdPartyDmAccess(fixtures);
+    } else {
       console.log("[LOOP-PROTECTION] Skipping third-party tests - not configured");
     }
   }, 180_000);
@@ -31,7 +38,7 @@ describe("loop protection", () => {
       // This should reset any consecutive bot counter for this channel
       const response = await fixtures.client.prompt(
         `Hey @${fixtures.botShip}, just checking in as a human`,
-        { timeoutMs: 45_000 }
+        { timeoutMs: 45_000, correlate: false }
       );
 
       expect(response.success).toBe(true);
@@ -45,7 +52,7 @@ describe("loop protection", () => {
       for (let i = 1; i <= 3; i++) {
         const response = await fixtures.client.prompt(
           `Human message ${i} of 3`,
-          { timeoutMs: 30_000 }
+          { timeoutMs: 30_000, correlate: false }
         );
 
         expect(response.success).toBe(true);

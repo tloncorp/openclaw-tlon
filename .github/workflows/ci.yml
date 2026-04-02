@@ -50,6 +50,12 @@ jobs:
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           TLONBOT_TOKEN: ${{ secrets.TLONBOT_TOKEN }}
+          BRAVE_API_KEY: ${{ secrets.BRAVE_API_KEY }}
+          TEST_STORAGE_ENDPOINT: ${{ secrets.TEST_STORAGE_ENDPOINT }}
+          TEST_STORAGE_BUCKET: ${{ secrets.TEST_STORAGE_BUCKET }}
+          TEST_STORAGE_ACCESS_KEY: ${{ secrets.TEST_STORAGE_ACCESS_KEY }}
+          TEST_STORAGE_SECRET_KEY: ${{ secrets.TEST_STORAGE_SECRET_KEY }}
+          TEST_STORAGE_REGION: ${{ secrets.TEST_STORAGE_REGION }}
         run: pnpm test:integration
 
       - name: Dump logs on failure
