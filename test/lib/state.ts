@@ -62,7 +62,7 @@ export interface StateClient {
   poke(params: { app: string; mark: string; json: unknown }): Promise<void>;
 
   /** Create a group with a default chat channel */
-  createGroup(title: string): Promise<{ groupId: string; chatChannel: string }>;
+  createGroup(title: string, memberIds?: string[]): Promise<{ groupId: string; chatChannel: string }>;
 
   /** Send a post (DM or channel) via @tloncorp/api sendPost */
   sendPost(params: {
@@ -166,7 +166,7 @@ export function createStateClient(config: StateClientConfig): StateClient {
       return withClient(async () => scry<T>({ app, path }));
     },
 
-    async createGroup(title: string) {
+    async createGroup(title: string, memberIds?: string[]) {
       return withClient(async () => {
         const slug = Math.random().toString(36).slice(2, 10);
         const groupId = `~${shipName}/${slug}`;
@@ -174,6 +174,7 @@ export function createStateClient(config: StateClientConfig): StateClient {
         const chatChannel = `chat/~${shipName}/${channelSlug}`;
 
         await createGroup({
+          memberIds,
           group: {
             id: groupId,
             title,

@@ -121,7 +121,7 @@ async function setupFixtures(): Promise<TestFixtures> {
       const suffix = Date.now().toString(36);
       const groupTitle = `OpenClaw Test Fixtures ${suffix}`;
 
-      const { groupId, chatChannel } = await botState.createGroup(groupTitle);
+      const { groupId, chatChannel } = await botState.createGroup(groupTitle, [userShip]);
       group = {
         id: groupId,
         title: groupTitle,
