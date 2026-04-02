@@ -35,6 +35,12 @@ describe("blobs", () => {
     return text ? [{ inline: [text] }] : [];
   }
 
+  /** Build a story with a proper ship mention inline followed by text */
+  function storyWithMention(ship: string, text: string): Story {
+    const normShip = ship.startsWith("~") ? ship : `~${ship}`;
+    return [{ inline: [{ ship: normShip }, ` ${text}`] }];
+  }
+
   function voiceMemoBlob(token: string): string {
     return JSON.stringify([
       {
@@ -211,7 +217,7 @@ describe("blobs", () => {
     console.log(`[TEST] Sending channel post with voice memo blob (${token})...`);
     await fixtures.userState.sendPost({
       channelId: nest,
-      content: story(`@${botName()} ${token} voice memo attached`),
+      content: storyWithMention(fixtures.botShip, `${token} voice memo attached`),
       blob: voiceMemoBlob(token),
     });
 
@@ -230,7 +236,7 @@ describe("blobs", () => {
     console.log(`[TEST] Sending parent channel post...`);
     await fixtures.userState.sendPost({
       channelId: nest,
-      content: story(`@${botName()} ${token} starting thread`),
+      content: storyWithMention(fixtures.botShip, `${token} starting thread`),
     });
 
     // Wait for bot to respond and join the thread
@@ -252,7 +258,7 @@ describe("blobs", () => {
       channelId: nest,
       parentId: parentPost.id,
       parentAuthor: fixtures.userShip,
-      content: story(`@${botName()} ${token} check this file`),
+      content: storyWithMention(fixtures.botShip, `${token} check this file`),
       blob: fileBlob(token),
     });
 
