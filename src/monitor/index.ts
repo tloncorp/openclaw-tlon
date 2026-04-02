@@ -14,7 +14,7 @@ type ChannelResponse = {
       reply?: {
         id?: string;
         "r-reply"?: {
-          set?: { memo?: Memo & { blob?: string | null }; seal?: Seal };
+          set?: { "reply-essay"?: Memo & { blob?: string | null }; seal?: Seal };
           reacts?: Record<string, unknown>;
         };
       };
@@ -24,7 +24,7 @@ type ChannelResponse = {
 };
 type WritResponseDelta =
   | { add?: { essay?: PostEssay }; reply?: never; "add-react"?: never; "del-react"?: never }
-  | { reply?: { id?: string; delta?: { add?: { memo?: Memo & { blob?: string | null }; id?: string } } }; add?: never; "add-react"?: never; "del-react"?: never }
+  | { reply?: { id?: string; delta?: { add?: { "reply-essay"?: Memo & { blob?: string | null }; id?: string } } }; add?: never; "add-react"?: never; "del-react"?: never }
   | { "add-react"?: { react: string; author: string; ship?: string }; add?: never; reply?: never; "del-react"?: never }
   | { "del-react"?: { author?: string; ship?: string }; add?: never; reply?: never; "add-react"?: never };
 type WritResponse = { whom: string; id: string; response: WritResponseDelta };
@@ -86,7 +86,7 @@ type ChannelAuthorization = {
 };
 
 /**
- * Channel firehose event structure (subscription to /v2 on channels agent)
+ * Channel firehose event structure (subscription to /v4 on channels agent)
  */
 interface ChannelFirehoseEvent {
   nest: string;
@@ -1562,7 +1562,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
   const watchedChannels = new Set<string>(groupChannels);
   const _watchedDMs = new Set<string>();
 
-  // Firehose handler for all channel messages (/v2)
+  // Firehose handler for all channel messages (/v4)
   const handleChannelsFirehose = async (event: ChannelFirehoseEvent) => {
     try {
       const nest = event?.nest;
@@ -1658,14 +1658,14 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
 
       // Handle post responses (new posts and replies)
       const essay = response?.post?.["r-post"]?.set?.essay;
-      const memo = response?.post?.["r-post"]?.reply?.["r-reply"]?.set?.memo;
+      const replyEssay = response?.post?.["r-post"]?.reply?.["r-reply"]?.set?.["reply-essay"];
 
-      const content = memo || essay;
+      const content = replyEssay || essay;
       if (!content) {
         return;
       }
 
-      const isThreadReply = Boolean(memo);
+      const isThreadReply = Boolean(replyEssay);
       const messageId = isThreadReply ? response?.post?.["r-post"]?.reply?.id : response?.post?.id;
 
       if (!processedTracker.mark(messageId)) {
@@ -1804,7 +1804,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     }
   };
 
-  // Firehose handler for all DM messages (/v3)
+  // Firehose handler for all DM messages (/v4)
   // Track which DM invites we've already processed to avoid duplicate accepts
   const processedDmInvites = new Set<string>();
 
@@ -1962,11 +1962,11 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         return;
       }
 
-      // Extract memo from DM thread reply
-      const dmReplyMemo = dmReply?.delta?.add?.memo;
+      // Extract reply-essay from DM thread reply
+      const dmReplyEssay = dmReply?.delta?.add?.["reply-essay"];
       const dmReplyParentId = dmReply ? event.id : undefined;
-      const isDmThreadReply = Boolean(dmReplyMemo);
-      const dmContent = essay || dmReplyMemo;
+      const isDmThreadReply = Boolean(dmReplyEssay);
+      const dmContent = essay || dmReplyEssay;
 
       // For DM thread replies, extract the reply's own ID (distinct from the parent post ID)
       // The reply ID may be in dmReply.id, or we construct it from author/sent
@@ -1974,8 +1974,8 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       if (isDmThreadReply && dmReply) {
         dmReplyOwnId = dmReply.id ?? dmReply.delta?.add?.id;
         // If no explicit reply ID, construct from author/sent (same format as our outbound)
-        if (!dmReplyOwnId && dmReplyMemo?.author && dmReplyMemo?.sent) {
-          dmReplyOwnId = `${normalizeShip(extractAuthorShip(dmReplyMemo.author))}/${dmReplyMemo.sent}`;
+        if (!dmReplyOwnId && dmReplyEssay?.author && dmReplyEssay?.sent) {
+          dmReplyOwnId = `${normalizeShip(extractAuthorShip(dmReplyEssay.author))}/${dmReplyEssay.sent}`;
         }
       }
 
@@ -2089,10 +2089,10 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
   try {
     runtime.log?.("[tlon] Subscribing to firehose updates...");
 
-    // Subscribe to channels firehose (/v2)
+    // Subscribe to channels firehose (/v4)
     await api.subscribe({
       app: "channels",
-      path: "/v2",
+      path: "/v4",
       event: (data) => handleChannelsFirehose(data as ChannelFirehoseEvent),
       err: (error) => {
         runtime.error?.(`[tlon] Channels firehose error: ${String(error)}`);
@@ -2101,12 +2101,12 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         runtime.log?.("[tlon] Channels firehose quit received, SSE client will resubscribe");
       },
     });
-    runtime.log?.("[tlon] Subscribed to channels firehose (/v2)");
+    runtime.log?.("[tlon] Subscribed to channels firehose (/v4)");
 
-    // Subscribe to chat/DM firehose (/v3)
+    // Subscribe to chat/DM firehose (/v4)
     await api.subscribe({
       app: "chat",
-      path: "/v3",
+      path: "/v4",
       event: (data) => handleChatFirehose(data as ChatFirehoseEvent),
       err: (error) => {
         runtime.error?.(`[tlon] Chat firehose error: ${String(error)}`);
@@ -2115,7 +2115,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         runtime.log?.("[tlon] Chat firehose quit received, SSE client will resubscribe");
       },
     });
-    runtime.log?.("[tlon] Subscribed to chat firehose (/v3)");
+    runtime.log?.("[tlon] Subscribed to chat firehose (/v4)");
 
     // Subscribe to contacts updates to track nickname changes
     await api.subscribe({

@@ -191,7 +191,7 @@ describe("UrbitSSEClient", () => {
 
       await client.subscribe({
         app: "channels",
-        path: "/v2",
+        path: "/v4",
         event: eventHandler,
         quit: quitHandler,
       });
@@ -219,7 +219,7 @@ describe("UrbitSSEClient", () => {
       expect(body[0]).toMatchObject({
         action: "subscribe",
         app: "channels",
-        path: "/v2",
+        path: "/v4",
       });
       // New sub ID should be 2
       expect(body[0].id).toBe(2);
@@ -240,7 +240,7 @@ describe("UrbitSSEClient", () => {
 
       await client.subscribe({
         app: "channels",
-        path: "/v2",
+        path: "/v4",
         event: vi.fn(),
         quit: vi.fn(),
       });
