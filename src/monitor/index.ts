@@ -915,6 +915,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
               messageContent: approval.originalMessage.messageContent,
               isGroup: false,
               timestamp: approval.originalMessage.timestamp,
+              blobField: approval.originalMessage.blob,
             });
           }
           break;
@@ -939,6 +940,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
                 timestamp: approval.originalMessage.timestamp,
                 parentId: approval.originalMessage.parentId,
                 isThreadReply: approval.originalMessage.isThreadReply,
+                blobField: approval.originalMessage.blob,
               });
             }
           }
@@ -1783,6 +1785,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
                   timestamp: content.sent || Date.now(),
                   parentId: parentId ?? undefined,
                   isThreadReply,
+                  blob: content.blob ?? undefined,
                 },
               }, pendingApprovals.map((a) => a.id));
               await queueApprovalRequest(approval);
@@ -1881,7 +1884,6 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         return;
       }
 
-      console.log(`[tlon] Received chat firehose event: ${JSON.stringify(event)}`);
 
       const whom = event.whom; // DM partner ship or club ID
       const messageId = event.id;
@@ -2076,6 +2078,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
               messageText,
               messageContent: dmContent.content,
               timestamp: dmContent.sent || Date.now(),
+              blob: dmContent.blob ?? undefined,
             },
           }, pendingApprovals.map((a) => a.id));
           await queueApprovalRequest(approval);
