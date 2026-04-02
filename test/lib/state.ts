@@ -19,7 +19,10 @@ import {
   getGroupAndChannelUnreads,
   scry,
   poke,
+  sendPost,
+  sendReply,
 } from "@tloncorp/api";
+import type { Story } from "@tloncorp/api";
 
 export interface StateClientConfig {
   shipUrl: string;
@@ -60,6 +63,22 @@ export interface StateClient {
 
   /** Create a group with a default chat channel */
   createGroup(title: string): Promise<{ groupId: string; chatChannel: string }>;
+
+  /** Send a post (DM or channel) via @tloncorp/api sendPost */
+  sendPost(params: {
+    channelId: string;
+    content: Story;
+    blob?: string;
+  }): Promise<void>;
+
+  /** Send a reply (DM or channel) via @tloncorp/api sendReply */
+  sendReply(params: {
+    channelId: string;
+    parentId: string;
+    parentAuthor: string;
+    content: Story;
+    blob?: string;
+  }): Promise<void>;
 }
 
 let apiQueue: Promise<unknown> = Promise.resolve();
@@ -181,6 +200,42 @@ export function createStateClient(config: StateClientConfig): StateClient {
     async poke(params: { app: string; mark: string; json: unknown }) {
       return withClient(async () => {
         await poke(params);
+      });
+    },
+
+    async sendPost(params: {
+      channelId: string;
+      content: Story;
+      blob?: string;
+    }) {
+      return withClient(async () => {
+        await sendPost({
+          channelId: params.channelId,
+          authorId: `~${shipName}`,
+          sentAt: Date.now(),
+          content: params.content,
+          blob: params.blob,
+        });
+      });
+    },
+
+    async sendReply(params: {
+      channelId: string;
+      parentId: string;
+      parentAuthor: string;
+      content: Story;
+      blob?: string;
+    }) {
+      return withClient(async () => {
+        await sendReply({
+          channelId: params.channelId,
+          parentId: params.parentId,
+          parentAuthor: params.parentAuthor,
+          authorId: `~${shipName}`,
+          sentAt: Date.now(),
+          content: params.content,
+          blob: params.blob,
+        });
       });
     },
   };

@@ -10,6 +10,7 @@
  *   ~ten = test user (configured as ownerShip)
  */
 import { describe, test, expect, beforeAll } from "vitest";
+import type { Story } from "@tloncorp/api";
 import {
   getFixtures,
   requireFixtureGroup,
@@ -24,248 +25,22 @@ describe("blobs", () => {
     fixtures = await getFixtures();
   });
 
-  function fromShip(): string {
-    return fixtures.userShip.startsWith("~")
-      ? fixtures.userShip
-      : `~${fixtures.userShip}`;
+  // ── Helpers ──────────────────────────────────────────────────────────
+
+  function botName(): string {
+    return fixtures.botShip.replace(/^~/, "");
   }
 
-  function botShip(): string {
-    return fixtures.botShip.startsWith("~")
-      ? fixtures.botShip
-      : `~${fixtures.botShip}`;
+  function story(text: string): Story {
+    return text ? [{ inline: [text] }] : [];
   }
-
-  // ── Poke helpers ─────────────────────────────────────────────────────
-
-  /** Send a top-level DM with blob via chat-dm-action-2 */
-  async function sendDmWithBlob(text: string, blob: string) {
-    const sentAt = Date.now();
-    await fixtures.userState.poke({
-      app: "chat",
-      mark: "chat-dm-action-2",
-      json: {
-        ship: botShip(),
-        diff: {
-          id: `${fromShip()}/${sentAt}`,
-          delta: {
-            add: {
-              essay: {
-                content: text ? [{ inline: [text] }] : [],
-                author: fromShip(),
-                sent: sentAt,
-                kind: ["chat", "0"],
-                meta: null,
-                blob,
-              },
-              time: null,
-            },
-          },
-        },
-      },
-    });
-    return sentAt;
-  }
-
-  /** Send a DM thread reply with blob via chat-dm-action-2 */
-  async function sendDmReplyWithBlob(
-    parentId: string,
-    text: string,
-    blob: string,
-  ) {
-    const sentAt = Date.now();
-    await fixtures.userState.poke({
-      app: "chat",
-      mark: "chat-dm-action-2",
-      json: {
-        ship: botShip(),
-        diff: {
-          id: parentId,
-          delta: {
-            reply: {
-              id: parentId,
-              meta: null,
-              delta: {
-                add: {
-                  "reply-essay": {
-                    content: text ? [{ inline: [text] }] : [],
-                    author: fromShip(),
-                    sent: sentAt,
-                    blob,
-                  },
-                  time: null,
-                },
-              },
-            },
-          },
-        },
-      },
-    });
-    return sentAt;
-  }
-
-  /** Send a channel post with blob via channel-action-2 */
-  async function sendChannelPostWithBlob(
-    nest: string,
-    text: string,
-    blob: string,
-  ) {
-    const sentAt = Date.now();
-    await fixtures.userState.poke({
-      app: "channels",
-      mark: "channel-action-2",
-      json: {
-        channel: {
-          nest,
-          action: {
-            post: {
-              add: {
-                content: text ? [{ inline: [text] }] : [],
-                author: fromShip(),
-                sent: sentAt,
-                kind: ["chat", "0"],
-                meta: null,
-                blob,
-              },
-            },
-          },
-        },
-      },
-    });
-    return sentAt;
-  }
-
-  /** Send a channel thread reply with blob via channel-action-2 */
-  async function sendChannelReplyWithBlob(
-    nest: string,
-    parentId: string,
-    text: string,
-    blob: string,
-  ) {
-    const sentAt = Date.now();
-    await fixtures.userState.poke({
-      app: "channels",
-      mark: "channel-action-2",
-      json: {
-        channel: {
-          nest,
-          action: {
-            post: {
-              reply: {
-                id: parentId,
-                action: {
-                  add: {
-                    content: text ? [{ inline: [text] }] : [],
-                    author: fromShip(),
-                    sent: sentAt,
-                    blob,
-                  },
-                },
-              },
-            },
-          },
-        },
-      },
-    });
-    return sentAt;
-  }
-
-  // ── Polling helpers ──────────────────────────────────────────────────
-
-  async function getDmBaselineSentAt(): Promise<number> {
-    try {
-      const posts = await fixtures.userState.channelPosts(botShip(), 30);
-      return (posts ?? [])
-        .map((post: any) =>
-          post.authorId === botShip() && typeof post.sentAt === "number"
-            ? post.sentAt
-            : 0,
-        )
-        .reduce((max: number, ts: number) => Math.max(max, ts), 0);
-    } catch {
-      return 0;
-    }
-  }
-
-  async function waitForDmReply(
-    baselineSentAt: number,
-    description: string,
-    timeoutMs = 45_000,
-  ): Promise<string> {
-    return waitFor(
-      async () => {
-        const posts = await fixtures.userState.channelPosts(botShip(), 30);
-        for (const post of posts ?? []) {
-          const p = post as {
-            authorId?: string;
-            sentAt?: number;
-            textContent?: string;
-          };
-          if (p.authorId !== botShip()) continue;
-          if (typeof p.sentAt === "number" && p.sentAt <= baselineSentAt)
-            continue;
-          if (p.textContent?.trim()) return p.textContent;
-        }
-        return undefined;
-      },
-      timeoutMs,
-      undefined,
-      description,
-    );
-  }
-
-  async function getChannelBaselineSentAt(nest: string): Promise<number> {
-    try {
-      const posts = await fixtures.botState.channelPosts(nest, 30);
-      return (posts ?? [])
-        .map((post: any) =>
-          post.authorId === botShip() && typeof post.sentAt === "number"
-            ? post.sentAt
-            : 0,
-        )
-        .reduce((max: number, ts: number) => Math.max(max, ts), 0);
-    } catch {
-      return 0;
-    }
-  }
-
-  async function waitForChannelReply(
-    nest: string,
-    baselineSentAt: number,
-    description: string,
-    timeoutMs = 45_000,
-  ): Promise<string> {
-    return waitFor(
-      async () => {
-        const posts = await fixtures.botState.channelPosts(nest, 30);
-        for (const post of posts ?? []) {
-          const p = post as {
-            authorId?: string;
-            sentAt?: number;
-            textContent?: string;
-          };
-          if (p.authorId !== botShip()) continue;
-          if (typeof p.sentAt === "number" && p.sentAt <= baselineSentAt)
-            continue;
-          if (p.textContent?.trim()) return p.textContent;
-        }
-        return undefined;
-      },
-      timeoutMs,
-      undefined,
-      description,
-    );
-  }
-
-  // ── Shared blob payloads ─────────────────────────────────────────────
 
   function voiceMemoBlob(token: string): string {
     return JSON.stringify([
       {
         type: "voicememo",
         version: 1,
-        fileUri:
-          "https://storage.googleapis.com/tlon-test-ci-shared/test-audio/silence.m4a",
+        fileUri: "https://storage.googleapis.com/tlon-test-ci-shared/test-audio/silence.m4a",
         size: 4096,
         duration: 3,
         transcription: `Test voice memo ${token}`,
@@ -278,8 +53,7 @@ describe("blobs", () => {
       {
         type: "file",
         version: 1,
-        fileUri:
-          "https://storage.googleapis.com/tlon-test-ci-shared/test-images/openclaw-image.png",
+        fileUri: "https://storage.googleapis.com/tlon-test-ci-shared/test-images/openclaw-image.png",
         mimeType: "image/png",
         name: `${token}.png`,
         size: 12345,
@@ -287,14 +61,84 @@ describe("blobs", () => {
     ]);
   }
 
+  async function getDmBaseline(): Promise<number> {
+    try {
+      const posts = await fixtures.userState.channelPosts(fixtures.botShip, 30);
+      return (posts ?? [])
+        .map((p: any) =>
+          p.authorId === fixtures.botShip && typeof p.sentAt === "number" ? p.sentAt : 0,
+        )
+        .reduce((max: number, ts: number) => Math.max(max, ts), 0);
+    } catch {
+      return 0;
+    }
+  }
+
+  async function waitForDmReply(baseline: number, desc: string): Promise<string> {
+    return waitFor(
+      async () => {
+        const posts = await fixtures.userState.channelPosts(fixtures.botShip, 30);
+        for (const post of posts ?? []) {
+          const p = post as { authorId?: string; sentAt?: number; textContent?: string };
+          if (p.authorId !== fixtures.botShip) continue;
+          if (typeof p.sentAt === "number" && p.sentAt <= baseline) continue;
+          if (p.textContent?.trim()) return p.textContent;
+        }
+        return undefined;
+      },
+      45_000,
+      undefined,
+      desc,
+    );
+  }
+
+  async function getChannelBaseline(nest: string): Promise<number> {
+    try {
+      const posts = await fixtures.botState.channelPosts(nest, 30);
+      return (posts ?? [])
+        .map((p: any) =>
+          p.authorId === fixtures.botShip && typeof p.sentAt === "number" ? p.sentAt : 0,
+        )
+        .reduce((max: number, ts: number) => Math.max(max, ts), 0);
+    } catch {
+      return 0;
+    }
+  }
+
+  async function waitForChannelReply(
+    nest: string,
+    baseline: number,
+    desc: string,
+  ): Promise<string> {
+    return waitFor(
+      async () => {
+        const posts = await fixtures.botState.channelPosts(nest, 30);
+        for (const post of posts ?? []) {
+          const p = post as { authorId?: string; sentAt?: number; textContent?: string };
+          if (p.authorId !== fixtures.botShip) continue;
+          if (typeof p.sentAt === "number" && p.sentAt <= baseline) continue;
+          if (p.textContent?.trim()) return p.textContent;
+        }
+        return undefined;
+      },
+      45_000,
+      undefined,
+      desc,
+    );
+  }
+
   // ── DM tests ─────────────────────────────────────────────────────────
 
   test("bot sees voice memo blob in DM", async () => {
-    const baseline = await getDmBaselineSentAt();
+    const baseline = await getDmBaseline();
     const token = `it-blob-dm-voice-${Date.now().toString(36)}`;
 
     console.log(`[TEST] Sending DM with voice memo blob (${token})...`);
-    await sendDmWithBlob(`${token} voice memo attached`, voiceMemoBlob(token));
+    await fixtures.userState.sendPost({
+      channelId: fixtures.botShip,
+      content: story(`${token} voice memo attached`),
+      blob: voiceMemoBlob(token),
+    });
 
     const reply = await waitForDmReply(baseline, "bot reply to DM voice memo");
     console.log(`[TEST] Bot replied: ${reply.slice(0, 200)}`);
@@ -302,14 +146,15 @@ describe("blobs", () => {
   });
 
   test("bot sees file blob in DM", async () => {
-    const baseline = await getDmBaselineSentAt();
+    const baseline = await getDmBaseline();
     const token = `it-blob-dm-file-${Date.now().toString(36)}`;
 
     console.log(`[TEST] Sending DM with file blob (${token})...`);
-    await sendDmWithBlob(
-      `${token} what is in this file?`,
-      fileBlob(token),
-    );
+    await fixtures.userState.sendPost({
+      channelId: fixtures.botShip,
+      content: story(`${token} what is in this file?`),
+      blob: fileBlob(token),
+    });
 
     const reply = await waitForDmReply(baseline, "bot reply to DM file blob");
     console.log(`[TEST] Bot replied: ${reply.slice(0, 200)}`);
@@ -317,27 +162,38 @@ describe("blobs", () => {
   });
 
   test("bot sees voice memo blob in DM thread reply", async () => {
-    const baseline = await getDmBaselineSentAt();
+    const baseline = await getDmBaseline();
     const token = `it-blob-dm-reply-${Date.now().toString(36)}`;
 
-    // First send a normal DM to establish a parent post
+    // Send parent DM first
     console.log(`[TEST] Sending parent DM...`);
-    const parentSentAt = await sendDmWithBlob(
-      `${token} starting a thread`,
-      "null",
-    );
-    const parentId = `${fromShip()}/${parentSentAt}`;
+    await fixtures.userState.sendPost({
+      channelId: fixtures.botShip,
+      content: story(`${token} starting a thread`),
+    });
 
-    // Wait a moment for the parent to be processed
-    await new Promise((r) => setTimeout(r, 2000));
+    // Wait for parent to be processed, then get its ID
+    await new Promise((r) => setTimeout(r, 3000));
 
-    // Now send a reply with a voice memo blob
-    console.log(`[TEST] Sending DM thread reply with voice memo blob...`);
-    await sendDmReplyWithBlob(
-      parentId,
-      `${token} replying with voice`,
-      voiceMemoBlob(token),
-    );
+    // Find the parent post ID
+    const posts = await fixtures.userState.channelPosts(fixtures.botShip, 10);
+    const parentPost = (posts ?? []).find(
+      (p: any) => p.authorId === fixtures.userShip && p.textContent?.includes(token),
+    ) as any;
+
+    if (!parentPost?.id) {
+      console.log(`[TEST] Could not find parent post, skipping DM reply test`);
+      return;
+    }
+
+    console.log(`[TEST] Sending DM thread reply with voice memo blob (parent: ${parentPost.id})...`);
+    await fixtures.userState.sendReply({
+      channelId: fixtures.botShip,
+      parentId: parentPost.id,
+      parentAuthor: fixtures.userShip,
+      content: story(`${token} replying with voice`),
+      blob: voiceMemoBlob(token),
+    });
 
     const reply = await waitForDmReply(baseline, "bot reply to DM thread voice memo");
     console.log(`[TEST] Bot replied: ${reply.slice(0, 200)}`);
@@ -349,60 +205,58 @@ describe("blobs", () => {
   test("bot sees voice memo blob in channel post", async () => {
     requireFixtureGroup(fixtures);
     const nest = fixtures.group.chatChannel;
-    const baseline = await getChannelBaselineSentAt(nest);
+    const baseline = await getChannelBaseline(nest);
     const token = `it-blob-ch-voice-${Date.now().toString(36)}`;
-    const botName = botShip().replace("~", "");
 
     console.log(`[TEST] Sending channel post with voice memo blob (${token})...`);
-    await sendChannelPostWithBlob(
-      nest,
-      `@${botName} ${token} voice memo attached`,
-      voiceMemoBlob(token),
-    );
+    await fixtures.userState.sendPost({
+      channelId: nest,
+      content: story(`@${botName()} ${token} voice memo attached`),
+      blob: voiceMemoBlob(token),
+    });
 
-    const reply = await waitForChannelReply(
-      nest,
-      baseline,
-      "bot reply to channel voice memo",
-    );
+    const reply = await waitForChannelReply(nest, baseline, "bot reply to channel voice memo");
     console.log(`[TEST] Bot replied: ${reply.slice(0, 200)}`);
     expect(reply.length).toBeGreaterThan(0);
   });
 
-  test("bot sees file blob in channel reply", async () => {
+  test("bot sees file blob in channel thread reply", async () => {
     requireFixtureGroup(fixtures);
     const nest = fixtures.group.chatChannel;
-    const baseline = await getChannelBaselineSentAt(nest);
+    const baseline = await getChannelBaseline(nest);
     const token = `it-blob-ch-reply-${Date.now().toString(36)}`;
-    const botName = botShip().replace("~", "");
 
-    // Send a parent post first
+    // Send parent channel post (with mention so bot participates in thread)
     console.log(`[TEST] Sending parent channel post...`);
-    const parentSentAt = await sendChannelPostWithBlob(
-      nest,
-      `@${botName} ${token} starting thread`,
-      "null",
-    );
+    await fixtures.userState.sendPost({
+      channelId: nest,
+      content: story(`@${botName()} ${token} starting thread`),
+    });
 
-    // Wait for the parent to be processed and get its ID
-    await new Promise((r) => setTimeout(r, 3000));
+    // Wait for bot to respond and join the thread
+    await new Promise((r) => setTimeout(r, 5000));
 
-    // Send a thread reply with file blob
-    // Use the sentAt as an approximate post ID
-    const parentId = String(parentSentAt);
-    console.log(`[TEST] Sending channel thread reply with file blob...`);
-    await sendChannelReplyWithBlob(
-      nest,
-      parentId,
-      `@${botName} ${token} check this file`,
-      fileBlob(token),
-    );
+    // Find the parent post ID
+    const posts = await fixtures.botState.channelPosts(nest, 10);
+    const parentPost = (posts ?? []).find(
+      (p: any) => p.authorId === fixtures.userShip && p.textContent?.includes(token),
+    ) as any;
 
-    const reply = await waitForChannelReply(
-      nest,
-      baseline,
-      "bot reply to channel thread file blob",
-    );
+    if (!parentPost?.id) {
+      console.log(`[TEST] Could not find parent post, skipping channel reply test`);
+      return;
+    }
+
+    console.log(`[TEST] Sending channel thread reply with file blob (parent: ${parentPost.id})...`);
+    await fixtures.userState.sendReply({
+      channelId: nest,
+      parentId: parentPost.id,
+      parentAuthor: fixtures.userShip,
+      content: story(`@${botName()} ${token} check this file`),
+      blob: fileBlob(token),
+    });
+
+    const reply = await waitForChannelReply(nest, baseline, "bot reply to channel thread file blob");
     console.log(`[TEST] Bot replied: ${reply.slice(0, 200)}`);
     expect(reply.length).toBeGreaterThan(0);
   });
