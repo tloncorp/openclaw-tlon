@@ -1,20 +1,25 @@
 import type { RuntimeEnv, ReplyPayload, OpenClawConfig } from "openclaw/plugin-sdk";
-import type { Memo, Story } from "@tloncorp/api";
+import type { Story } from "@tloncorp/api";
 
 // Local structural types — @tloncorp/api defines these internally but
 // does not export them from its public entrypoint.
 type Author = string | { ship: string };
-type PostEssay = { content: Story; author: Author; sent: number; blob?: string | null };
+type Essay = {
+  content: Story;
+  author: Author;
+  sent: number;
+  blob?: string | null;
+};
 type Seal = { "parent-id"?: string; parent?: string; [k: string]: unknown };
 type ChannelResponse = {
   post?: {
     id?: string;
     "r-post"?: {
-      set?: { essay?: PostEssay; seal?: Seal } | null;
+      set?: { essay?: Essay; seal?: Seal } | null;
       reply?: {
         id?: string;
         "r-reply"?: {
-          set?: { "reply-essay"?: Memo & { blob?: string | null }; seal?: Seal };
+          set?: { "reply-essay"?: Essay; seal?: Seal };
           reacts?: Record<string, unknown>;
         };
       };
@@ -23,8 +28,8 @@ type ChannelResponse = {
   };
 };
 type WritResponseDelta =
-  | { add?: { essay?: PostEssay }; reply?: never; "add-react"?: never; "del-react"?: never }
-  | { reply?: { id?: string; delta?: { add?: { "reply-essay"?: Memo & { blob?: string | null }; id?: string } } }; add?: never; "add-react"?: never; "del-react"?: never }
+  | { add?: { essay?: Essay }; reply?: never; "add-react"?: never; "del-react"?: never }
+  | { reply?: { id?: string; delta?: { add?: { "reply-essay"?: Essay; id?: string } } }; add?: never; "add-react"?: never; "del-react"?: never }
   | { "add-react"?: { react: string; author: string; ship?: string }; add?: never; reply?: never; "del-react"?: never }
   | { "del-react"?: { author?: string; ship?: string }; add?: never; reply?: never; "add-react"?: never };
 type WritResponse = { whom: string; id: string; response: WritResponseDelta };
@@ -1157,7 +1162,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       const blobAnnotations = formatBlobAnnotations(blobData);
       if (blobAnnotations) {
         messageText = blobAnnotations + "\n" + messageText;
-        runtime.log?.(`[tlon] Added blob annotations: ${blobData.length} attachment(s)`);
+        runtime.log?.(`[tlon] Added blob annotations: ${blobAnnotations} attachment(s)`);
       }
 
       // Download blob files as attachments
@@ -1165,7 +1170,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         const blobAttachments = await downloadBlobAttachments(blobData);
         if (blobAttachments.length > 0) {
           attachments = attachments.concat(blobAttachments);
-          runtime.log?.(`[tlon] Downloaded ${blobAttachments.length} blob attachment(s)`);
+          runtime.log?.(`[tlon] Downloaded blob attachment(s) ${JSON.stringify(blobAttachments)}`);
         }
       } catch (error: any) {
         runtime.log?.(`[tlon] Failed to download blob attachments: ${error?.message ?? String(error)}`);
@@ -1392,6 +1397,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
 
     const ctxPayload = core.channel.reply.finalizeInboundContext({
       Body: body,
+      BodyForAgent: bodyWithAttachments,
       RawBody: messageText,
       CommandBody: commandBody,
       From: isGroup ? `tlon:group:${groupChannel}` : `tlon:${senderShip}`,
@@ -1408,8 +1414,12 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       Provider: "tlon",
       Surface: "tlon",
       MessageSid: messageId,
-      // Include downloaded media attachments
-      ...(attachments.length > 0 && { Attachments: attachments }),
+      // Include downloaded media attachments (MediaPaths/MediaUrls/MediaTypes for OpenClaw media pipeline)
+      ...(attachments.length > 0 && {
+        MediaPaths: attachments.map((a) => a.path),
+        MediaUrls: attachments.map((a) => a.path),
+        MediaTypes: attachments.map((a) => a.contentType),
+      }),
       OriginatingChannel: "tlon",
       OriginatingTo: `tlon:${isGroup ? groupChannel : senderShip}`,
       // Include thread context for automatic reply routing
@@ -1681,7 +1691,8 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       const citedContent = await resolveAllCites(content.content);
       const rawText = extractMessageText(content.content);
       const messageText = citedContent + rawText;
-      if (!messageText.trim()) {
+      const hasBlob = Boolean((content as any)?.blob);
+      if (!messageText.trim() && !hasBlob) {
         return;
       }
 
@@ -1721,12 +1732,15 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       const inParticipatedThread =
         isThreadReply && parentId && participatedThreads.has(String(parentId));
 
-      if (!mentioned && !inParticipatedThread) {
+      const isOwnerBlob = hasBlob && isOwner(senderShip);
+      if (!mentioned && !inParticipatedThread && !isOwnerBlob) {
         return;
       }
 
       // Log why we're responding
-      if (inParticipatedThread && !mentioned) {
+      if (isOwnerBlob && !mentioned && !inParticipatedThread) {
+        runtime.log?.(`[tlon] Responding to owner blob-only message in ${nest}`);
+      } else if (inParticipatedThread && !mentioned) {
         runtime.log?.(`[tlon] Responding to thread we participated in (no mention): ${parentId}`);
       }
 
@@ -1867,6 +1881,8 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         return;
       }
 
+      console.log(`[tlon] Received chat firehose event: ${JSON.stringify(event)}`);
+
       const whom = event.whom; // DM partner ship or club ID
       const messageId = event.id;
       const response = event.response;
@@ -1990,7 +2006,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         return;
       }
 
-      const authorShip = normalizeShip(extractAuthorShip(dmContent?.author));
+      const authorShip = normalizeShip(extractAuthorShip(dmContent.author));
       const partnerShip = extractDmPartnerShip(whom);
       const senderShip = partnerShip || authorShip;
 
@@ -2025,7 +2041,8 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       const citedContent = await resolveAllCites(dmContent.content);
       const rawText = extractMessageText(dmContent.content);
       const messageText = citedContent + rawText;
-      if (!messageText.trim()) {
+      const hasBlob = Boolean((dmContent as any)?.blob);
+      if (!messageText.trim() && !hasBlob) {
         return;
       }
 
@@ -2037,7 +2054,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
           senderShip,
           messageText,
           messageContent: dmContent.content,
-          blobField: (dmContent as any).blob,
+          blobField: dmContent.blob,
           isGroup: false,
           timestamp: dmContent.sent || Date.now(),
           parentId: dmReplyParentId,
@@ -2073,7 +2090,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         senderShip,
         messageText,
         messageContent: dmContent.content, // Pass raw content for media extraction
-        blobField: (dmContent as any).blob,
+        blobField: dmContent.blob,
         isGroup: false,
         timestamp: dmContent.sent || Date.now(),
         parentId: dmReplyParentId,
