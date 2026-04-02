@@ -24,7 +24,7 @@ describe("blobs", () => {
 
   /**
    * Send a DM with blob data directly via poke.
-   * Uses essay format with blob field (JSON string of PostBlobDataEntry[]).
+   * Uses chat-dm-action-2 (v7) with essay that includes blob field.
    */
   async function sendDmWithBlob(
     toShip: string,
@@ -37,23 +37,21 @@ describe("blobs", () => {
     const targetShip = toShip.startsWith("~") ? toShip : `~${toShip}`;
     const sentAt = Date.now();
 
-    // Use chat-dm-action with essay that includes blob
     const action = {
       ship: targetShip,
       diff: {
         id: `${fromShip}/${sentAt}`,
         delta: {
           add: {
-            memo: {
-              content: text
-                ? [{ inline: [text] }]
-                : [],
+            essay: {
+              content: text ? [{ inline: [text] }] : [],
               author: fromShip,
               sent: sentAt,
+              kind: ["chat", "0"],
+              meta: null,
+              blob,
             },
-            kind: ["chat", "0"],
             time: null,
-            blob,
           },
         },
       },
@@ -61,7 +59,7 @@ describe("blobs", () => {
 
     await fixtures.userState.poke({
       app: "chat",
-      mark: "chat-dm-action",
+      mark: "chat-dm-action-2",
       json: action,
     });
   }
