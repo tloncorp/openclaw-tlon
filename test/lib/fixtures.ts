@@ -128,6 +128,15 @@ async function setupFixtures(): Promise<TestFixtures> {
         chatChannel,
       };
       console.log(`[FIXTURES] ✓ Created group: ${groupId}`);
+
+      // Have the test user accept the invite and join the group
+      try {
+        await userState.joinGroup(groupId);
+        await sleep(2000);
+        console.log(`[FIXTURES] ✓ Test user joined group: ${groupId}`);
+      } catch (joinErr) {
+        console.log(`[FIXTURES] Warning: User failed to join group: ${joinErr}`);
+      }
     }
   } catch (err) {
     console.log(`[FIXTURES] Warning: Failed to create group: ${err}`);

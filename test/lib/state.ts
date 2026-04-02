@@ -21,6 +21,7 @@ import {
   poke,
   sendPost,
   sendReply,
+  joinGroup,
 } from "@tloncorp/api";
 import type { Story } from "@tloncorp/api";
 
@@ -63,6 +64,9 @@ export interface StateClient {
 
   /** Create a group with a default chat channel */
   createGroup(title: string, memberIds?: string[]): Promise<{ groupId: string; chatChannel: string }>;
+
+  /** Join a group (accept invite) */
+  joinGroup(groupId: string): Promise<void>;
 
   /** Send a post (DM or channel) via @tloncorp/api sendPost */
   sendPost(params: {
@@ -201,6 +205,12 @@ export function createStateClient(config: StateClientConfig): StateClient {
     async poke(params: { app: string; mark: string; json: unknown }) {
       return withClient(async () => {
         await poke(params);
+      });
+    },
+
+    async joinGroup(groupId: string) {
+      return withClient(async () => {
+        await joinGroup(groupId);
       });
     },
 
