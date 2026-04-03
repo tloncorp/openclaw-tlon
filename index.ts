@@ -16,7 +16,9 @@ import { setTlonRuntime } from "./src/runtime.js";
 import { getSessionRole } from "./src/session-roles.js";
 import { recordToolCall } from "./src/telemetry.js";
 import { checkBlockedSendOperation } from "./src/tlon-tool-guard.js";
-import { resolveTlonAccount } from "./src/types.js";
+import { resolveTlonAccount, listTlonAccountIds } from "./src/types.js";
+import { createGatewayStatusManager, setGatewayStatusManager } from "./src/gateway-status.js";
+import { gatewayStop } from "@tloncorp/api";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -192,6 +194,47 @@ const plugin = {
   register(api: OpenClawPluginApi) {
     setTlonRuntime(api.runtime);
     api.registerChannel({ plugin: tlonPlugin });
+
+    // ── Gateway-status liveness integration ───────────────────
+    //
+    // v1 requires exactly one Tlon account. With multiple accounts, multiple
+    // monitors call configureTlonApiWithPoke() and the last one wins the global
+    // @tloncorp/api singleton — making it unsafe to route heartbeats or stop
+    // pokes to a specific ship. Disable entirely rather than route to the wrong ship.
+    const gsAccountIds = listTlonAccountIds(api.config);
+    setGatewayStatusManager(null);
+
+    if (gsAccountIds.length > 1) {
+      api.logger.warn(
+        `[gateway-status] disabled: ${gsAccountIds.length} Tlon accounts configured, ` +
+          `but v1 only supports one (global @tloncorp/api client cannot target multiple ships)`,
+      );
+    } else if (gsAccountIds.length === 1) {
+      const gsManager = createGatewayStatusManager({
+        logger: { log: (m) => api.logger.info(m), error: (m) => api.logger.warn(m) },
+      });
+      setGatewayStatusManager(gsManager);
+
+      api.on("gateway_start", () => {
+        gsManager.signalGatewayStarted();
+        api.logger.info("[gateway-status] gateway_start received");
+      });
+
+      api.on("gateway_stop", async (event) => {
+        if (!gsManager.activated || gsManager.stopped) {
+          return;
+        }
+        gsManager.stopHeartbeat();
+        gsManager.markStopped();
+        try {
+          await gatewayStop(event.reason ?? "shutdown");
+          api.logger.info(`[gateway-status] stopped (reason=${event.reason ?? "shutdown"})`);
+        } catch (err) {
+          api.logger.warn(`[gateway-status] stop poke failed: ${String(err)}`);
+        }
+      });
+    }
+    // else: zero accounts configured — nothing to do
 
     // Register /tlon-version command
     api.registerCommand({

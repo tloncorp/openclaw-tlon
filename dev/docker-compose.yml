@@ -8,6 +8,9 @@ services:
     environment:
       # Default to MiniMax 2.1 via OpenRouter if MODEL not set in .env
       - MODEL=${MODEL:-openrouter/minimax/minimax-m2.1}
+      # Inside the container, the local tlon-apps/homestead checkout is always mounted here.
+      # This must not use the host absolute path from .env.
+      - TLON_APPS_DIR=/workspace/tlon-apps
     ports:
       - "${OPENCLAW_GATEWAY_PORT:-18789}:18789"
     volumes:
@@ -17,8 +20,9 @@ services:
       - openclaw-tlon-modules:/workspace/openclaw-tlon/node_modules
       # Mount tlonbot for config and prompts
       - ../../tlonbot:/workspace/tlonbot
-      # Local tlon-apps checkout for dev-only @tloncorp/api override builds
-      - ../../tlon-apps:/workspace/tlon-apps
+      # Local tlon-apps/homestead checkout for dev-only @tloncorp/api override builds.
+      # Set TLON_APPS_DIR when your local checkout is not named ../tlon-apps.
+      - ${TLON_APPS_DIR:-../../tlon-apps}:/workspace/tlon-apps
       # Note: tlon-skill is installed from npm, no mount needed
       # Persist OpenClaw state
       - openclaw-state:/root/.openclaw
