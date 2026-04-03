@@ -8,7 +8,9 @@ import { PLUGIN_COMMIT } from "./src/version.generated.js";
 
 // Get package version at runtime
 const require = createRequire(import.meta.url);
-const { version: PLUGIN_VERSION } = require("./package.json") as { version: string };
+const { version: PLUGIN_VERSION } = require("./package.json") as {
+  version: string;
+};
 import { emptyPluginConfigSchema } from "openclaw/plugin-sdk";
 import { tlonPlugin } from "./src/channel.js";
 import { resolveBridgeForCommand } from "./src/monitor/command-auth.js";
@@ -17,7 +19,10 @@ import { getSessionRole } from "./src/session-roles.js";
 import { recordToolCall } from "./src/telemetry.js";
 import { checkBlockedSendOperation } from "./src/tlon-tool-guard.js";
 import { resolveTlonAccount, listTlonAccountIds } from "./src/types.js";
-import { createGatewayStatusManager, setGatewayStatusManager } from "./src/gateway-status.js";
+import {
+  createGatewayStatusManager,
+  setGatewayStatusManager,
+} from "./src/gateway-status.js";
 import { gatewayStop } from "@tloncorp/api";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -82,7 +87,9 @@ function findSubcommandIndex(args: string[]): number {
 function findTlonBinary(): string {
   // Check in node_modules/.bin
   const skillBin = join(__dirname, "node_modules", ".bin", "tlon");
-  console.log(`[tlon] Checking for binary at: ${skillBin}, exists: ${existsSync(skillBin)}`);
+  console.log(
+    `[tlon] Checking for binary at: ${skillBin}, exists: ${existsSync(skillBin)}`,
+  );
   if (existsSync(skillBin)) return skillBin;
 
   // Check for platform-specific binary directly
@@ -211,7 +218,10 @@ const plugin = {
       );
     } else if (gsAccountIds.length === 1) {
       const gsManager = createGatewayStatusManager({
-        logger: { log: (m) => api.logger.info(m), error: (m) => api.logger.warn(m) },
+        logger: {
+          log: (m) => api.logger.info(m),
+          error: (m) => api.logger.warn(m),
+        },
       });
       setGatewayStatusManager(gsManager);
 
@@ -227,8 +237,13 @@ const plugin = {
         gsManager.stopHeartbeat();
         gsManager.markStopped();
         try {
-          await gatewayStop(event.reason ?? "shutdown");
-          api.logger.info(`[gateway-status] stopped (reason=${event.reason ?? "shutdown"})`);
+          await gatewayStop({
+            bootId: gsManager.bootId,
+            reason: event.reason ?? "shutdown",
+          });
+          api.logger.info(
+            `[gateway-status] stopped (reason=${event.reason ?? "shutdown"})`,
+          );
         } catch (err) {
           api.logger.warn(`[gateway-status] stop poke failed: ${String(err)}`);
         }
@@ -259,7 +274,9 @@ const plugin = {
     if (credentials) {
       api.logger.info(`[tlon] Credentials available for ${account.ship}`);
     } else {
-      api.logger.warn(`[tlon] No credentials configured - tlon tool will rely on env vars`);
+      api.logger.warn(
+        `[tlon] No credentials configured - tlon tool will rely on env vars`,
+      );
     }
 
     api.registerTool({
@@ -317,7 +334,8 @@ const plugin = {
             details: undefined,
           };
         } catch (error: unknown) {
-          const message = error instanceof Error ? error.message : String(error);
+          const message =
+            error instanceof Error ? error.message : String(error);
           return {
             content: [{ type: "text" as const, text: `Error: ${message}` }],
             details: { error: true },
@@ -375,7 +393,12 @@ const plugin = {
       handler: async (ctx) => {
         const result = resolveBridgeForCommand(ctx);
         if ("error" in result) return { text: result.error };
-        return { text: await result.bridge.handleAction("approve", ctx.args?.trim() || undefined) };
+        return {
+          text: await result.bridge.handleAction(
+            "approve",
+            ctx.args?.trim() || undefined,
+          ),
+        };
       },
     });
 
@@ -386,7 +409,12 @@ const plugin = {
       handler: async (ctx) => {
         const result = resolveBridgeForCommand(ctx);
         if ("error" in result) return { text: result.error };
-        return { text: await result.bridge.handleAction("deny", ctx.args?.trim() || undefined) };
+        return {
+          text: await result.bridge.handleAction(
+            "deny",
+            ctx.args?.trim() || undefined,
+          ),
+        };
       },
     });
 
@@ -397,7 +425,12 @@ const plugin = {
       handler: async (ctx) => {
         const result = resolveBridgeForCommand(ctx);
         if ("error" in result) return { text: result.error };
-        return { text: await result.bridge.handleAction("block", ctx.args?.trim() || undefined) };
+        return {
+          text: await result.bridge.handleAction(
+            "block",
+            ctx.args?.trim() || undefined,
+          ),
+        };
       },
     });
 
