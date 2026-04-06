@@ -35,3 +35,5 @@ export {
 } from "./fixtures.js";
 
 export { getContainerLogsSince, toolWasInvoked } from "./docker-logs.js";
+
+export { scoreResponse, type VerbosityMetrics } from "./verbosity.js";
