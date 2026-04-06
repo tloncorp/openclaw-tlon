@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { createWriteStream } from "node:fs";
-import { mkdir } from "node:fs/promises";
+import { mkdir, unlink } from "node:fs/promises";
 import { homedir } from "node:os";
 import * as path from "node:path";
-import { Readable } from "node:stream";
+import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { fetchWithSsrFGuard } from "openclaw/plugin-sdk";
 import { parsePostBlob } from "@tloncorp/api";
@@ -12,6 +12,7 @@ import { getDefaultSsrFPolicy } from "../urbit/context.js";
 
 // Default to OpenClaw workspace media directory
 const DEFAULT_MEDIA_DIR = path.join(homedir(), ".openclaw", "workspace", "media", "inbound");
+export const MAX_BLOB_DOWNLOAD_BYTES = 100 * 1024 * 1024;
 
 export interface ExtractedImage {
   url: string;
@@ -22,6 +23,25 @@ export interface DownloadedMedia {
   localPath: string;
   contentType: string;
   originalUrl: string;
+}
+
+interface DownloadMediaOptions {
+  maxBytes?: number;
+  onTooLarge?: (info: { declaredSizeBytes?: number; observedSizeBytes?: number }) => void;
+}
+
+export interface BlobAttachmentDownloadResult {
+  attachments: Array<{ path: string; contentType: string }>;
+  notices: string[];
+}
+
+class MediaTooLargeError extends Error {
+  constructor(
+    public readonly observedSizeBytes: number,
+    public readonly maxBytes: number,
+  ) {
+    super(`media exceeds ${maxBytes} byte limit`);
+  }
 }
 
 /**
@@ -54,7 +74,10 @@ export function extractImageBlocks(content: unknown): ExtractedImage[] {
 export async function downloadMedia(
   url: string,
   mediaDir: string = DEFAULT_MEDIA_DIR,
+  options: DownloadMediaOptions = {},
 ): Promise<DownloadedMedia | null> {
+  let localPath: string | null = null;
+
   try {
     // Validate URL is http/https before fetching
     const parsedUrl = new URL(url);
@@ -85,9 +108,20 @@ export async function downloadMedia(
       const contentType = response.headers.get("content-type") || "application/octet-stream";
       const ext = getExtensionFromContentType(contentType) || getExtensionFromUrl(url) || "bin";
 
+      const contentLength = response.headers.get("content-length");
+      const declaredSizeBytes =
+        contentLength && /^\d+$/.test(contentLength) ? Number.parseInt(contentLength, 10) : undefined;
+      if (options.maxBytes !== undefined && declaredSizeBytes !== undefined && declaredSizeBytes > options.maxBytes) {
+        options.onTooLarge?.({ declaredSizeBytes });
+        console.warn(
+          `[tlon-media] Skipping ${url}: declared size ${declaredSizeBytes} exceeds ${options.maxBytes} byte limit`,
+        );
+        return null;
+      }
+
       // Generate unique filename
       const filename = `${randomUUID()}.${ext}`;
-      const localPath = path.join(mediaDir, filename);
+      localPath = path.join(mediaDir, filename);
 
       // Stream to file
       const body = response.body;
@@ -97,7 +131,22 @@ export async function downloadMedia(
       }
 
       const writeStream = createWriteStream(localPath);
-      await pipeline(Readable.fromWeb(body as any), writeStream);
+      let observedSizeBytes = 0;
+      const limitTransform =
+        options.maxBytes === undefined
+          ? undefined
+          : new Transform({
+              transform(chunk, _encoding, callback) {
+                observedSizeBytes += Buffer.byteLength(chunk);
+                if (observedSizeBytes > options.maxBytes!) {
+                  callback(new MediaTooLargeError(observedSizeBytes, options.maxBytes!));
+                  return;
+                }
+                callback(null, chunk);
+              },
+            });
+
+      await pipeline(Readable.fromWeb(body as any), ...(limitTransform ? [limitTransform] : []), writeStream);
 
       return {
         localPath,
@@ -108,6 +157,18 @@ export async function downloadMedia(
       await release();
     }
   } catch (error: unknown) {
+    if (localPath) {
+      await unlink(localPath).catch(() => undefined);
+    }
+
+    if (error instanceof MediaTooLargeError) {
+      options.onTooLarge?.({ observedSizeBytes: error.observedSizeBytes });
+      console.warn(
+        `[tlon-media] Skipping ${url}: streamed size ${error.observedSizeBytes} exceeds ${error.maxBytes} byte limit`,
+      );
+      return null;
+    }
+
     const message = error instanceof Error ? error.message : String(error);
     console.error(`[tlon-media] Error downloading ${url}: ${message}`);
     return null;
@@ -237,8 +298,9 @@ export function formatBlobAnnotations(blobData: ClientPostBlobData): string {
 export async function downloadBlobAttachments(
   blobData: ClientPostBlobData,
   mediaDir?: string,
-): Promise<Array<{ path: string; contentType: string }>> {
+): Promise<BlobAttachmentDownloadResult> {
   const attachments: Array<{ path: string; contentType: string }> = [];
+  const notices: string[] = [];
 
   for (const entry of blobData) {
     if (entry.type === "unknown") continue;
@@ -254,7 +316,17 @@ export async function downloadBlobAttachments(
       continue;
     }
 
-    const downloaded = await downloadMedia(uri, mediaDir);
+    if (entry.size !== undefined && entry.size > MAX_BLOB_DOWNLOAD_BYTES) {
+      notices.push(formatBlobTooLargeNotice(entry, entry.size));
+      continue;
+    }
+
+    const downloaded = await downloadMedia(uri, mediaDir, {
+      maxBytes: MAX_BLOB_DOWNLOAD_BYTES,
+      onTooLarge: ({ declaredSizeBytes, observedSizeBytes }) => {
+        notices.push(formatBlobTooLargeNotice(entry, declaredSizeBytes ?? observedSizeBytes));
+      },
+    });
     if (downloaded) {
       attachments.push({
         path: downloaded.localPath,
@@ -263,7 +335,13 @@ export async function downloadBlobAttachments(
     }
   }
 
-  return attachments;
+  return { attachments, notices };
+}
+
+function formatBlobTooLargeNotice(entry: Exclude<ClientPostBlobData[number], { type: "unknown" }>, sizeBytes?: number): string {
+  const label = entry.type === "voicememo" ? "voice memo" : entry.name || "blob attachment";
+  const sizeText = sizeBytes !== undefined ? formatFileSize(sizeBytes) : "unknown size";
+  return `[blob not downloaded: ${label} is ${sizeText}, over the ${formatFileSize(MAX_BLOB_DOWNLOAD_BYTES)} limit]`;
 }
 
 function formatFileSize(bytes: number): string {

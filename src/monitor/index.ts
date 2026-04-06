@@ -1169,7 +1169,11 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
 
       // Download blob files as attachments
       try {
-        const blobAttachments = await downloadBlobAttachments(blobData);
+        const { attachments: blobAttachments, notices: blobDownloadNotices } = await downloadBlobAttachments(blobData);
+        if (blobDownloadNotices.length > 0) {
+          messageText = blobDownloadNotices.join("\n") + "\n" + messageText;
+          runtime.log?.(`[tlon] Skipped oversized blob attachment(s): ${blobDownloadNotices.join(" | ")}`);
+        }
         if (blobAttachments.length > 0) {
           attachments = attachments.concat(blobAttachments);
           runtime.log?.(`[tlon] Downloaded blob attachment(s) ${JSON.stringify(blobAttachments)}`);

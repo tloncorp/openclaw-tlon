@@ -1,7 +1,26 @@
-import { describe, expect, it } from "vitest";
-import { parseBlobData, formatBlobAnnotations } from "./media.js";
+import { mkdtemp, readdir, rm, stat } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import * as path from "node:path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-// ── parseBlobData ──────────────────────────────────────────────────────────
+vi.mock("openclaw/plugin-sdk", () => ({
+  fetchWithSsrFGuard: vi.fn(),
+}));
+
+vi.mock("../urbit/context.js", () => ({
+  getDefaultSsrFPolicy: vi.fn(() => ({})),
+}));
+
+import { fetchWithSsrFGuard } from "openclaw/plugin-sdk";
+import {
+  MAX_BLOB_DOWNLOAD_BYTES,
+  downloadBlobAttachments,
+  downloadMedia,
+  formatBlobAnnotations,
+  parseBlobData,
+} from "./media.js";
+
+const mockedFetchWithSsrFGuard = vi.mocked(fetchWithSsrFGuard);
 
 describe("parseBlobData", () => {
   it("returns null for null/undefined/empty", () => {
@@ -98,8 +117,6 @@ describe("parseBlobData", () => {
   });
 });
 
-// ── formatBlobAnnotations ──────────────────────────────────────────────────
-
 describe("formatBlobAnnotations", () => {
   it("formats a file annotation", () => {
     const text = formatBlobAnnotations([
@@ -131,7 +148,7 @@ describe("formatBlobAnnotations", () => {
       },
     ]);
     expect(text).toContain("🎙️");
-    expect(text).toContain("13s"); // Math.round(12.5) = 13
+    expect(text).toContain("13s");
     expect(text).toContain('"Hey check this out"');
   });
 
@@ -166,5 +183,138 @@ describe("formatBlobAnnotations", () => {
     expect(lines.length).toBeGreaterThanOrEqual(2);
     expect(lines[0]).toContain("📎");
     expect(lines[1]).toContain("🎙️");
+  });
+});
+
+describe("blob download limits", () => {
+  let mediaDir: string;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    mediaDir = await mkdtemp(path.join(tmpdir(), "tlon-media-test-"));
+  });
+
+  afterEach(async () => {
+    await rm(mediaDir, { recursive: true, force: true });
+  });
+
+  it("skips oversized blob attachments before fetching when blob metadata is over the cap", async () => {
+    const result = await downloadBlobAttachments(
+      [
+        {
+          type: "file",
+          version: 1,
+          fileUri: "https://storage.example.com/large-report.pdf",
+          mimeType: "application/pdf",
+          name: "large-report.pdf",
+          size: 101 * 1024 * 1024,
+        },
+      ],
+      mediaDir,
+    );
+
+    expect(mockedFetchWithSsrFGuard).not.toHaveBeenCalled();
+    expect(result.attachments).toEqual([]);
+    expect(result.notices).toEqual([
+      "[blob not downloaded: large-report.pdf is 101.0MB, over the 100.0MB limit]",
+    ]);
+  });
+
+  it("skips oversized blob attachments when content-length exceeds the cap", async () => {
+    mockedFetchWithSsrFGuard.mockResolvedValue({
+      response: new Response("ignored", {
+        status: 200,
+        headers: {
+          "content-type": "application/pdf",
+          "content-length": String(101 * 1024 * 1024),
+        },
+      }),
+      release: vi.fn().mockResolvedValue(undefined),
+    } as Awaited<ReturnType<typeof fetchWithSsrFGuard>>);
+
+    const result = await downloadBlobAttachments(
+      [
+        {
+          type: "file",
+          version: 1,
+          fileUri: "https://storage.example.com/header-sized.pdf",
+          mimeType: "application/pdf",
+          name: "header-sized.pdf",
+        },
+      ],
+      mediaDir,
+    );
+
+    expect(mockedFetchWithSsrFGuard).toHaveBeenCalledTimes(1);
+    expect(result.attachments).toEqual([]);
+    expect(result.notices).toEqual([
+      "[blob not downloaded: header-sized.pdf is 101.0MB, over the 100.0MB limit]",
+    ]);
+    expect(await readdir(mediaDir)).toEqual([]);
+  });
+
+  it("aborts downloads that exceed the cap mid-stream when size was not declared", async () => {
+    const onTooLarge = vi.fn();
+    const body = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new Uint8Array(4));
+        controller.enqueue(new Uint8Array(4));
+        controller.close();
+      },
+    });
+
+    mockedFetchWithSsrFGuard.mockResolvedValue({
+      response: new Response(body, {
+        status: 200,
+        headers: {
+          "content-type": "application/octet-stream",
+        },
+      }),
+      release: vi.fn().mockResolvedValue(undefined),
+    } as Awaited<ReturnType<typeof fetchWithSsrFGuard>>);
+
+    const downloaded = await downloadMedia("https://storage.example.com/streamed.bin", mediaDir, {
+      maxBytes: 5,
+      onTooLarge,
+    });
+
+    expect(downloaded).toBeNull();
+    expect(onTooLarge).toHaveBeenCalledWith({ observedSizeBytes: 8 });
+    expect(await readdir(mediaDir)).toEqual([]);
+  });
+
+  it("downloads blob attachments under the cap", async () => {
+    mockedFetchWithSsrFGuard.mockResolvedValue({
+      response: new Response("small blob", {
+        status: 200,
+        headers: {
+          "content-type": "text/plain",
+          "content-length": "10",
+        },
+      }),
+      release: vi.fn().mockResolvedValue(undefined),
+    } as Awaited<ReturnType<typeof fetchWithSsrFGuard>>);
+
+    const result = await downloadBlobAttachments(
+      [
+        {
+          type: "file",
+          version: 1,
+          fileUri: "https://storage.example.com/small.txt",
+          mimeType: "text/plain",
+          name: "small.txt",
+          size: 10,
+        },
+      ],
+      mediaDir,
+    );
+
+    expect(result.notices).toEqual([]);
+    expect(result.attachments).toHaveLength(1);
+    expect(result.attachments[0]?.contentType).toBe("text/plain");
+    const saved = await stat(result.attachments[0]!.path);
+    expect(saved.size).toBe(10);
+    expect(result.attachments[0]!.path.startsWith(mediaDir)).toBe(true);
+    expect(MAX_BLOB_DOWNLOAD_BYTES).toBe(100 * 1024 * 1024);
   });
 });
