@@ -55,14 +55,8 @@ describe("outbound DM delivery", () => {
     const token = `it-outbound-${Date.now().toString(36)}`;
     const prompt = `Use the tlon tool to send ${fixtures.thirdPartyShip} this DM: ${token}`;
 
-    console.log(`\n[TEST] Sending prompt: "${prompt}"`);
-    const response = await fixtures.client.prompt(prompt);
-    console.log(`[TEST] Response success: ${response.success}`);
-    console.log(`[TEST] Response text: ${response.text?.slice(0, 500)}`);
-
-    if (!response.success) {
-      throw new Error(response.error ?? "Prompt failed");
-    }
+    console.log(`\n[TEST] Sending DM: "${prompt}"`);
+    await fixtures.client.sendDm(prompt);
 
     // Verify: message with token arrived at ~mug's DM channel from the bot
     console.log(
