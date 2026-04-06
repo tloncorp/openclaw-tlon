@@ -2,6 +2,8 @@ name: Restart
 on:
   push:
     branches: [master, stable]
+    paths:
+      - 'src/**'
   workflow_dispatch:
     inputs:
       mode:
