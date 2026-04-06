@@ -203,14 +203,6 @@ if [ "${VERBOSE:-0}" = "1" ]; then
   cat "$CONFIG_DIR/openclaw.json" | jq '.channels.tlon'
 fi
 
-# Debug: Dump agent config and heartbeat settings
-echo "==> DEBUG: Agent config:"
-cat "$CONFIG_DIR/openclaw.json" | jq '.agents'
-echo "==> DEBUG: Heartbeat config:"
-cat "$CONFIG_DIR/openclaw.json" | jq '.agents.defaults.heartbeat'
-echo "==> DEBUG: Tlon channel config:"
-cat "$CONFIG_DIR/openclaw.json" | jq '.channels.tlon'
-
 # Create workspace
 WORKSPACE_DIR=/root/.openclaw/workspace
 mkdir -p "$WORKSPACE_DIR"
