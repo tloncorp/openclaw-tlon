@@ -99,7 +99,8 @@ describe("connectivity", () => {
   test("can send DM from test user to bot", async () => {
     console.log(`Sending test DM from ${userShip} to ${botShip}...`);
     const { Urbit } = await import("@tloncorp/api");
-    const { sendDm } = await import("../../src/urbit/send.js");
+    const { markdownToStory } = await import("../../src/urbit/story.js");
+    const { scot, da } = await import("@urbit/aura");
 
     const config = getTestConfig();
     const testUserShipClean = config.testUser.shipName.replace(/^~/, "");
@@ -111,11 +112,33 @@ describe("connectivity", () => {
       console.log(`✓ Connected urbit client for ${userShip}`);
 
       const testMessage = `connectivity-test-${Date.now()}`;
-      await sendDm({
-        api: { poke: (params) => urbit.poke(params) },
-        fromShip: config.testUser.shipName,
-        toShip: config.bot.shipName,
-        text: testMessage,
+      const story = markdownToStory(testMessage);
+      const sentAt = Date.now();
+      const idUd = scot("ud", da.fromUnix(sentAt));
+      const id = `${userShip}/${idUd}`;
+
+      await urbit.poke({
+        app: "chat",
+        mark: "chat-dm-action-1",
+        json: {
+          ship: botShip,
+          diff: {
+            id,
+            delta: {
+              add: {
+                essay: {
+                  content: story,
+                  author: userShip,
+                  sent: sentAt,
+                  kind: "/chat",
+                  meta: null,
+                  blob: null,
+                },
+                time: null,
+              },
+            },
+          },
+        },
       });
       console.log(`✓ Sent DM: "${testMessage}"`);
 
