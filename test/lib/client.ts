@@ -128,14 +128,12 @@ export function createTlonClient(config: TlonClientConfig): TestClient {
 
     const delta = {
       add: {
-        essay: {
+        memo: {
           content: story,
           author: testUserShipNorm,
           sent: sentAt,
-          kind: "/chat",
-          meta: null,
-          blob: null,
         },
+        kind: null,
         time: null,
       },
     };
@@ -147,7 +145,7 @@ export function createTlonClient(config: TlonClientConfig): TestClient {
 
     await urbit.poke({
       app: "chat",
-      mark: "chat-dm-action-1",
+      mark: "chat-dm-action",
       json: action,
     });
   };
