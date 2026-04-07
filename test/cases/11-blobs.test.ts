@@ -17,6 +17,7 @@ import {
   waitFor,
   type TestFixtures,
 } from "../lib/index.js";
+import { getLatestSequenceForAuthor, isPostNewerThanSequence } from "../lib/post-baseline.js";
 
 describe("blobs", () => {
   let fixtures: TestFixtures;
@@ -68,16 +69,12 @@ describe("blobs", () => {
   }
 
   async function getDmBaseline(): Promise<number> {
-    try {
-      const posts = await fixtures.userState.channelPosts(fixtures.botShip, 30);
-      return (posts ?? [])
-        .map((p: any) =>
-          p.authorId === fixtures.botShip && typeof p.sentAt === "number" ? p.sentAt : 0,
-        )
-        .reduce((max: number, ts: number) => Math.max(max, ts), 0);
-    } catch {
-      return 0;
-    }
+    return getLatestSequenceForAuthor(
+      fixtures.userState,
+      fixtures.botShip,
+      fixtures.botShip,
+      30,
+    );
   }
 
   async function waitForDmReply(baseline: number, desc: string): Promise<string> {
@@ -85,9 +82,9 @@ describe("blobs", () => {
       async () => {
         const posts = await fixtures.userState.channelPosts(fixtures.botShip, 30);
         for (const post of posts ?? []) {
-          const p = post as { authorId?: string; sentAt?: number; textContent?: string };
+          const p = post as { authorId?: string; sentAt?: number; sequenceNum?: number | null; textContent?: string };
           if (p.authorId !== fixtures.botShip) continue;
-          if (typeof p.sentAt === "number" && p.sentAt <= baseline) continue;
+          if (!isPostNewerThanSequence(p, baseline)) continue;
           if (p.textContent?.trim()) return p.textContent;
         }
         return undefined;
@@ -99,16 +96,12 @@ describe("blobs", () => {
   }
 
   async function getChannelBaseline(nest: string): Promise<number> {
-    try {
-      const posts = await fixtures.botState.channelPosts(nest, 30);
-      return (posts ?? [])
-        .map((p: any) =>
-          p.authorId === fixtures.botShip && typeof p.sentAt === "number" ? p.sentAt : 0,
-        )
-        .reduce((max: number, ts: number) => Math.max(max, ts), 0);
-    } catch {
-      return 0;
-    }
+    return getLatestSequenceForAuthor(
+      fixtures.botState,
+      nest,
+      fixtures.botShip,
+      30,
+    );
   }
 
   async function waitForChannelReply(
@@ -120,9 +113,9 @@ describe("blobs", () => {
       async () => {
         const posts = await fixtures.botState.channelPosts(nest, 30);
         for (const post of posts ?? []) {
-          const p = post as { authorId?: string; sentAt?: number; textContent?: string };
+          const p = post as { authorId?: string; sentAt?: number; sequenceNum?: number | null; textContent?: string };
           if (p.authorId !== fixtures.botShip) continue;
-          if (typeof p.sentAt === "number" && p.sentAt <= baseline) continue;
+          if (!isPostNewerThanSequence(p, baseline)) continue;
           if (p.textContent?.trim()) return p.textContent;
         }
         return undefined;

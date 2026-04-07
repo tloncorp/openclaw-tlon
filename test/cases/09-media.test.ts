@@ -4,6 +4,7 @@ import {
   waitFor,
   type TestFixtures,
 } from "../lib/index.js";
+import { getLatestSequenceForAuthor, isPostNewerThanSequence } from "../lib/post-baseline.js";
 
 const SOURCE_IMAGE_URL = "https://storage.googleapis.com/tlon-test-ci-shared/test-images/openclaw-image.png";
 
@@ -120,21 +121,13 @@ describe("media", () => {
     }
 
     // ── Capture DM baseline before prompting ─────────────────────────
-    let baselineSentAt = 0;
-    try {
-      const beforePosts = await fixtures.userState.channelPosts(fixtures.botShip, 30);
-      baselineSentAt = (beforePosts ?? [])
-        .map((post) => {
-          const p = post as { authorId?: string; sentAt?: number };
-          return p.authorId === fixtures.botShip && typeof p.sentAt === "number"
-            ? p.sentAt
-            : 0;
-        })
-        .reduce((max, ts) => (ts > max ? ts : max), 0);
-    } catch (err) {
-      console.log(`[TEST] DM baseline poll failed: ${err}`);
-    }
-    console.log(`[TEST] DM baseline sentAt: ${baselineSentAt}`);
+    const baselineSequence = await getLatestSequenceForAuthor(
+      fixtures.userState,
+      fixtures.botShip,
+      fixtures.botShip,
+      30,
+    );
+    console.log(`[TEST] DM baseline sequence: ${baselineSequence}`);
 
     // ── Prompt bot to send image in this DM ──────────────────────────
     const token = `it-media-${Date.now().toString(36)}`;
@@ -164,11 +157,12 @@ describe("media", () => {
           const p = post as {
             authorId?: string;
             sentAt?: number;
+            sequenceNum?: number | null;
             textContent?: string | null;
             images?: Array<{ src?: string | null }>;
           };
           if (p.authorId !== fixtures.botShip) continue;
-          if (typeof p.sentAt === "number" && p.sentAt <= baselineSentAt) continue;
+          if (!isPostNewerThanSequence(p, baselineSequence)) continue;
           const text = (p.textContent ?? "").toLowerCase();
           if (!text.includes(token.toLowerCase())) continue;
           if (!p.images?.length || !p.images[0]?.src) continue;

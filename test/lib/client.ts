@@ -180,8 +180,8 @@ export function createTlonClient(config: TlonClientConfig): TestClient {
         const botShipNorm = bot.shipName.startsWith("~") ? bot.shipName : `~${bot.shipName}`;
 
         // Determine correlation mode:
-        //   slash commands  → no token, wall-clock baseline
-        //   correlate:false → no token, wall-clock baseline, skip tagged posts
+        //   slash commands  → no token, sequence baseline
+        //   correlate:false → no token, sequence baseline, skip tagged posts
         //   default         → inject token, match by token
         const isSlash = text.trimStart().startsWith("/");
         const useToken = !isSlash && opts.correlate !== false;
@@ -194,8 +194,24 @@ export function createTlonClient(config: TlonClientConfig): TestClient {
           textToSend = `${text}\n\n(Include reference: ${tag} in your reply.)`;
         }
 
-        const sendBaseline = Date.now();
-        const mode = useToken ? "correlated" : "timestamp";
+        let sendBaselineSequence = -1;
+        if (!useToken) {
+          try {
+            const beforePosts = await testUserState.channelPosts(botShipNorm, 30);
+            sendBaselineSequence = (beforePosts ?? [])
+              .map((post) => {
+                const p = post as { authorId?: string; sequenceNum?: number | null };
+                return p.authorId === botShipNorm && typeof p.sequenceNum === "number"
+                  ? p.sequenceNum
+                  : -1;
+              })
+              .reduce((max, seq) => Math.max(max, seq), -1);
+          } catch (err) {
+            console.log(`Failed to capture DM baseline sequence: ${err}`);
+          }
+        }
+
+        const mode = useToken ? "correlated" : "sequence";
 
         // Send DM via direct poke (can't use plugin's sendDm since it uses global API client)
         // Retry transient channel failures so tests don't fail fast and cascade prompts.
@@ -225,6 +241,7 @@ export function createTlonClient(config: TlonClientConfig): TestClient {
                 const p = post as {
                   authorId?: string;
                   sentAt?: number;
+                  sequenceNum?: number | null;
                   textContent?: string | null;
                   content?: unknown;
                 };
@@ -232,6 +249,7 @@ export function createTlonClient(config: TlonClientConfig): TestClient {
                 return {
                   authorId: p.authorId,
                   sentAt: p.sentAt,
+                  sequenceNum: p.sequenceNum,
                   text: (textContent ?? "").trim(),
                 };
               })
@@ -256,24 +274,25 @@ export function createTlonClient(config: TlonClientConfig): TestClient {
               }
             } else {
               // No-token path (slash commands and correlate:false):
-              // Accept posts newer than sendBaseline, but skip any post bearing
-              // a correlation tag — those belong to a correlated prompt.
+              // Accept posts with a newer sequence number than the snapshot we took
+              // before sending, but skip any post bearing a correlation tag — those
+              // belong to a correlated prompt.
               const candidates = allBotPosts
-                .filter((p) => typeof p.sentAt === "number" && p.sentAt > sendBaseline)
+                .filter((p) => typeof p.sequenceNum === "number" && p.sequenceNum > sendBaselineSequence)
                 .filter((p) => !CORRELATION_TAG_RE.test(p.text));
               const skippedTagged = allBotPosts
-                .filter((p) => typeof p.sentAt === "number" && p.sentAt > sendBaseline)
+                .filter((p) => typeof p.sequenceNum === "number" && p.sequenceNum > sendBaselineSequence)
                 .filter((p) => CORRELATION_TAG_RE.test(p.text)).length;
 
               if (attempts === 1 || attempts % 5 === 0) {
-                console.log(`[poll #${attempts}] mode=${mode} baseline=${sendBaseline} candidates=${candidates.length} skippedTagged=${skippedTagged} botPosts=${allBotPosts.length}`);
+                console.log(`[poll #${attempts}] mode=${mode} baselineSequence=${sendBaselineSequence} candidates=${candidates.length} skippedTagged=${skippedTagged} botPosts=${allBotPosts.length}`);
                 if (allBotPosts.length > 0) {
-                  console.log(`[poll #${attempts}] last 3 bot posts: ${JSON.stringify(allBotPosts.slice(-3).map((p) => ({ sentAt: p.sentAt, text: p.text.slice(0, 40) })))}`);
+                  console.log(`[poll #${attempts}] last 3 bot posts: ${JSON.stringify(allBotPosts.slice(-3).map((p) => ({ sequenceNum: p.sequenceNum, sentAt: p.sentAt, text: p.text.slice(0, 40) })))}`);
                 }
               }
 
               if (candidates.length > 0) {
-                const latest = candidates.sort((a, b) => (b.sentAt ?? 0) - (a.sentAt ?? 0))[0];
+                const latest = candidates.sort((a, b) => (b.sequenceNum ?? -1) - (a.sequenceNum ?? -1))[0];
                 return { success: true, text: latest.text };
               }
             }
@@ -288,7 +307,7 @@ export function createTlonClient(config: TlonClientConfig): TestClient {
           error:
             `Timeout waiting for bot response after ${timeoutMs}ms ` +
             `(mode=${mode}, attempts=${attempts}` +
-            (tag ? `, token=${tag}` : `, baseline=${sendBaseline}`) +
+            (tag ? `, token=${tag}` : `, baselineSequence=${sendBaselineSequence}`) +
             (lastPollError ? `, lastPollError=${lastPollError}` : "") +
             `)`,
         };

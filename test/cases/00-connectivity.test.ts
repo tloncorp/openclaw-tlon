@@ -7,6 +7,7 @@
 
 import { describe, test, expect, beforeAll } from "vitest";
 import { createStateClient, getTestConfig, type StateClient } from "../lib/index.js";
+import { getLatestSequenceForAuthor, isPostNewerThanSequence } from "../lib/post-baseline.js";
 
 describe("connectivity", () => {
   let botState: StateClient;
@@ -128,19 +129,16 @@ describe("connectivity", () => {
       while (Date.now() - startTime < maxWaitMs) {
         await new Promise((resolve) => setTimeout(resolve, 2000));
         const laterPosts = await userState.channelPosts(botShip, 30);
-        const botPosts = (laterPosts ?? []).filter((post) => {
-          const p = post as { authorId?: string };
-          return p.authorId === botShip;
-        });
-        // Check if any bot post is newer than our test message
         const ourMsgPost = (laterPosts ?? []).find((post) => {
-          const p = post as { textContent?: string };
+          const p = post as { textContent?: string; sequenceNum?: number | null };
           return p.textContent?.includes(testMessage);
-        }) as { sentAt?: number } | undefined;
-        const ourMsgTime = ourMsgPost?.sentAt ?? 0;
-        const newerBotPost = botPosts.find((post) => {
-          const p = post as { sentAt?: number };
-          return (p.sentAt ?? 0) > ourMsgTime;
+        }) as { sequenceNum?: number | null } | undefined;
+        const ourMsgSequence = typeof ourMsgPost?.sequenceNum === "number"
+          ? ourMsgPost.sequenceNum
+          : await getLatestSequenceForAuthor(userState, botShip, botShip, 30);
+        const newerBotPost = (laterPosts ?? []).find((post) => {
+          const p = post as { authorId?: string; sequenceNum?: number | null };
+          return p.authorId === botShip && isPostNewerThanSequence(p, ourMsgSequence);
         });
         if (newerBotPost) {
           console.log(`✓ Bot responded - queue cleared for subsequent tests`);

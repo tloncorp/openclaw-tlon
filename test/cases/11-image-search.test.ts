@@ -6,6 +6,7 @@ import {
   toolWasInvoked,
   type TestFixtures,
 } from "../lib/index.js";
+import { getLatestSequenceForAuthor, isPostNewerThanSequence } from "../lib/post-baseline.js";
 
 // Poke mark verified against fakezod — see 09-media.test.ts.
 const STORAGE_POKE_MARK = "storage-action";
@@ -162,25 +163,13 @@ describe("image search", () => {
       }
 
       // ── Capture DM baseline before prompting ───────────────────────
-      let baselineSentAt = 0;
-      try {
-        const beforePosts = await fixtures.userState.channelPosts(
-          fixtures.botShip,
-          30,
-        );
-        baselineSentAt = (beforePosts ?? [])
-          .map((post) => {
-            const p = post as { authorId?: string; sentAt?: number };
-            return p.authorId === fixtures.botShip &&
-              typeof p.sentAt === "number"
-              ? p.sentAt
-              : 0;
-          })
-          .reduce((max, ts) => (ts > max ? ts : max), 0);
-      } catch (err) {
-        console.log(`[TEST] DM baseline poll failed: ${err}`);
-      }
-      console.log(`[TEST] DM baseline sentAt: ${baselineSentAt}`);
+      const baselineSequence = await getLatestSequenceForAuthor(
+        fixtures.userState,
+        fixtures.botShip,
+        fixtures.botShip,
+        30,
+      );
+      console.log(`[TEST] DM baseline sequence: ${baselineSequence}`);
 
       // ── Record timestamp for log correlation ───────────────────────
       const promptedAt = new Date().toISOString();
@@ -212,11 +201,12 @@ describe("image search", () => {
             const p = post as {
               authorId?: string;
               sentAt?: number;
+              sequenceNum?: number | null;
               textContent?: string | null;
               images?: Array<{ src?: string | null }>;
             };
             if (p.authorId !== fixtures.botShip) { continue; }
-            if (typeof p.sentAt === "number" && p.sentAt <= baselineSentAt) {
+            if (!isPostNewerThanSequence(p, baselineSequence)) {
               continue;
             }
             const text = (p.textContent ?? "").toLowerCase();

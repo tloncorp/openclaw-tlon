@@ -10,6 +10,7 @@
 import { getTextContent, type PostContent } from "@tloncorp/api";
 import { describe, test, expect, beforeAll } from "vitest";
 import { createStateClient, getTestConfig, waitFor, type StateClient } from "../lib/index.js";
+import { getLatestSequenceForAuthor, getPostSequence } from "../lib/post-baseline.js";
 
 const EIGHT_DAYS_MS = 8 * 24 * 60 * 60 * 1000;
 
@@ -31,18 +32,7 @@ describe("heartbeat engagement recovery", () => {
 
   test("sends stage 1 nudge when owner idle > 7 days", async () => {
     // Snapshot existing DMs so we only check for new messages
-    let baselineTimestamp = 0;
-    try {
-      const existingPosts = await ownerState.channelPosts(botShip, 30);
-      baselineTimestamp = (existingPosts ?? [])
-        .map((post) => {
-          const p = post as { authorId?: string; sentAt?: number };
-          return p.authorId === botShip && typeof p.sentAt === "number" ? p.sentAt : 0;
-        })
-        .reduce((max, ts) => (ts > max ? ts : max), 0);
-    } catch {
-      // No existing DMs, that's fine
-    }
+    const baselineSequence = await getLatestSequenceForAuthor(ownerState, botShip, botShip, 30);
 
     // Seed settings for heartbeat: idle date and clear nudge stage.
     // ownerShip is migrated from file config to settings store on startup
@@ -103,6 +93,7 @@ describe("heartbeat engagement recovery", () => {
           const p = post as {
             authorId?: string;
             sentAt?: number;
+            sequenceNum?: number | null;
             textContent?: string | null;
             content?: PostContent;
           };
@@ -110,21 +101,22 @@ describe("heartbeat engagement recovery", () => {
           return {
             authorId: p.authorId,
             sentAt: p.sentAt ?? 0,
+            sequenceNum: getPostSequence(p),
             text: (text ?? "").trim(),
           };
         });
 
         const newBotPosts = allParsed
           .filter((p) => p.authorId === botShip)
-          .filter((p) => p.sentAt > baselineTimestamp);
+          .filter((p) => p.sequenceNum > baselineSequence);
 
         // Log diagnostics every 6th poll (~30s)
         if (pollCount % 6 === 1) {
           console.log(
-            `[poll ${pollCount}] total=${allParsed.length} newBot=${newBotPosts.length} baseline=${baselineTimestamp}`,
+            `[poll ${pollCount}] total=${allParsed.length} newBot=${newBotPosts.length} baselineSequence=${baselineSequence}`,
           );
           for (const p of newBotPosts) {
-            console.log(`  [new] sentAt=${p.sentAt} text=${JSON.stringify(p.text.slice(0, 120))}`);
+            console.log(`  [new] sequence=${p.sequenceNum} sentAt=${p.sentAt} text=${JSON.stringify(p.text.slice(0, 120))}`);
           }
         }
 
