@@ -47,7 +47,7 @@
   },
   "dependencies": {
     "@tloncorp/api": "0.0.4",
-    "@tloncorp/tlon-skill": "^0.3.2",
+    "@tloncorp/tlon-skill": "^0.3.4",
     "@urbit/aura": "^3.0.0",
     "@urbit/http-api": "^3.0.0",
     "posthog-node": "^5.28.9",

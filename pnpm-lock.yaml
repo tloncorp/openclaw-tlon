@@ -12,8 +12,8 @@ importers:
         specifier: 0.0.4
         version: 0.0.4
       '@tloncorp/tlon-skill':
-        specifier: ^0.3.2
-        version: 0.3.2
+        specifier: ^0.3.4
+        version: 0.3.4
       '@urbit/aura':
         specifier: ^3.0.0
         version: 3.0.0
@@ -35,7 +35,7 @@ importers:
         version: 17.2.4
       openclaw:
         specifier: 2026.2.25
-        version: 2026.2.25(@modelcontextprotocol/sdk@1.27.1(zod@4.3.6))(@napi-rs/canvas@0.1.97)(@types/express@5.0.6)(hono@4.12.7)(node-llama-cpp@3.15.1(typescript@5.9.3))
+        version: 2026.2.25(@modelcontextprotocol/sdk@1.27.1(zod@4.3.6))(@napi-rs/canvas@0.1.97)(@types/express@5.0.6)(hono@4.12.9)(node-llama-cpp@3.15.1(typescript@5.9.3))
       oxfmt:
         specifier: 0.27.0
         version: 0.27.0
@@ -1879,32 +1879,32 @@ packages:
   '@tloncorp/api@0.0.4':
     resolution: {integrity: sha512-PO1d/iHptAG0CgZSd31Z670uu3RU2/+CK5zo7stLR8/+vACbf4oxrM2Wcov4ZA1+DnQ+CjFt91MzBF62pqwkBA==}
 
-  '@tloncorp/tlon-skill-darwin-arm64@0.3.2':
-    resolution: {integrity: sha512-nohcSA/I0+Ou41aSr8BhfDehkX9C8bPWqblsTCP9UZUU1NtGys+DPFLLjSy4B0xBgxsp8Dgw6xbW2VAHpIjeOA==}
+  '@tloncorp/tlon-skill-darwin-arm64@0.3.4':
+    resolution: {integrity: sha512-K/QQZKpJ0Qqko/7F6sJleh+xspVntOMCXLCZqcq1OFwHXGBG/v82fl7WETvVwknCiShb0pGutkWtRfbXqZmbPw==}
     cpu: [arm64]
     os: [darwin]
     hasBin: true
 
-  '@tloncorp/tlon-skill-darwin-x64@0.3.2':
-    resolution: {integrity: sha512-UTtDUzlhB7DyVmoZqePfOkC+/nMIUcUZHElEXWHkolaErjcFF37fQgEb0unpxsLmOssPNJUqUvGPvIyMvaeXgw==}
+  '@tloncorp/tlon-skill-darwin-x64@0.3.4':
+    resolution: {integrity: sha512-HPkHfYbxFwXIQL5mkHhHZ1y5yVFOGPM8TcD8xGgwyly5m+mFwSdBQqg7UnqlLGludUIP4ZfTrKutLLAS1i3f8A==}
     cpu: [x64]
     os: [darwin]
     hasBin: true
 
-  '@tloncorp/tlon-skill-linux-arm64@0.3.2':
-    resolution: {integrity: sha512-mzFktdykKw/MPIRplFSRHBP6UdER4HK/mFr8S23pxzZIL4J2Z5wS1Nugt8pIcsF79WA/9gYW+VSaqLa7840tZA==}
+  '@tloncorp/tlon-skill-linux-arm64@0.3.4':
+    resolution: {integrity: sha512-lemn5dSXIe8nD2FIDz6sKalbrR5B7sbmXjJ3hBZsFm/URxsooi57y3vstlrb9Y7h7+fTh2pnaJqIW6incGodmQ==}
     cpu: [arm64]
     os: [linux]
     hasBin: true
 
-  '@tloncorp/tlon-skill-linux-x64@0.3.2':
-    resolution: {integrity: sha512-O4+UcO22rDsnTwiUN/5dCuCQaaM+bX/4/g/QL0DBRsA/i3tRAg9sOycixLLRwjDukVV/EllzdgJw8juIU19LrA==}
+  '@tloncorp/tlon-skill-linux-x64@0.3.4':
+    resolution: {integrity: sha512-WEtsieek9vwHJF8m1mdn8+QzcjHU0E/SPp9uj+YWzAbjqY8xaf3jD6sOPK6XMBCcJ2spwXJnmMzgW+YJ2b5njw==}
     cpu: [x64]
     os: [linux]
     hasBin: true
 
-  '@tloncorp/tlon-skill@0.3.2':
-    resolution: {integrity: sha512-aBOPlscYUsiX7wjkMf/+UbgfrOtKA0D22UUvkOm9/iqjva9auNaJFFtsh6c3edv8GT6VKcAwD97VKUis/yZlmg==}
+  '@tloncorp/tlon-skill@0.3.4':
+    resolution: {integrity: sha512-7TFRyUZG7CTHFqO9NIJwKWIolxchu4nRIjoVdIv1EAKRVSapPx/pEYcs055tqkPSuTjbNUl8MZbIjsQ+Fjo8pw==}
     hasBin: true
 
   '@tokenizer/inflate@0.4.1':
@@ -2781,10 +2781,6 @@ packages:
 
   highlight.js@10.7.3:
     resolution: {integrity: sha512-tzcUFauisWKNHaRkN4Wjl/ZA07gENAjFl3J/c480dprkGTg5EQstgaNFqBfUqCq54kZRIEcreTsAgF/m2quD7A==}
-
-  hono@4.12.7:
-    resolution: {integrity: sha512-jq9l1DM0zVIvsm3lv9Nw9nlJnMNPOcAtsbsgiUhWcFzPE99Gvo6yRTlszSLLYacMeQ6quHD6hMfId8crVHvexw==}
-    engines: {node: '>=16.9.0'}
 
   hono@4.12.9:
     resolution: {integrity: sha512-wy3T8Zm2bsEvxKZM5w21VdHDDcwVS1yUFFY6i8UobSsKfFceT7TOwhbhfKsDyx7tYQlmRM5FLpIuYvNFyjctiA==}
@@ -5011,14 +5007,14 @@ snapshots:
 
   '@borewit/text-codec@0.2.1': {}
 
-  '@buape/carbon@0.0.0-beta-20260216184201(@discordjs/opus@0.10.0)(hono@4.12.7)(opusscript@0.1.1)':
+  '@buape/carbon@0.0.0-beta-20260216184201(@discordjs/opus@0.10.0)(hono@4.12.9)(opusscript@0.1.1)':
     dependencies:
       '@types/node': 25.4.0
       discord-api-types: 0.38.37
     optionalDependencies:
       '@cloudflare/workers-types': 4.20260120.0
       '@discordjs/voice': 0.19.0(@discordjs/opus@0.10.0)(opusscript@0.1.1)
-      '@hono/node-server': 1.19.9(hono@4.12.7)
+      '@hono/node-server': 1.19.9(hono@4.12.9)
       '@types/bun': 1.3.9
       '@types/ws': 8.18.1
       ws: 8.19.0
@@ -5257,9 +5253,9 @@ snapshots:
       hono: 4.12.9
     optional: true
 
-  '@hono/node-server@1.19.9(hono@4.12.7)':
+  '@hono/node-server@1.19.9(hono@4.12.9)':
     dependencies:
-      hono: 4.12.7
+      hono: 4.12.9
     optional: true
 
   '@huggingface/jinja@0.5.6': {}
@@ -6629,24 +6625,24 @@ snapshots:
     transitivePeerDependencies:
       - aws-crt
 
-  '@tloncorp/tlon-skill-darwin-arm64@0.3.2':
+  '@tloncorp/tlon-skill-darwin-arm64@0.3.4':
     optional: true
 
-  '@tloncorp/tlon-skill-darwin-x64@0.3.2':
+  '@tloncorp/tlon-skill-darwin-x64@0.3.4':
     optional: true
 
-  '@tloncorp/tlon-skill-linux-arm64@0.3.2':
+  '@tloncorp/tlon-skill-linux-arm64@0.3.4':
     optional: true
 
-  '@tloncorp/tlon-skill-linux-x64@0.3.2':
+  '@tloncorp/tlon-skill-linux-x64@0.3.4':
     optional: true
 
-  '@tloncorp/tlon-skill@0.3.2':
+  '@tloncorp/tlon-skill@0.3.4':
     optionalDependencies:
-      '@tloncorp/tlon-skill-darwin-arm64': 0.3.2
-      '@tloncorp/tlon-skill-darwin-x64': 0.3.2
-      '@tloncorp/tlon-skill-linux-arm64': 0.3.2
-      '@tloncorp/tlon-skill-linux-x64': 0.3.2
+      '@tloncorp/tlon-skill-darwin-arm64': 0.3.4
+      '@tloncorp/tlon-skill-darwin-x64': 0.3.4
+      '@tloncorp/tlon-skill-linux-arm64': 0.3.4
+      '@tloncorp/tlon-skill-linux-x64': 0.3.4
 
   '@tokenizer/inflate@0.4.1':
     dependencies:
@@ -7614,9 +7610,6 @@ snapshots:
 
   highlight.js@10.7.3: {}
 
-  hono@4.12.7:
-    optional: true
-
   hono@4.12.9:
     optional: true
 
@@ -8136,11 +8129,11 @@ snapshots:
       ws: 8.19.0
       zod: 4.3.6
 
-  openclaw@2026.2.25(@modelcontextprotocol/sdk@1.27.1(zod@4.3.6))(@napi-rs/canvas@0.1.97)(@types/express@5.0.6)(hono@4.12.7)(node-llama-cpp@3.15.1(typescript@5.9.3)):
+  openclaw@2026.2.25(@modelcontextprotocol/sdk@1.27.1(zod@4.3.6))(@napi-rs/canvas@0.1.97)(@types/express@5.0.6)(hono@4.12.9)(node-llama-cpp@3.15.1(typescript@5.9.3)):
     dependencies:
       '@agentclientprotocol/sdk': 0.14.1(zod@4.3.6)
       '@aws-sdk/client-bedrock': 3.1017.0
-      '@buape/carbon': 0.0.0-beta-20260216184201(@discordjs/opus@0.10.0)(hono@4.12.7)(opusscript@0.1.1)
+      '@buape/carbon': 0.0.0-beta-20260216184201(@discordjs/opus@0.10.0)(hono@4.12.9)(opusscript@0.1.1)
       '@clack/prompts': 1.1.0
       '@discordjs/voice': 0.19.2(@discordjs/opus@0.10.0)(opusscript@0.1.1)
       '@grammyjs/runner': 2.0.3(grammy@1.41.1)
