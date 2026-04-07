@@ -174,7 +174,7 @@ export function createTlonClient(config: TlonClientConfig): TestClient {
       await sendDmWithRetry(text);
     },
     async prompt(text, opts = {}) {
-      const timeoutMs = opts.timeoutMs ?? 120_000;
+      const timeoutMs = opts.timeoutMs ?? 45_000;
 
       try {
         const botShipNorm = bot.shipName.startsWith("~") ? bot.shipName : `~${bot.shipName}`;
