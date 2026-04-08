@@ -18,12 +18,9 @@ describe("messages", () => {
     requireFixtureGroup(fixtures);
 
     const prompt = `Show me recent messages from your own channel ${fixtures.group.chatChannel}.`;
-    console.log(`\n[TEST] Sending prompt: "${prompt}"`);
-
+    
     const response = await fixtures.client.prompt(prompt);
-    console.log(`[TEST] Response success: ${response.success}`);
-    console.log(`[TEST] Response text: ${response.text?.slice(0, 500)}`);
-
+        
     if (!response.success) {
       throw new Error(response.error ?? "Prompt failed");
     }
@@ -56,12 +53,9 @@ describe("messages", () => {
 
     const token = `it-post-${Date.now().toString(36)}`;
     const prompt = `Post this exact text into your channel ${fixtures.group.chatChannel}: "${token}" — You MUST respond with exactly 'Done' after posting`;
-    console.log(`\n[TEST] Sending prompt: "${prompt}"`);
-
+    
     const response = await fixtures.client.prompt(prompt, { correlate: false });
-    console.log(`[TEST] Response success: ${response.success}`);
-    console.log(`[TEST] Response text: ${response.text?.slice(0, 500)}`);
-
+        
     if (!response.success) {
       throw new Error(response.error ?? "Prompt failed");
     }
@@ -92,12 +86,9 @@ describe("messages", () => {
 
   test("responds to a simple prompt", async () => {
     const prompt = "Reply with one short sentence confirming you are online.";
-    console.log(`\n[TEST] Sending prompt: "${prompt}"`);
-
+    
     const response = await fixtures.client.prompt(prompt);
-    console.log(`[TEST] Response success: ${response.success}`);
-    console.log(`[TEST] Response text: ${response.text?.slice(0, 200)}`);
-
+        
     if (!response.success) {
       throw new Error(response.error ?? "Prompt failed");
     }

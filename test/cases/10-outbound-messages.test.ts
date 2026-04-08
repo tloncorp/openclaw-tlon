@@ -21,6 +21,7 @@ import {
   ensureThirdPartyDmAccess,
   type TestFixtures,
 } from "../lib/index.js";
+import { getLatestSequenceForAuthor, isPostNewerThanSequence } from "../lib/post-baseline.js";
 
 describe("outbound DM delivery", () => {
   let fixtures: TestFixtures;
@@ -33,24 +34,15 @@ describe("outbound DM delivery", () => {
   test("bot delivers DM to third-party ship without tlon tool", async () => {
     requireThirdParty(fixtures);
 
-    // Baseline: snapshot latest bot DM timestamp in ~mug's channel
+    // Baseline: snapshot latest bot DM sequence in ~mug's channel
     // to avoid false positives from fixture-setup messages.
-    let baselineSentAt = 0;
-    try {
-      const before = await fixtures.thirdPartyState!.channelPosts(
-        fixtures.botShip,
-        30,
-      );
-      baselineSentAt = (before ?? [])
-        .filter(
-          (p: any) =>
-            p.authorId === fixtures.botShip && typeof p.sentAt === "number",
-        )
-        .reduce((max: number, p: any) => Math.max(max, p.sentAt), 0);
-    } catch {
-      // No prior DMs — baseline stays 0
-    }
-    console.log(`[TEST] DM baseline sentAt: ${baselineSentAt}`);
+    const baselineSequence = await getLatestSequenceForAuthor(
+      fixtures.thirdPartyState!,
+      fixtures.botShip,
+      fixtures.botShip,
+      30,
+    );
+    console.log(`[TEST] DM baseline sequence: ${baselineSequence}`);
 
     const token = `it-outbound-${Date.now().toString(36)}`;
     const prompt = `Use the tlon tool to send ${fixtures.thirdPartyShip} this DM: ${token}`;
@@ -76,8 +68,7 @@ describe("outbound DM delivery", () => {
           ).toLowerCase();
           return (
             post.authorId === fixtures.botShip &&
-            typeof post.sentAt === "number" &&
-            post.sentAt > baselineSentAt &&
+            isPostNewerThanSequence(post, baselineSequence) &&
             text.includes(token.toLowerCase())
           );
         });
