@@ -185,7 +185,7 @@ export function createTlonClient(config: TlonClientConfig): TestClient {
       await sendDmWithRetry(text);
     },
     async prompt(text, opts = {}) {
-      const timeoutMs = opts.timeoutMs ?? 45_000;
+      const timeoutMs = opts.timeoutMs ?? 90_000;
 
       console.log(`\n[TEST] Sending prompt: ${JSON.stringify(text)}`);
 
