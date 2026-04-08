@@ -1,7 +1,9 @@
-name: Deploy
+name: Restart
 on:
   push:
     branches: [master, stable]
+    paths:
+      - 'src/**'
   workflow_dispatch:
     inputs:
       mode:
@@ -64,7 +66,7 @@ jobs:
             echo "Restarting tlawn (non-internal) ships"
           fi
 
-          for ctx in gke_prod-f0181862_us-east5_us-east5-cluster1 admin@ovh-oregon-1; do
+          for ctx in gke_prod-f0181862_us-east5_us-east5-cluster1 admin@ovh-oregon-1 admin@ovh-oregon-2; do
             echo "=== Restarting ships in context: $ctx ==="
             kubectl --context "$ctx" get ships -n tlon -ojson \
               | jq -r "$JQ_FILTER" \
