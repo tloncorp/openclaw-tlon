@@ -169,12 +169,25 @@ export function createTlonClient(config: TlonClientConfig): TestClient {
     throw new Error(`Failed to send DM after 3 attempts: ${lastSendError}`);
   };
 
+  const bestEffortStopAfterTimeout = async (): Promise<void> => {
+    try {
+      console.log(`[timeout cleanup] sending /stop to ${bot.shipName}`);
+      await sendDmWithRetry("/stop");
+      await sleep(3000);
+      console.log(`[timeout cleanup] /stop sent; gave it 3s to drain`);
+    } catch (err) {
+      console.log(`[timeout cleanup] failed to send /stop: ${err}`);
+    }
+  };
+
   return {
     async sendDm(text) {
       await sendDmWithRetry(text);
     },
     async prompt(text, opts = {}) {
       const timeoutMs = opts.timeoutMs ?? 45_000;
+
+      console.log(`\n[TEST] Sending prompt: ${JSON.stringify(text)}`);
 
       try {
         const botShipNorm = bot.shipName.startsWith("~") ? bot.shipName : `~${bot.shipName}`;
@@ -219,6 +232,8 @@ export function createTlonClient(config: TlonClientConfig): TestClient {
           await sendDmWithRetry(textToSend);
         } catch (err) {
           const lastSendError = err instanceof Error ? err.message : String(err);
+          console.log(`[TEST] Response success: false`);
+          console.log(`[TEST] Response text: ${JSON.stringify(`Failed to send DM after 3 attempts: ${lastSendError}`.slice(0, 500))}`);
           return {
             success: false,
             error: `Failed to send DM after 3 attempts: ${lastSendError}`,
@@ -270,6 +285,8 @@ export function createTlonClient(config: TlonClientConfig): TestClient {
 
               if (matched) {
                 const cleanText = matched.text.replace(CORRELATION_TAG_RE, "").trim();
+                console.log(`[TEST] Response success: true`);
+                console.log(`[TEST] Response text: ${JSON.stringify(cleanText.slice(0, 500))}`);
                 return { success: true, text: cleanText };
               }
             } else {
@@ -293,6 +310,8 @@ export function createTlonClient(config: TlonClientConfig): TestClient {
 
               if (candidates.length > 0) {
                 const latest = candidates.sort((a, b) => (b.sequenceNum ?? -1) - (a.sequenceNum ?? -1))[0];
+                console.log(`[TEST] Response success: true`);
+                console.log(`[TEST] Response text: ${JSON.stringify(latest.text.slice(0, 500))}`);
                 return { success: true, text: latest.text };
               }
             }
@@ -302,20 +321,27 @@ export function createTlonClient(config: TlonClientConfig): TestClient {
           }
         }
 
+        await bestEffortStopAfterTimeout();
+        const timeoutError =
+          `Timeout waiting for bot response after ${timeoutMs}ms ` +
+          `(mode=${mode}, attempts=${attempts}` +
+          (tag ? `, token=${tag}` : `, baselineSequence=${sendBaselineSequence}`) +
+          (lastPollError ? `, lastPollError=${lastPollError}` : "") +
+          `; sent /stop for cleanup)`;
+        console.log(`[TEST] Response success: false`);
+        console.log(`[TEST] Response text: ${JSON.stringify(timeoutError.slice(0, 500))}`);
         return {
           success: false,
-          error:
-            `Timeout waiting for bot response after ${timeoutMs}ms ` +
-            `(mode=${mode}, attempts=${attempts}` +
-            (tag ? `, token=${tag}` : `, baselineSequence=${sendBaselineSequence}`) +
-            (lastPollError ? `, lastPollError=${lastPollError}` : "") +
-            `)`,
+          error: timeoutError,
         };
       } catch (err) {
         console.log(`Failed to send DM: ${err}`);
+        const fatalError = `Failed to send DM: ${err}`;
+        console.log(`[TEST] Response success: false`);
+        console.log(`[TEST] Response text: ${JSON.stringify(fatalError.slice(0, 500))}`);
         return {
           success: false,
-          error: `Failed to send DM: ${err}`,
+          error: fatalError,
         };
       }
     },

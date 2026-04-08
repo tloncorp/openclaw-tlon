@@ -137,11 +137,8 @@ describe("media", () => {
       `Use the provided URL verbatim as the media parameter. ` +
       `Do not fetch, inspect, validate, or substitute the image.`;
 
-    console.log(`\n[TEST] Sending prompt: "${prompt}"`);
-    const response = await fixtures.client.prompt(prompt, { correlate: false });
-    console.log(`[TEST] Response success: ${response.success}`);
-    console.log(`[TEST] Response text: ${response.text?.slice(0, 500)}`);
-
+        const response = await fixtures.client.prompt(prompt, { correlate: false });
+        
     if (!response.success) {
       throw new Error(response.error ?? "Prompt failed");
     }
