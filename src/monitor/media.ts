@@ -292,6 +292,32 @@ export function formatBlobAnnotations(blobData: ClientPostBlobData): string {
 }
 
 /**
+ * Compact blob annotation for history/context display.
+ * Omits URIs and sizes; surfaces voice memo transcripts prominently.
+ */
+export function formatBlobForHistory(blobData: ClientPostBlobData): string {
+  const lines: string[] = [];
+
+  for (const entry of blobData) {
+    if (entry.type === "file") {
+      lines.push(`[📎 ${entry.name || "file"}]`);
+    } else if (entry.type === "voicememo") {
+      if (entry.transcription) {
+        lines.push(`[🎙️ voice memo: "${entry.transcription}"]`);
+      } else {
+        const dur = entry.duration ? `${Math.round(entry.duration)}s` : "";
+        lines.push(`[🎙️ voice memo${dur ? `, ${dur}` : ""}]`);
+      }
+    } else if (entry.type === "video") {
+      lines.push(`[🎬 ${entry.name || "video"}]`);
+    }
+    // Skip unknown types
+  }
+
+  return lines.join("\n");
+}
+
+/**
  * Download all downloadable blob attachments (files, voice memos, videos)
  * and return attachment metadata for OpenClaw.
  */

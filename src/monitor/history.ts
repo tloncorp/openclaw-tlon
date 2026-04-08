@@ -1,5 +1,6 @@
 import type { RuntimeEnv } from "openclaw/plugin-sdk";
 import { extractMessageText } from "./utils.js";
+import { parseBlobData, formatBlobForHistory } from "./media.js";
 
 /**
  * Format a number as @ud (with dots every 3 digits from the right)
@@ -25,7 +26,25 @@ export type TlonHistoryEntry = {
   content: string;
   timestamp: number;
   id?: string;
+  blob?: string | null;
 };
+
+/**
+ * Render a history entry's full content for context display.
+ * Combines text content with compact blob annotations (e.g. voice memo transcripts).
+ */
+export function renderHistoryContent(entry: TlonHistoryEntry): string {
+  const parts: string[] = [];
+  if (entry.blob) {
+    const blobData = parseBlobData(entry.blob);
+    if (blobData) {
+      const blobText = formatBlobForHistory(blobData);
+      if (blobText) parts.push(blobText);
+    }
+  }
+  if (entry.content) parts.push(entry.content);
+  return parts.join("\n");
+}
 
 const messageCache = new Map<string, TlonHistoryEntry[]>();
 const MAX_CACHED_MESSAGES = 100;
@@ -85,9 +104,10 @@ export async function fetchChannelHistory(
           content: extractMessageText(essay?.content || []),
           timestamp: essay?.sent || Date.now(),
           id: seal?.id,
+          blob: essay?.blob ?? null,
         } as TlonHistoryEntry;
       })
-      .filter((msg) => msg.content);
+      .filter((msg) => msg.content || msg.blob);
 
     runtime?.log?.(`[tlon] Extracted ${messages.length} messages from history`);
     return messages;
@@ -162,9 +182,10 @@ export async function fetchThreadHistory(
           content: extractMessageText(memo?.content || []),
           timestamp: memo?.sent || Date.now(),
           id: seal?.id || item.id,
+          blob: memo?.blob ?? null,
         } as TlonHistoryEntry;
       })
-      .filter((msg) => msg.content);
+      .filter((msg) => msg.content || msg.blob);
 
     runtime?.log?.(`[tlon] Extracted ${messages.length} thread replies from history`);
     return messages;
@@ -184,8 +205,9 @@ export async function fetchThreadHistory(
             content: extractMessageText(reply.memo?.content || []),
             timestamp: reply.memo?.sent || Date.now(),
             id: reply.seal?.id,
+            blob: reply.memo?.blob ?? null,
           }))
-          .filter((msg: TlonHistoryEntry) => msg.content);
+          .filter((msg: TlonHistoryEntry) => msg.content || msg.blob);
 
         runtime?.log?.(`[tlon] Extracted ${messages.length} replies from post data`);
         return messages;
