@@ -82,7 +82,10 @@ export function createComputingPresenceTracker(params?: {
       return false;
     }
 
-    if (left.disclose.length !== right.disclose.length || left.toolNames.length !== right.toolNames.length) {
+    if (
+      left.disclose.length !== right.disclose.length ||
+      left.toolNames.length !== right.toolNames.length
+    ) {
       return false;
     }
 
@@ -136,7 +139,10 @@ export function createComputingPresenceTracker(params?: {
     await publishNow(conversationId, nextState);
   };
 
-  const publishThrottled = async (conversationId: string, state: PublishedState) => {
+  const publishThrottled = async (
+    conversationId: string,
+    state: PublishedState,
+  ) => {
     if (statesEqual(lastPublishedState.get(conversationId), state)) {
       clearPending(conversationId);
       return;
@@ -148,7 +154,8 @@ export function createComputingPresenceTracker(params?: {
     }
 
     const now = Date.now();
-    const nextAllowedAt = (lastPublishedAt.get(conversationId) ?? 0) + minUpdateIntervalMs;
+    const nextAllowedAt =
+      (lastPublishedAt.get(conversationId) ?? 0) + minUpdateIntervalMs;
     if (now >= nextAllowedAt) {
       await publishNow(conversationId, state);
       return;
@@ -170,7 +177,9 @@ export function createComputingPresenceTracker(params?: {
 
   const syncConversation = async (conversationId: string) => {
     const runs = conversations.get(conversationId);
-    const previousDisclose = new Set(publishedDisclose.get(conversationId) ?? []);
+    const previousDisclose = new Set(
+      publishedDisclose.get(conversationId) ?? [],
+    );
     const previousState = lastPublishedState.get(conversationId);
 
     if (!runs || runs.size === 0) {
@@ -261,13 +270,19 @@ export function createComputingPresenceTracker(params?: {
     return run;
   };
 
-  const safelySync = async (conversationId: string, action: string, fn: () => Promise<void>) => {
+  const safelySync = async (
+    conversationId: string,
+    action: string,
+    fn: () => Promise<void>,
+  ) => {
     try {
       await fn();
     } catch (error) {
       runtime?.error?.(
         `[tlon] Failed to ${action} computing presence for ${conversationId}: ${
-          error instanceof Error ? error.stack ?? error.message : String(error)
+          error instanceof Error
+            ? (error.stack ?? error.message)
+            : String(error)
         }`,
       );
     }
@@ -307,7 +322,10 @@ export function createComputingPresenceTracker(params?: {
       });
     },
 
-    clearToolCalls: async (params: { conversationId: string; runId: string }) => {
+    clearToolCalls: async (params: {
+      conversationId: string;
+      runId: string;
+    }) => {
       await safelySync(params.conversationId, "clear tools for", async () => {
         const run = getRun(params.conversationId, params.runId);
         if (!run || run.toolNames.length === 0) {
