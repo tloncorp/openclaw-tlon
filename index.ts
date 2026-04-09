@@ -15,64 +15,16 @@ import { resolveBridgeForCommand } from "./src/monitor/command-auth.js";
 import { setTlonRuntime } from "./src/runtime.js";
 import { getSessionRole } from "./src/session-roles.js";
 import { recordToolCall } from "./src/telemetry.js";
+import {
+  ALLOWED_TLON_COMMANDS,
+  findTlonSubcommandIndex,
+  shellSplitCommand,
+  summarizeTlonCommand,
+} from "./src/tlon-tool-command.js";
 import { checkBlockedSendOperation } from "./src/tlon-tool-guard.js";
 import { resolveTlonAccount } from "./src/types.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-
-// Whitelist of allowed tlon subcommands
-const ALLOWED_TLON_COMMANDS = new Set([
-  "activity",
-  "channels",
-  "contacts",
-  "dms",
-  "expose",
-  "groups",
-  "hooks",
-  "messages",
-  "notebook",
-  "posts",
-  "settings",
-  "upload",
-  "help",
-  "version"
-]);
-
-/** Credential flags that the tlon skill binary accepts before the subcommand. */
-const CREDENTIAL_FLAGS_WITH_VALUE = new Set([
-  "--config",
-  "--url",
-  "--ship",
-  "--code",
-  "--cookie",
-]);
-
-/**
- * Find the first positional argument (subcommand) by skipping credential flags
- * and their values. Returns the index into `args`, or -1 if none found.
- */
-function findSubcommandIndex(args: string[]): number {
-  let i = 0;
-  while (i < args.length) {
-    const arg = args[i];
-    // --flag=value form: skip one token
-    if (arg.startsWith("--") && arg.includes("=")) {
-      const flag = arg.slice(0, arg.indexOf("="));
-      if (CREDENTIAL_FLAGS_WITH_VALUE.has(flag)) {
-        i += 1;
-        continue;
-      }
-    }
-    // --flag value form: skip two tokens
-    if (CREDENTIAL_FLAGS_WITH_VALUE.has(arg)) {
-      i += 2;
-      continue;
-    }
-    // Not a credential flag — this is the subcommand
-    return i;
-  }
-  return -1;
-}
 
 /**
  * Find the tlon binary from the skill package
@@ -98,47 +50,6 @@ function findTlonBinary(): string {
   // Fallback to PATH
   console.log(`[tlon] Falling back to PATH lookup for 'tlon'`);
   return "tlon";
-}
-
-/**
- * Shell-like argument splitter that respects quotes
- */
-function shellSplit(str: string): string[] {
-  const args: string[] = [];
-  let cur = "";
-  let inDouble = false;
-  let inSingle = false;
-  let escape = false;
-
-  for (const ch of str) {
-    if (escape) {
-      cur += ch;
-      escape = false;
-      continue;
-    }
-    if (ch === "\\" && !inSingle) {
-      escape = true;
-      continue;
-    }
-    if (ch === '"' && !inSingle) {
-      inDouble = !inDouble;
-      continue;
-    }
-    if (ch === "'" && !inDouble) {
-      inSingle = !inSingle;
-      continue;
-    }
-    if (/\s/.test(ch) && !inDouble && !inSingle) {
-      if (cur) {
-        args.push(cur);
-        cur = "";
-      }
-      continue;
-    }
-    cur += ch;
-  }
-  if (cur) args.push(cur);
-  return args;
 }
 
 /**
@@ -245,11 +156,11 @@ const plugin = {
       },
       async execute(_id: string, params: { command: string }) {
         try {
-          const args = shellSplit(params.command);
+          const args = shellSplitCommand(params.command);
 
           // Skip credential flags (--config, --url, --ship, --code, --cookie)
           // to find the actual subcommand, matching what the skill binary does.
-          const subIdx = findSubcommandIndex(args);
+          const subIdx = findTlonSubcommandIndex(args);
           const subcommand = subIdx >= 0 ? args[subIdx] : undefined;
           if (!subcommand || !ALLOWED_TLON_COMMANDS.has(subcommand)) {
             return {
@@ -321,6 +232,10 @@ const plugin = {
         toolName: event.toolName,
         durationMs: event.durationMs,
         error: event.error,
+        context:
+          event.toolName === "tlon" && typeof event.params.command === "string"
+            ? summarizeTlonCommand(event.params.command)
+            : undefined,
       });
     });
 
