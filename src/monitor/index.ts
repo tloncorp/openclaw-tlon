@@ -1,20 +1,25 @@
 import type { RuntimeEnv, ReplyPayload, OpenClawConfig } from "openclaw/plugin-sdk";
-import type { Memo, Story } from "@tloncorp/api";
+import type { Story } from "@tloncorp/api";
 
 // Local structural types — @tloncorp/api defines these internally but
 // does not export them from its public entrypoint.
 type Author = string | { ship: string };
-type PostEssay = { content: Story; author: Author; sent: number };
+type Essay = {
+  content: Story;
+  author: Author;
+  sent: number;
+  blob?: string | null;
+};
 type Seal = { "parent-id"?: string; parent?: string; [k: string]: unknown };
 type ChannelResponse = {
   post?: {
     id?: string;
     "r-post"?: {
-      set?: { essay?: PostEssay; seal?: Seal } | null;
+      set?: { essay?: Essay; seal?: Seal } | null;
       reply?: {
         id?: string;
         "r-reply"?: {
-          set?: { memo?: Memo; seal?: Seal };
+          set?: { "reply-essay"?: Essay; seal?: Seal };
           reacts?: Record<string, unknown>;
         };
       };
@@ -23,8 +28,8 @@ type ChannelResponse = {
   };
 };
 type WritResponseDelta =
-  | { add?: { essay?: PostEssay }; reply?: never; "add-react"?: never; "del-react"?: never }
-  | { reply?: { id?: string; delta?: { add?: { memo?: Memo; id?: string } } }; add?: never; "add-react"?: never; "del-react"?: never }
+  | { add?: { essay?: Essay }; reply?: never; "add-react"?: never; "del-react"?: never }
+  | { reply?: { id?: string; delta?: { add?: { "reply-essay"?: Essay; id?: string } } }; add?: never; "add-react"?: never; "del-react"?: never }
   | { "add-react"?: { react: string; author: string; ship?: string }; add?: never; reply?: never; "del-react"?: never }
   | { "del-react"?: { author?: string; ship?: string }; add?: never; reply?: never; "add-react"?: never };
 type WritResponse = { whom: string; id: string; response: WritResponseDelta };
@@ -60,7 +65,7 @@ import {
 import { setBridge, removeBridge, type ApprovalCommandBridge } from "./command-bridge.js";
 import { fetchAllChannels, fetchInitData } from "./discovery.js";
 import { cacheMessage, lookupCachedMessage, getChannelHistory, fetchChannelHistory, fetchThreadHistory } from "./history.js";
-import { downloadMessageImages } from "./media.js";
+import { downloadMessageImages, parseBlobData, formatBlobAnnotations, downloadBlobAttachments } from "./media.js";
 import { createProcessedMessageTracker } from "./processed-messages.js";
 import {
   extractMessageText,
@@ -93,7 +98,7 @@ type ChannelAuthorization = {
 };
 
 /**
- * Channel firehose event structure (subscription to /v2 on channels agent)
+ * Channel firehose event structure (subscription to /v4 on channels agent)
  */
 interface ChannelFirehoseEvent {
   nest: string;
@@ -962,6 +967,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
               messageContent: approval.originalMessage.messageContent,
               isGroup: false,
               timestamp: approval.originalMessage.timestamp,
+              blobField: approval.originalMessage.blob,
             });
           }
           break;
@@ -986,6 +992,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
                 timestamp: approval.originalMessage.timestamp,
                 parentId: approval.originalMessage.parentId,
                 isThreadReply: approval.originalMessage.isThreadReply,
+                blobField: approval.originalMessage.blob,
               });
             }
           }
@@ -1113,6 +1120,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     senderShip: string;
     messageText: string;
     messageContent?: unknown; // Raw Tlon content for media extraction
+    blobField?: string | null; // Raw blob JSON from post/reply
     isGroup: boolean;
     channelNest?: string;
     hostShip?: string;
@@ -1198,6 +1206,32 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         }
       } catch (error: any) {
         runtime.log?.(`[tlon] Failed to download images: ${error?.message ?? String(error)}`);
+      }
+    }
+
+    // Parse and handle blob attachments (files, voice memos, videos)
+    const blobData = parseBlobData(params.blobField);
+    if (blobData) {
+      // Add text annotations so the agent knows what was attached
+      const blobAnnotations = formatBlobAnnotations(blobData);
+      if (blobAnnotations) {
+        messageText = blobAnnotations + "\n" + messageText;
+        runtime.log?.(`[tlon] Added blob annotations: ${blobAnnotations} attachment(s)`);
+      }
+
+      // Download blob files as attachments
+      try {
+        const { attachments: blobAttachments, notices: blobDownloadNotices } = await downloadBlobAttachments(blobData);
+        if (blobDownloadNotices.length > 0) {
+          messageText = blobDownloadNotices.join("\n") + "\n" + messageText;
+          runtime.log?.(`[tlon] Skipped oversized blob attachment(s): ${blobDownloadNotices.join(" | ")}`);
+        }
+        if (blobAttachments.length > 0) {
+          attachments = attachments.concat(blobAttachments);
+          runtime.log?.(`[tlon] Downloaded blob attachment(s) ${JSON.stringify(blobAttachments)}`);
+        }
+      } catch (error: any) {
+        runtime.log?.(`[tlon] Failed to download blob attachments: ${error?.message ?? String(error)}`);
       }
     }
 
@@ -1421,6 +1455,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
 
     const ctxPayload = core.channel.reply.finalizeInboundContext({
       Body: body,
+      BodyForAgent: bodyWithAttachments,
       RawBody: messageText,
       CommandBody: commandBody,
       From: isGroup ? `tlon:group:${groupChannel}` : `tlon:${senderShip}`,
@@ -1437,8 +1472,12 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       Provider: "tlon",
       Surface: "tlon",
       MessageSid: messageId,
-      // Include downloaded media attachments
-      ...(attachments.length > 0 && { Attachments: attachments }),
+      // Include downloaded media attachments (MediaPaths/MediaUrls/MediaTypes for OpenClaw media pipeline)
+      ...(attachments.length > 0 && {
+        MediaPaths: attachments.map((a) => a.path),
+        MediaUrls: attachments.map((a) => a.path),
+        MediaTypes: attachments.map((a) => a.contentType),
+      }),
       OriginatingChannel: "tlon",
       OriginatingTo: `tlon:${isGroup ? groupChannel : senderShip}`,
       // Include thread context for automatic reply routing
@@ -1591,7 +1630,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
   const watchedChannels = new Set<string>(groupChannels);
   const _watchedDMs = new Set<string>();
 
-  // Firehose handler for all channel messages (/v2)
+  // Firehose handler for all channel messages (/v4)
   const handleChannelsFirehose = async (event: ChannelFirehoseEvent) => {
     try {
       const nest = event?.nest;
@@ -1687,14 +1726,14 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
 
       // Handle post responses (new posts and replies)
       const essay = response?.post?.["r-post"]?.set?.essay;
-      const memo = response?.post?.["r-post"]?.reply?.["r-reply"]?.set?.memo;
+      const replyEssay = response?.post?.["r-post"]?.reply?.["r-reply"]?.set?.["reply-essay"];
 
-      const content = memo || essay;
+      const content = replyEssay || essay;
       if (!content) {
         return;
       }
 
-      const isThreadReply = Boolean(memo);
+      const isThreadReply = Boolean(replyEssay);
       const messageId = isThreadReply ? response?.post?.["r-post"]?.reply?.id : response?.post?.id;
 
       if (!processedTracker.mark(messageId)) {
@@ -1710,7 +1749,8 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       const citedContent = await resolveAllCites(content.content);
       const rawText = extractMessageText(content.content);
       const messageText = citedContent + rawText;
-      if (!messageText.trim()) {
+      const hasBlob = Boolean((content as any)?.blob);
+      if (!messageText.trim() && !hasBlob) {
         return;
       }
 
@@ -1750,12 +1790,15 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       const inParticipatedThread =
         isThreadReply && parentId && participatedThreads.has(String(parentId));
 
-      if (!mentioned && !inParticipatedThread) {
+      const isOwnerBlob = hasBlob && isOwner(senderShip);
+      if (!mentioned && !inParticipatedThread && !isOwnerBlob) {
         return;
       }
 
       // Log why we're responding
-      if (inParticipatedThread && !mentioned) {
+      if (isOwnerBlob && !mentioned && !inParticipatedThread) {
+        runtime.log?.(`[tlon] Responding to owner blob-only message in ${nest}`);
+      } else if (inParticipatedThread && !mentioned) {
         runtime.log?.(`[tlon] Responding to thread we participated in (no mention): ${parentId}`);
       }
 
@@ -1798,6 +1841,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
                   timestamp: content.sent || Date.now(),
                   parentId: parentId ?? undefined,
                   isThreadReply,
+                  blob: content.blob ?? undefined,
                 },
               }, pendingApprovals.map((a) => a.id));
               await queueApprovalRequest(approval);
@@ -1817,6 +1861,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         senderShip,
         messageText,
         messageContent: content.content, // Pass raw content for media extraction
+        blobField: content.blob,
         isGroup: true,
         channelNest: nest,
         hostShip: parsed?.hostShip,
@@ -1832,7 +1877,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     }
   };
 
-  // Firehose handler for all DM messages (/v3)
+  // Firehose handler for all DM messages (/v4)
   // Track which DM invites we've already processed to avoid duplicate accepts
   const processedDmInvites = new Set<string>();
 
@@ -1894,6 +1939,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       if (!("whom" in event) || !("response" in event)) {
         return;
       }
+
 
       const whom = event.whom; // DM partner ship or club ID
       const messageId = event.id;
@@ -1990,11 +2036,11 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         return;
       }
 
-      // Extract memo from DM thread reply
-      const dmReplyMemo = dmReply?.delta?.add?.memo;
+      // Extract reply-essay from DM thread reply
+      const dmReplyEssay = dmReply?.delta?.add?.["reply-essay"];
       const dmReplyParentId = dmReply ? event.id : undefined;
-      const isDmThreadReply = Boolean(dmReplyMemo);
-      const dmContent = essay || dmReplyMemo;
+      const isDmThreadReply = Boolean(dmReplyEssay);
+      const dmContent = essay || dmReplyEssay;
 
       // For DM thread replies, extract the reply's own ID (distinct from the parent post ID)
       // The reply ID may be in dmReply.id, or we construct it from author/sent
@@ -2002,8 +2048,8 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       if (isDmThreadReply && dmReply) {
         dmReplyOwnId = dmReply.id ?? dmReply.delta?.add?.id;
         // If no explicit reply ID, construct from author/sent (same format as our outbound)
-        if (!dmReplyOwnId && dmReplyMemo?.author && dmReplyMemo?.sent) {
-          dmReplyOwnId = `${normalizeShip(extractAuthorShip(dmReplyMemo.author))}/${dmReplyMemo.sent}`;
+        if (!dmReplyOwnId && dmReplyEssay?.author && dmReplyEssay?.sent) {
+          dmReplyOwnId = `${normalizeShip(extractAuthorShip(dmReplyEssay.author))}/${dmReplyEssay.sent}`;
         }
       }
 
@@ -2018,7 +2064,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         return;
       }
 
-      const authorShip = normalizeShip(extractAuthorShip(dmContent?.author));
+      const authorShip = normalizeShip(extractAuthorShip(dmContent.author));
       const partnerShip = extractDmPartnerShip(whom);
       const senderShip = partnerShip || authorShip;
 
@@ -2053,7 +2099,8 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       const citedContent = await resolveAllCites(dmContent.content);
       const rawText = extractMessageText(dmContent.content);
       const messageText = citedContent + rawText;
-      if (!messageText.trim()) {
+      const hasBlob = Boolean((dmContent as any)?.blob);
+      if (!messageText.trim() && !hasBlob) {
         return;
       }
 
@@ -2065,6 +2112,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
           senderShip,
           messageText,
           messageContent: dmContent.content,
+          blobField: dmContent.blob,
           isGroup: false,
           timestamp: dmContent.sent || Date.now(),
           parentId: dmReplyParentId,
@@ -2086,6 +2134,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
               messageText,
               messageContent: dmContent.content,
               timestamp: dmContent.sent || Date.now(),
+              blob: dmContent.blob ?? undefined,
             },
           }, pendingApprovals.map((a) => a.id));
           await queueApprovalRequest(approval);
@@ -2100,6 +2149,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         senderShip,
         messageText,
         messageContent: dmContent.content, // Pass raw content for media extraction
+        blobField: dmContent.blob,
         isGroup: false,
         timestamp: dmContent.sent || Date.now(),
         parentId: dmReplyParentId,
@@ -2115,10 +2165,10 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
   try {
     runtime.log?.("[tlon] Subscribing to firehose updates...");
 
-    // Subscribe to channels firehose (/v2)
+    // Subscribe to channels firehose (/v4)
     await api.subscribe({
       app: "channels",
-      path: "/v2",
+      path: "/v4",
       event: (data) => handleChannelsFirehose(data as ChannelFirehoseEvent),
       err: (error) => {
         runtime.error?.(`[tlon] Channels firehose error: ${String(error)}`);
@@ -2127,12 +2177,12 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         runtime.log?.("[tlon] Channels firehose quit received, SSE client will resubscribe");
       },
     });
-    runtime.log?.("[tlon] Subscribed to channels firehose (/v2)");
+    runtime.log?.("[tlon] Subscribed to channels firehose (/v4)");
 
-    // Subscribe to chat/DM firehose (/v3)
+    // Subscribe to chat/DM firehose (/v4)
     await api.subscribe({
       app: "chat",
-      path: "/v3",
+      path: "/v4",
       event: (data) => handleChatFirehose(data as ChatFirehoseEvent),
       err: (error) => {
         runtime.error?.(`[tlon] Chat firehose error: ${String(error)}`);
@@ -2141,7 +2191,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         runtime.log?.("[tlon] Chat firehose quit received, SSE client will resubscribe");
       },
     });
-    runtime.log?.("[tlon] Subscribed to chat firehose (/v3)");
+    runtime.log?.("[tlon] Subscribed to chat firehose (/v4)");
 
     // Subscribe to contacts updates to track nickname changes
     await api.subscribe({

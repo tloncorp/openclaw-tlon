@@ -29,6 +29,7 @@ export type PendingApproval = {
     timestamp: number;
     parentId?: string;
     isThreadReply?: boolean;
+    blob?: string;
   };
   timestamp: number;
   /** Normalized message ID of the owner notification DM (for reaction-based approval) */

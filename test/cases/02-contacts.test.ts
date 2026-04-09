@@ -10,12 +10,9 @@ describe("contacts", () => {
 
   test("reads the bot ship profile", async () => {
     const prompt = "Show your own profile details, including your ship name.";
-    console.log(`\n[TEST] Sending prompt: "${prompt}"`);
-
+    
     const response = await fixtures.client.prompt(prompt);
-    console.log(`[TEST] Response success: ${response.success}`);
-    console.log(`[TEST] Response text: ${response.text?.slice(0, 300)}`);
-
+        
     if (!response.success) {
       throw new Error(response.error ?? "Prompt failed");
     }
@@ -35,12 +32,9 @@ describe("contacts", () => {
   test("updates the bot profile nickname", async () => {
     const nicknameToken = `it-nick-${Date.now().toString(36)}`;
     const prompt = `Update your own profile nickname to exactly "${nicknameToken}" and confirm when done.`;
-    console.log(`\n[TEST] Sending prompt: "${prompt}"`);
-
+    
     const response = await fixtures.client.prompt(prompt);
-    console.log(`[TEST] Response success: ${response.success}`);
-    console.log(`[TEST] Response text: ${response.text?.slice(0, 500)}`);
-
+        
     if (!response.success) {
       throw new Error(response.error ?? "Prompt failed");
     }
@@ -73,12 +67,9 @@ describe("contacts", () => {
   test("updates the bot profile bio", async () => {
     const bioToken = `openclaw-integration-bio-${Date.now().toString(36)}`;
     const prompt = `Update your own profile bio to exactly "${bioToken}" and confirm when done.`;
-    console.log(`\n[TEST] Sending prompt: "${prompt}"`);
-
+    
     const response = await fixtures.client.prompt(prompt);
-    console.log(`[TEST] Response success: ${response.success}`);
-    console.log(`[TEST] Response text: ${response.text?.slice(0, 500)}`);
-
+        
     if (!response.success) {
       throw new Error(response.error ?? "Prompt failed");
     }
