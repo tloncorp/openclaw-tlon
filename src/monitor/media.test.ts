@@ -29,8 +29,8 @@ describe("parseBlobData", () => {
     expect(parseBlobData("")).toBeNull();
   });
 
-  it("returns null for invalid JSON", () => {
-    expect(parseBlobData("not json")).toBeNull();
+  it("returns an unknown sentinel for invalid JSON", () => {
+    expect(parseBlobData("not json")).toEqual([{ type: "unknown" }]);
   });
 
   it("returns null for empty array", () => {

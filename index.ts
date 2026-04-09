@@ -8,7 +8,9 @@ import { PLUGIN_COMMIT } from "./src/version.generated.js";
 
 // Get package version at runtime
 const require = createRequire(import.meta.url);
-const { version: PLUGIN_VERSION } = require("./package.json") as { version: string };
+const { version: PLUGIN_VERSION } = require("./package.json") as {
+  version: string;
+};
 import { emptyPluginConfigSchema } from "openclaw/plugin-sdk";
 import { tlonPlugin } from "./src/channel.js";
 import { resolveBridgeForCommand } from "./src/monitor/command-auth.js";
@@ -21,7 +23,12 @@ import {
   shouldLogAfterToolTrace,
 } from "./src/tool-trace.js";
 import { checkBlockedSendOperation } from "./src/tlon-tool-guard.js";
-import { resolveTlonAccount } from "./src/types.js";
+import { resolveTlonAccount, listTlonAccountIds } from "./src/types.js";
+import {
+  createGatewayStatusManager,
+  setGatewayStatusManager,
+} from "./src/gateway-status.js";
+import { gatewayStop } from "@tloncorp/api";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -200,6 +207,55 @@ const plugin = {
     setTlonRuntime(api.runtime);
     api.registerChannel({ plugin: tlonPlugin });
 
+    // ── Gateway-status liveness integration ───────────────────
+    //
+    // v1 requires exactly one Tlon account. With multiple accounts, multiple
+    // monitors call configureTlonApiWithPoke() and the last one wins the global
+    // @tloncorp/api singleton — making it unsafe to route heartbeats or stop
+    // pokes to a specific ship. Disable entirely rather than route to the wrong ship.
+    const gsAccountIds = listTlonAccountIds(api.config);
+    setGatewayStatusManager(null);
+
+    if (gsAccountIds.length > 1) {
+      api.logger.warn(
+        `[gateway-status] disabled: ${gsAccountIds.length} Tlon accounts configured, ` +
+          `but v1 only supports one (global @tloncorp/api client cannot target multiple ships)`,
+      );
+    } else if (gsAccountIds.length === 1) {
+      const gsManager = createGatewayStatusManager({
+        logger: {
+          log: (m) => api.logger.info(m),
+          error: (m) => api.logger.warn(m),
+        },
+      });
+      setGatewayStatusManager(gsManager);
+
+      api.on("gateway_start", () => {
+        gsManager.signalGatewayStarted();
+        api.logger.info("[gateway-status] gateway_start received");
+      });
+
+      api.on("gateway_stop", async (event) => {
+        if (!gsManager.activated || gsManager.stopped) {
+          return;
+        }
+        gsManager.stopHeartbeat();
+        gsManager.markStopped();
+        try {
+          await gatewayStop({
+            bootId: gsManager.bootId,
+            reason: event.reason ?? "shutdown",
+          });
+          api.logger.info(
+            `[gateway-status] stopped (reason=${event.reason ?? "shutdown"})`,
+          );
+        } catch (err) {
+          api.logger.warn(`[gateway-status] stop poke failed: ${String(err)}`);
+        }
+      });
+    }
+    // else: zero accounts configured — nothing to do
+
     // Register /tlon-version command
     api.registerCommand({
       name: "tlon-version",
@@ -283,7 +339,8 @@ const plugin = {
             details: undefined,
           };
         } catch (error: unknown) {
-          const message = error instanceof Error ? error.message : String(error);
+          const message =
+            error instanceof Error ? error.message : String(error);
           return {
             content: [{ type: "text" as const, text: `Error: ${message}` }],
             details: { error: true },
@@ -377,7 +434,12 @@ const plugin = {
       handler: async (ctx) => {
         const result = resolveBridgeForCommand(ctx);
         if ("error" in result) return { text: result.error };
-        return { text: await result.bridge.handleAction("approve", ctx.args?.trim() || undefined) };
+        return {
+          text: await result.bridge.handleAction(
+            "approve",
+            ctx.args?.trim() || undefined,
+          ),
+        };
       },
     });
 
@@ -388,7 +450,12 @@ const plugin = {
       handler: async (ctx) => {
         const result = resolveBridgeForCommand(ctx);
         if ("error" in result) return { text: result.error };
-        return { text: await result.bridge.handleAction("deny", ctx.args?.trim() || undefined) };
+        return {
+          text: await result.bridge.handleAction(
+            "deny",
+            ctx.args?.trim() || undefined,
+          ),
+        };
       },
     });
 
@@ -399,7 +466,12 @@ const plugin = {
       handler: async (ctx) => {
         const result = resolveBridgeForCommand(ctx);
         if ("error" in result) return { text: result.error };
-        return { text: await result.bridge.handleAction("block", ctx.args?.trim() || undefined) };
+        return {
+          text: await result.bridge.handleAction(
+            "block",
+            ctx.args?.trim() || undefined,
+          ),
+        };
       },
     });
 
