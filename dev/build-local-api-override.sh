@@ -29,6 +29,14 @@ echo "==> Verifying linked @tloncorp/api exports..."
 node --input-type=module -e '
   const mod = await import("@tloncorp/api");
   const required = [
+    "configureClient",
+    "scry",
+    "sendPost",
+    "sendReply",
+    "addReaction",
+    "removeReaction",
+    "deletePost",
+    "uploadFile",
     "configureGatewayStatus",
     "gatewayStart",
     "gatewayHeartbeat",

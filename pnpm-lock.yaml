@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       '@tloncorp/api':
-        specifier: 0.0.2-alpha.4
-        version: 0.0.2-alpha.4
+        specifier: 0.0.6
+        version: 0.0.6
       '@tloncorp/tlon-skill':
         specifier: ^0.3.1
         version: 0.3.1
@@ -1818,8 +1818,8 @@ packages:
     resolution: {integrity: sha512-5Kc5CM2Ysn3vTTArBs2vESUt0AQiWZA86yc1TI3B+lxXmtEq133C1nxXNOgnzhrivdPZIh3zLj5gDnZjoLL5GA==}
     engines: {node: '>=12.17.0'}
 
-  '@tloncorp/api@0.0.2-alpha.4':
-    resolution: {integrity: sha512-ZaVntuQS38GuNmJMH0iudp0S6oFIR/IUND4twEquZg6GeRxpmrYMcP1ynSQk8zfenBRYtmeEmb/amqZ/7XcHlQ==}
+  '@tloncorp/api@0.0.6':
+    resolution: {integrity: sha512-5Oghwam7Mpt7v+H2gjHix3AyMfp8squIM7kbdxIcIdWXaaDAJAUKowI1v4PDjHYHrNmzCLR+RfW5hDy063IRsg==}
 
   '@tloncorp/tlon-skill-darwin-arm64@0.3.1':
     resolution: {integrity: sha512-3OOk2HIzAKylEHakJmHoCDu44xSh9t/tgDZnjmSL1ndXsV7+ORP2sXS+t07/F6iLAIsk0AXVxWbE02CFf+cYaQ==}
@@ -6212,7 +6212,7 @@ snapshots:
 
   '@tinyhttp/content-disposition@2.2.4': {}
 
-  '@tloncorp/api@0.0.2-alpha.4':
+  '@tloncorp/api@0.0.6':
     dependencies:
       '@aws-sdk/client-s3': 3.1017.0
       '@aws-sdk/s3-request-presigner': 3.1017.0
@@ -6228,6 +6228,7 @@ snapshots:
       lodash: 4.17.23
       sorted-btree: 1.8.1
       validator: 13.15.26
+      zod: 3.25.76
     transitivePeerDependencies:
       - aws-crt
 
