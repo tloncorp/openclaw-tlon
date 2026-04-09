@@ -1,7 +1,63 @@
-import { describe, expect, test, vi } from "vitest";
-import { createComputingPresenceTracker } from "./computing-presence.js";
+import { beforeEach, describe, expect, test, vi } from "vitest";
+
+const {
+  createComputingStatus,
+  getComputingStatusText,
+  serializeComputingStatus,
+  setConversationPresence,
+} = vi.hoisted(() => ({
+  createComputingStatus: vi.fn(({ thinking, toolCalls }) => ({
+    thinking,
+    toolCalls,
+  })),
+  getComputingStatusText: vi.fn(() => "Computing"),
+  serializeComputingStatus: vi.fn(({ thinking, toolCalls }) => ({
+    thinking,
+    toolCalls,
+  })),
+  setConversationPresence: vi.fn(async () => {}),
+}));
+
+vi.mock("@tloncorp/api", () => ({
+  createComputingStatus,
+  getComputingStatusText,
+  serializeComputingStatus,
+  setConversationPresence,
+}));
+
+import {
+  createComputingPresenceReporter,
+  createComputingPresenceTracker,
+} from "./computing-presence.js";
 
 describe("createComputingPresenceTracker", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  test("publishes presence with an empty disclose array", async () => {
+    const reporter = createComputingPresenceReporter();
+
+    await reporter.publish({
+      conversationId: "~nec",
+      thinking: true,
+      toolNames: ["exec"],
+    });
+
+    expect(setConversationPresence).toHaveBeenCalledWith({
+      conversationId: "~nec",
+      topic: "computing",
+      disclose: [],
+      display: {
+        text: "Computing",
+        blob: {
+          thinking: true,
+          toolCalls: [{ toolName: "exec" }],
+        },
+      },
+    });
+  });
+
   test("publishes thinking state for a new run and sends thinking false when the run stops", async () => {
     const reporter = {
       publish: vi.fn(async () => {}),
@@ -12,12 +68,10 @@ describe("createComputingPresenceTracker", () => {
     await tracker.refreshRun({
       conversationId: "~nec",
       runId: "run-1",
-      disclose: ["~nec"],
     });
 
     expect(reporter.publish).toHaveBeenCalledWith({
       conversationId: "~nec",
-      disclose: ["~nec"],
       thinking: true,
       toolNames: [],
     });
@@ -29,7 +83,6 @@ describe("createComputingPresenceTracker", () => {
 
     expect(reporter.publish).toHaveBeenLastCalledWith({
       conversationId: "~nec",
-      disclose: ["~nec"],
       thinking: false,
       toolNames: [],
     });
@@ -48,7 +101,6 @@ describe("createComputingPresenceTracker", () => {
       await tracker.refreshRun({
         conversationId: "~nec",
         runId: "run-1",
-        disclose: ["~nec"],
       });
 
       expect(reporter.publish).toHaveBeenCalledTimes(1);
@@ -56,14 +108,12 @@ describe("createComputingPresenceTracker", () => {
       await tracker.addToolCall({
         conversationId: "~nec",
         runId: "run-1",
-        disclose: ["~nec"],
         toolName: "web_fetch",
       });
 
       await tracker.addToolCall({
         conversationId: "~nec",
         runId: "run-1",
-        disclose: ["~nec"],
         toolName: "exec",
       });
 
@@ -75,7 +125,6 @@ describe("createComputingPresenceTracker", () => {
       await vi.advanceTimersByTimeAsync(1);
       expect(reporter.publish).toHaveBeenLastCalledWith({
         conversationId: "~nec",
-        disclose: ["~nec"],
         thinking: true,
         toolNames: ["web_fetch", "exec"],
       });
@@ -90,7 +139,6 @@ describe("createComputingPresenceTracker", () => {
       await vi.advanceTimersByTimeAsync(1_000);
       expect(reporter.publish).toHaveBeenLastCalledWith({
         conversationId: "~nec",
-        disclose: ["~nec"],
         thinking: true,
         toolNames: [],
       });
@@ -109,13 +157,11 @@ describe("createComputingPresenceTracker", () => {
     await tracker.refreshRun({
       conversationId: "~nec",
       runId: "run-1",
-      disclose: ["~nec"],
     });
 
     await tracker.refreshRun({
       conversationId: "~nec",
       runId: "run-1",
-      disclose: ["~nec"],
     });
 
     expect(reporter.publish).toHaveBeenCalledTimes(1);
@@ -131,30 +177,25 @@ describe("createComputingPresenceTracker", () => {
     await tracker.refreshRun({
       conversationId: "chat/~bus/general",
       runId: "run-1",
-      disclose: ["~nec"],
     });
     await tracker.addToolCall({
       conversationId: "chat/~bus/general",
       runId: "run-1",
-      disclose: ["~nec"],
       toolName: "web_fetch",
     });
 
     await tracker.refreshRun({
       conversationId: "chat/~bus/general",
       runId: "run-2",
-      disclose: ["~bud"],
     });
     await tracker.addToolCall({
       conversationId: "chat/~bus/general",
       runId: "run-2",
-      disclose: ["~bud"],
       toolName: "exec",
     });
 
     expect(reporter.publish).toHaveBeenLastCalledWith({
       conversationId: "chat/~bus/general",
-      disclose: ["~nec", "~bud"],
       thinking: true,
       toolNames: ["web_fetch", "exec"],
     });
@@ -164,22 +205,16 @@ describe("createComputingPresenceTracker", () => {
       runId: "run-1",
     });
 
-    expect(reporter.publish).toHaveBeenNthCalledWith(5, {
+    expect(reporter.publish).toHaveBeenLastCalledWith({
       conversationId: "chat/~bus/general",
-      disclose: ["~nec"],
-      thinking: false,
-      toolNames: [],
-    });
-
-    expect(reporter.publish).toHaveBeenNthCalledWith(6, {
-      conversationId: "chat/~bus/general",
-      disclose: ["~bud"],
       thinking: true,
       toolNames: ["exec"],
     });
+
+    expect(reporter.publish).toHaveBeenCalledTimes(4);
   });
 
-  test("sends thinking false to the last disclosed audience when a missing run is stopped", async () => {
+  test("does not republish thinking false when a stopped run is already missing", async () => {
     const reporter = {
       publish: vi.fn(async () => {}),
     };
@@ -189,7 +224,6 @@ describe("createComputingPresenceTracker", () => {
     await tracker.refreshRun({
       conversationId: "~nec",
       runId: "run-1",
-      disclose: ["~nec"],
     });
 
     await tracker.stopRun({

@@ -1421,7 +1421,6 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     const humanDelay = core.channel.reply.resolveHumanDelayConfig(cfg, route.agentId);
     const presenceConversationId = isGroup ? groupChannel ?? null : senderShip;
     const presenceRunId = String(messageId);
-    const presenceDisclose = [senderShip];
 
     const typingCallbacks = presenceConversationId
       ? createTypingCallbacks({
@@ -1429,7 +1428,6 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
             await computingPresence.refreshRun({
               conversationId: presenceConversationId,
               runId: presenceRunId,
-              disclose: presenceDisclose,
             });
           },
           stop: async () => {
@@ -1476,7 +1474,6 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
               await computingPresence.addToolCall({
                 conversationId: presenceConversationId,
                 runId: presenceRunId,
-                disclose: presenceDisclose,
                 toolName: payload.name,
               });
             },

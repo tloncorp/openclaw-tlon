@@ -7,13 +7,11 @@ import {
 import type { RuntimeEnv } from "openclaw/plugin-sdk";
 
 type RunState = {
-  disclose: Set<string>;
   toolNames: string[];
 };
 
 type PublishParams = {
   conversationId: string;
-  disclose: string[];
   thinking: boolean;
   toolNames: string[];
 };
@@ -24,10 +22,6 @@ export type ComputingPresenceReporter = {
   publish: (params: PublishParams) => Promise<void>;
 };
 
-function normalizeDisclose(disclose: Iterable<string>) {
-  return [...new Set([...disclose].map((ship) => ship.trim()).filter(Boolean))];
-}
-
 function normalizeToolName(toolName?: string | null) {
   const trimmed = toolName?.trim();
   return trimmed ? trimmed : null;
@@ -35,14 +29,14 @@ function normalizeToolName(toolName?: string | null) {
 
 export function createComputingPresenceReporter(): ComputingPresenceReporter {
   return {
-    publish: async ({ conversationId, disclose, thinking, toolNames }) => {
+    publish: async ({ conversationId, thinking, toolNames }) => {
       const toolCalls = toolNames.map((toolName) => ({ toolName }));
       const status = createComputingStatus({ thinking, toolCalls });
 
       await setConversationPresence({
         conversationId,
         topic: "computing",
-        disclose,
+        disclose: [],
         display: {
           text: getComputingStatusText(status),
           blob: serializeComputingStatus({ thinking, toolCalls }),
@@ -61,14 +55,12 @@ export function createComputingPresenceTracker(params?: {
   const runtime = params?.runtime;
   const minUpdateIntervalMs = Math.max(0, params?.minUpdateIntervalMs ?? 1_000);
   const conversations = new Map<string, Map<string, RunState>>();
-  const publishedDisclose = new Map<string, Set<string>>();
   const lastPublishedState = new Map<string, PublishedState>();
   const lastPublishedAt = new Map<string, number>();
   const pendingState = new Map<string, PublishedState>();
   const pendingTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
   const clonePublishedState = (state: PublishedState): PublishedState => ({
-    disclose: [...state.disclose],
     thinking: state.thinking,
     toolNames: [...state.toolNames],
   });
@@ -82,17 +74,8 @@ export function createComputingPresenceTracker(params?: {
       return false;
     }
 
-    if (
-      left.disclose.length !== right.disclose.length ||
-      left.toolNames.length !== right.toolNames.length
-    ) {
+    if (left.toolNames.length !== right.toolNames.length) {
       return false;
-    }
-
-    for (let index = 0; index < left.disclose.length; index += 1) {
-      if (left.disclose[index] !== right.disclose[index]) {
-        return false;
-      }
     }
 
     for (let index = 0; index < left.toolNames.length; index += 1) {
@@ -177,19 +160,12 @@ export function createComputingPresenceTracker(params?: {
 
   const syncConversation = async (conversationId: string) => {
     const runs = conversations.get(conversationId);
-    const previousDisclose = new Set(
-      publishedDisclose.get(conversationId) ?? [],
-    );
     const previousState = lastPublishedState.get(conversationId);
 
     if (!runs || runs.size === 0) {
       conversations.delete(conversationId);
-      publishedDisclose.delete(conversationId);
-
-      const removedDisclose = normalizeDisclose(previousDisclose);
-      if (removedDisclose.length > 0) {
+      if (previousState?.thinking) {
         await publishNow(conversationId, {
-          disclose: removedDisclose,
           thinking: false,
           toolNames: [],
         });
@@ -198,15 +174,10 @@ export function createComputingPresenceTracker(params?: {
       return;
     }
 
-    const disclose = new Set<string>();
     const seenToolNames = new Set<string>();
     const toolNames: string[] = [];
 
     for (const run of runs.values()) {
-      for (const ship of run.disclose) {
-        disclose.add(ship);
-      }
-
       for (const toolName of run.toolNames) {
         if (seenToolNames.has(toolName)) {
           continue;
@@ -217,35 +188,16 @@ export function createComputingPresenceTracker(params?: {
       }
     }
 
-    const currentDisclose = normalizeDisclose(disclose);
-    const removedDisclose = normalizeDisclose(
-      [...previousDisclose].filter((ship) => !disclose.has(ship)),
-    );
-
-    if (removedDisclose.length > 0) {
-      await reporter.publish({
-        conversationId,
-        disclose: removedDisclose,
-        thinking: false,
-        toolNames: [],
-      });
-    }
-
     const currentState: PublishedState = {
-      disclose: currentDisclose,
       thinking: true,
       toolNames,
     };
-    const addedDisclose = currentDisclose.filter(
-      (ship) => !previousState?.disclose.includes(ship),
-    );
 
-    if (!previousState || !previousState.thinking || addedDisclose.length > 0) {
+    if (!previousState || !previousState.thinking) {
       await publishNow(conversationId, currentState);
     } else {
       await publishThrottled(conversationId, currentState);
     }
-    publishedDisclose.set(conversationId, new Set(currentDisclose));
   };
 
   const getRun = (conversationId: string, runId: string) =>
@@ -261,7 +213,6 @@ export function createComputingPresenceTracker(params?: {
     let run = runs.get(runId);
     if (!run) {
       run = {
-        disclose: new Set<string>(),
         toolNames: [],
       };
       runs.set(runId, run);
@@ -292,11 +243,9 @@ export function createComputingPresenceTracker(params?: {
     refreshRun: async (params: {
       conversationId: string;
       runId: string;
-      disclose: string[];
     }) => {
       await safelySync(params.conversationId, "refresh", async () => {
-        const run = ensureRun(params.conversationId, params.runId);
-        run.disclose = new Set(normalizeDisclose(params.disclose));
+        ensureRun(params.conversationId, params.runId);
         await syncConversation(params.conversationId);
       });
     },
@@ -304,7 +253,6 @@ export function createComputingPresenceTracker(params?: {
     addToolCall: async (params: {
       conversationId: string;
       runId: string;
-      disclose: string[];
       toolName?: string | null;
     }) => {
       const toolName = normalizeToolName(params.toolName);
@@ -314,7 +262,6 @@ export function createComputingPresenceTracker(params?: {
 
       await safelySync(params.conversationId, "update", async () => {
         const run = ensureRun(params.conversationId, params.runId);
-        run.disclose = new Set(normalizeDisclose(params.disclose));
         if (!run.toolNames.includes(toolName)) {
           run.toolNames.push(toolName);
         }
@@ -341,13 +288,8 @@ export function createComputingPresenceTracker(params?: {
       await safelySync(params.conversationId, "clear", async () => {
         const runs = conversations.get(params.conversationId);
         if (!runs) {
-          const previousDisclose = normalizeDisclose(
-            publishedDisclose.get(params.conversationId) ?? [],
-          );
-          publishedDisclose.delete(params.conversationId);
-          if (previousDisclose.length > 0) {
+          if (lastPublishedState.get(params.conversationId)?.thinking) {
             await publishNow(params.conversationId, {
-              disclose: previousDisclose,
               thinking: false,
               toolNames: [],
             });
