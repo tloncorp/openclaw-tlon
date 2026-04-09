@@ -5,7 +5,7 @@ RUN apt-get update && apt-get install -y git curl gettext-base && apt-get instal
 RUN npm install -g pnpm
 
 # Install OpenClaw globally
-RUN npm install -g openclaw@2026.3.13
+RUN npm install -g openclaw@2026.4.2
 
 # Create workspace
 WORKDIR /workspace
