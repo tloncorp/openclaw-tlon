@@ -15,6 +15,11 @@ import { resolveBridgeForCommand } from "./src/monitor/command-auth.js";
 import { setTlonRuntime } from "./src/runtime.js";
 import { getSessionRole } from "./src/session-roles.js";
 import { recordToolCall } from "./src/telemetry.js";
+import {
+  formatToolTraceEvent,
+  liveToolTraceContentsEnabled,
+  shouldLogAfterToolTrace,
+} from "./src/tool-trace.js";
 import { checkBlockedSendOperation } from "./src/tlon-tool-guard.js";
 import { resolveTlonAccount } from "./src/types.js";
 
@@ -289,24 +294,44 @@ const plugin = {
 
     // Tool access control: block sensitive tools for non-owners
     const ownerOnlyTools = new Set(["tlon", "cron", "read"]);
+    const logToolTraceContents = liveToolTraceContentsEnabled();
 
     api.on("before_tool_call", (event, ctx) => {
-      if (!ownerOnlyTools.has(event.toolName)) {
-        return;
+      const role = getSessionRole(ctx.sessionKey ?? "");
+      const isOwnerOnlyTool = ownerOnlyTools.has(event.toolName);
+      const isBlocked = isOwnerOnlyTool && role === "user";
+      const blockReason = isBlocked ? `The ${event.toolName} tool is not available.` : undefined;
+
+      if (logToolTraceContents) {
+        api.logger.info(
+          formatToolTraceEvent({
+            phase: "before",
+            sessionKey: ctx.sessionKey,
+            toolName: event.toolName,
+            payload: {
+              params: event.params,
+              role: role ?? "internal",
+              blocked: isBlocked,
+              ...(blockReason ? { blockReason } : {}),
+            },
+          }),
+        );
       }
 
-      const role = getSessionRole(ctx.sessionKey ?? "");
+      if (!isOwnerOnlyTool) {
+        return;
+      }
 
       // Allow owner sessions and internal sessions (heartbeat, cron, etc.).
       // Internal sessions have no role because they're not triggered by DMs.
       // Only block when role is explicitly "user" (non-owner DM).
-      if (role === "user") {
+      if (isBlocked) {
         api.logger.warn(
           `[tlon] Blocked ${event.toolName} tool for non-owner. Session: ${ctx.sessionKey}, Role: ${role}`,
         );
         return {
           block: true,
-          blockReason: `The ${event.toolName} tool is not available.`,
+          blockReason,
         };
       }
 
@@ -316,6 +341,22 @@ const plugin = {
     });
 
     api.on("after_tool_call", (event, ctx) => {
+      if (logToolTraceContents && shouldLogAfterToolTrace(event)) {
+        api.logger.info(
+          formatToolTraceEvent({
+            phase: "after",
+            sessionKey: ctx.sessionKey,
+            toolName: event.toolName,
+            payload: {
+              params: event.params,
+              result: event.result,
+              error: event.error ?? null,
+              durationMs: event.durationMs ?? null,
+            },
+          }),
+        );
+      }
+
       recordToolCall({
         sessionKey: ctx.sessionKey,
         toolName: event.toolName,
