@@ -68,15 +68,19 @@ if [ -f "dev/docker-compose.local.yml" ] && [ -d "../tlonbot" ]; then
   echo "==> Using local tlonbot volume mount"
 fi
 
-# Cleanup function - called on exit, error, or interrupt
+# Cleanup function - called on exit (normal, error, or signal-initiated)
 cleanup() {
   echo ""
   echo "==> Cleaning up containers..."
   docker compose $COMPOSE_FILES down -v 2>/dev/null || true
 }
 
-# Register cleanup trap
-trap cleanup EXIT INT TERM
+# Cleanup runs on every exit (normal, error, or signal-initiated)
+trap cleanup EXIT
+
+# On interrupt/termination: exit immediately. The EXIT trap handles cleanup.
+trap 'echo ""; echo "==> Interrupted."; exit 130' INT
+trap 'echo ""; echo "==> Terminated."; exit 143' TERM
 
 # Stop any existing containers from previous runs
 echo "==> Stopping any existing containers..."
@@ -211,12 +215,21 @@ if [ $# -gt 0 ]; then
   for test_file in "$@"; do
     echo "Running $test_file..."
     pnpm vitest run "$test_file" || TEST_EXIT=$?
+    # Exit code >= 128 means child was killed by a signal — stop the suite
+    if [ "$TEST_EXIT" -ge 128 ]; then
+      echo "==> Test runner killed by signal (exit $TEST_EXIT), stopping suite."
+      break
+    fi
   done
 else
   # Default: run all test cases
   for test_file in test/cases/*.test.ts; do
     echo "Running $test_file..."
     pnpm vitest run "$test_file" || TEST_EXIT=$?
+    if [ "$TEST_EXIT" -ge 128 ]; then
+      echo "==> Test runner killed by signal (exit $TEST_EXIT), stopping suite."
+      break
+    fi
   done
 fi
 
@@ -226,7 +239,3 @@ echo "==> OpenClaw container logs (last 200 lines):"
 docker compose $COMPOSE_FILES logs --tail=200 openclaw 2>/dev/null || true
 
 exit $TEST_EXIT
-
-echo ""
-echo "==> Tests complete!"
-# cleanup runs automatically via trap

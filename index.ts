@@ -10,8 +10,18 @@ import { setTlonRuntime } from "./src/runtime.js";
 import { getSessionRole } from "./src/session-roles.js";
 import { recordToolCall } from "./src/telemetry.js";
 import { resolveTlonBinary } from "./src/tlon-binary.js";
+import {
+  formatToolTraceEvent,
+  liveToolTraceContentsEnabled,
+  shouldLogAfterToolTrace,
+} from "./src/tool-trace.js";
 import { checkBlockedSendOperation } from "./src/tlon-tool-guard.js";
-import { resolveTlonAccount } from "./src/types.js";
+import { resolveTlonAccount, listTlonAccountIds } from "./src/types.js";
+import {
+  createGatewayStatusManager,
+  setGatewayStatusManager,
+} from "./src/gateway-status.js";
+import { gatewayStop } from "@tloncorp/api";
 
 export { tlonPlugin } from "./src/channel.js";
 export { setTlonRuntime } from "./src/runtime.js";
@@ -189,6 +199,55 @@ export default defineChannelPluginEntry({
       // version.generated.js may not exist in all environments
     }
 
+    // ── Gateway-status liveness integration ───────────────────
+    //
+    // v1 requires exactly one Tlon account. With multiple accounts, multiple
+    // monitors call configureTlonApiWithPoke() and the last one wins the global
+    // @tloncorp/api singleton — making it unsafe to route heartbeats or stop
+    // pokes to a specific ship. Disable entirely rather than route to the wrong ship.
+    const gsAccountIds = listTlonAccountIds(api.config);
+    setGatewayStatusManager(null);
+
+    if (gsAccountIds.length > 1) {
+      api.logger.warn(
+        `[gateway-status] disabled: ${gsAccountIds.length} Tlon accounts configured, ` +
+          `but v1 only supports one (global @tloncorp/api client cannot target multiple ships)`,
+      );
+    } else if (gsAccountIds.length === 1) {
+      const gsManager = createGatewayStatusManager({
+        logger: {
+          log: (m) => api.logger.info(m),
+          error: (m) => api.logger.warn(m),
+        },
+      });
+      setGatewayStatusManager(gsManager);
+
+      api.on("gateway_start", () => {
+        gsManager.signalGatewayStarted();
+        api.logger.info("[gateway-status] gateway_start received");
+      });
+
+      api.on("gateway_stop", async (event) => {
+        if (!gsManager.activated || gsManager.stopped) {
+          return;
+        }
+        gsManager.stopHeartbeat();
+        gsManager.markStopped();
+        try {
+          await gatewayStop({
+            bootId: gsManager.bootId,
+            reason: event.reason ?? "shutdown",
+          });
+          api.logger.info(
+            `[gateway-status] stopped (reason=${event.reason ?? "shutdown"})`,
+          );
+        } catch (err) {
+          api.logger.warn(`[gateway-status] stop poke failed: ${String(err)}`);
+        }
+      });
+    }
+    // else: zero accounts configured — nothing to do
+
     // Register /tlon-version command
     api.registerCommand({
       name: "tlon-version",
@@ -274,7 +333,8 @@ export default defineChannelPluginEntry({
             details: undefined,
           };
         } catch (error: unknown) {
-          const message = error instanceof Error ? error.message : String(error);
+          const message =
+            error instanceof Error ? error.message : String(error);
           return {
             content: [{ type: "text" as const, text: `Error: ${message}` }],
             details: { error: true },
@@ -285,21 +345,44 @@ export default defineChannelPluginEntry({
 
     // Tool access control: block sensitive tools for non-owners
     const ownerOnlyTools = new Set(["tlon", "cron", "read"]);
+    const logToolTraceContents = liveToolTraceContentsEnabled();
 
     api.on("before_tool_call", (event, ctx) => {
-      if (!ownerOnlyTools.has(event.toolName)) {
+      const role = getSessionRole(ctx.sessionKey ?? "");
+      const isOwnerOnlyTool = ownerOnlyTools.has(event.toolName);
+      const isBlocked = isOwnerOnlyTool && role === "user";
+      const blockReason = isBlocked ? `The ${event.toolName} tool is not available.` : undefined;
+
+      if (logToolTraceContents) {
+        api.logger.info(
+          formatToolTraceEvent({
+            phase: "before",
+            sessionKey: ctx.sessionKey,
+            toolName: event.toolName,
+            payload: {
+              params: event.params,
+              role: role ?? "internal",
+              blocked: isBlocked,
+              ...(blockReason ? { blockReason } : {}),
+            },
+          }),
+        );
+      }
+
+      if (!isOwnerOnlyTool) {
         return;
       }
 
-      const role = getSessionRole(ctx.sessionKey ?? "");
-
-      if (role === "user") {
+      // Allow owner sessions and internal sessions (heartbeat, cron, etc.).
+      // Internal sessions have no role because they're not triggered by DMs.
+      // Only block when role is explicitly "user" (non-owner DM).
+      if (isBlocked) {
         api.logger.warn(
           `[tlon] Blocked ${event.toolName} tool for non-owner. Session: ${ctx.sessionKey}, Role: ${role}`,
         );
         return {
           block: true,
-          blockReason: `The ${event.toolName} tool is not available.`,
+          blockReason,
         };
       }
 
@@ -309,6 +392,22 @@ export default defineChannelPluginEntry({
     });
 
     api.on("after_tool_call", (event, ctx) => {
+      if (logToolTraceContents && shouldLogAfterToolTrace(event)) {
+        api.logger.info(
+          formatToolTraceEvent({
+            phase: "after",
+            sessionKey: ctx.sessionKey,
+            toolName: event.toolName,
+            payload: {
+              params: event.params,
+              result: event.result,
+              error: event.error ?? null,
+              durationMs: event.durationMs ?? null,
+            },
+          }),
+        );
+      }
+
       recordToolCall({
         sessionKey: ctx.sessionKey,
         toolName: event.toolName,
@@ -325,7 +424,12 @@ export default defineChannelPluginEntry({
       handler: async (ctx) => {
         const result = resolveBridgeForCommand(ctx);
         if ("error" in result) return { text: result.error };
-        return { text: await result.bridge.handleAction("approve", ctx.args?.trim() || undefined) };
+        return {
+          text: await result.bridge.handleAction(
+            "approve",
+            ctx.args?.trim() || undefined,
+          ),
+        };
       },
     });
 
@@ -336,7 +440,12 @@ export default defineChannelPluginEntry({
       handler: async (ctx) => {
         const result = resolveBridgeForCommand(ctx);
         if ("error" in result) return { text: result.error };
-        return { text: await result.bridge.handleAction("deny", ctx.args?.trim() || undefined) };
+        return {
+          text: await result.bridge.handleAction(
+            "deny",
+            ctx.args?.trim() || undefined,
+          ),
+        };
       },
     });
 
@@ -347,7 +456,12 @@ export default defineChannelPluginEntry({
       handler: async (ctx) => {
         const result = resolveBridgeForCommand(ctx);
         if ("error" in result) return { text: result.error };
-        return { text: await result.bridge.handleAction("block", ctx.args?.trim() || undefined) };
+        return {
+          text: await result.bridge.handleAction(
+            "block",
+            ctx.args?.trim() || undefined,
+          ),
+        };
       },
     });
 

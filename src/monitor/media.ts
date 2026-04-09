@@ -239,7 +239,8 @@ export async function downloadMessageImages(
 
 /**
  * Parse a post's blob field into structured blob data.
- * Returns null if blob is empty/missing or unparseable.
+ * Returns null if blob is empty/missing, otherwise mirrors the API parser's
+ * graceful degradation behavior for malformed entries.
  */
 export function parseBlobData(blob: string | null | undefined): ClientPostBlobData | null {
   if (!blob) return null;

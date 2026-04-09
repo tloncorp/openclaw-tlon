@@ -62,6 +62,8 @@ jobs:
           TEST_STORAGE_ACCESS_KEY: ${{ secrets.TEST_STORAGE_ACCESS_KEY }}
           TEST_STORAGE_SECRET_KEY: ${{ secrets.TEST_STORAGE_SECRET_KEY }}
           TEST_STORAGE_REGION: ${{ secrets.TEST_STORAGE_REGION }}
+          TEST_LIVE_TOOL_TRACE: "1"
+          TEST_LIVE_TOOL_TRACE_CONTENTS: "1"
         run: pnpm test:integration
 
       - name: Dump logs on failure
