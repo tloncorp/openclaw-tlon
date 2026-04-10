@@ -1,22 +1,15 @@
-import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { dirname, join } from "node:path";
+import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { PLUGIN_COMMIT } from "./src/version.generated.js";
-
-// Get package version at runtime
-const require = createRequire(import.meta.url);
-const { version: PLUGIN_VERSION } = require("./package.json") as {
-  version: string;
-};
-import { emptyPluginConfigSchema } from "openclaw/plugin-sdk";
+import { defineChannelPluginEntry } from "openclaw/plugin-sdk/core";
 import { tlonPlugin } from "./src/channel.js";
 import { resolveBridgeForCommand } from "./src/monitor/command-auth.js";
 import { setTlonRuntime } from "./src/runtime.js";
 import { getSessionRole } from "./src/session-roles.js";
 import { recordToolCall } from "./src/telemetry.js";
+import { resolveTlonBinary } from "./src/tlon-binary.js";
 import {
   formatToolTraceEvent,
   liveToolTraceContentsEnabled,
@@ -30,7 +23,25 @@ import {
 } from "./src/gateway-status.js";
 import { gatewayStop } from "@tloncorp/api";
 
+export { tlonPlugin } from "./src/channel.js";
+export { setTlonRuntime } from "./src/runtime.js";
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
+const require = createRequire(import.meta.url);
+
+function readPluginVersion(): string {
+  try {
+    const { version } = require("./package.json") as { version: string };
+    return version;
+  } catch {
+    try {
+      const raw = readFileSync(new URL("./package.json", import.meta.url), "utf-8");
+      return (JSON.parse(raw) as { version: string }).version;
+    } catch {
+      return "unknown";
+    }
+  }
+}
 
 // Whitelist of allowed tlon subcommands
 const ALLOWED_TLON_COMMANDS = new Set([
@@ -87,32 +98,6 @@ function findSubcommandIndex(args: string[]): number {
 }
 
 /**
- * Find the tlon binary from the skill package
- */
-function findTlonBinary(): string {
-  // Check in node_modules/.bin
-  const skillBin = join(__dirname, "node_modules", ".bin", "tlon");
-  console.log(
-    `[tlon] Checking for binary at: ${skillBin}, exists: ${existsSync(skillBin)}`,
-  );
-  if (existsSync(skillBin)) return skillBin;
-
-  // Check for platform-specific binary directly
-  const platform = process.platform;
-  const arch = process.arch;
-  const platformPkg = `@tloncorp/tlon-skill-${platform}-${arch}`;
-  const platformBin = join(__dirname, "node_modules", platformPkg, "tlon");
-  console.log(
-    `[tlon] Checking for platform binary at: ${platformBin}, exists: ${existsSync(platformBin)}`,
-  );
-  if (existsSync(platformBin)) return platformBin;
-
-  // Fallback to PATH
-  console.log(`[tlon] Falling back to PATH lookup for 'tlon'`);
-  return "tlon";
-}
-
-/**
  * Shell-like argument splitter that respects quotes
  */
 function shellSplit(str: string): string[] {
@@ -162,8 +147,6 @@ function runTlonCommand(
   credentials?: { url: string; ship: string; code: string },
 ): Promise<string> {
   return new Promise((resolve, reject) => {
-    // Build environment with Tlon credentials
-    // Pass all credentials - skill checks cache first, falls back to these if miss
     const env = { ...process.env };
     if (credentials) {
       env.URBIT_SHIP = credentials.ship;
@@ -198,14 +181,23 @@ function runTlonCommand(
   });
 }
 
-const plugin = {
+export default defineChannelPluginEntry({
   id: "tlon",
   name: "Tlon",
   description: "Tlon/Urbit channel plugin",
-  configSchema: emptyPluginConfigSchema(),
-  register(api: OpenClawPluginApi) {
-    setTlonRuntime(api.runtime);
-    api.registerChannel({ plugin: tlonPlugin });
+  plugin: tlonPlugin,
+  setRuntime: setTlonRuntime,
+  registerFull(api) {
+    // Import version info lazily
+    const PLUGIN_VERSION = readPluginVersion();
+    let PLUGIN_COMMIT = "unknown";
+    try {
+      PLUGIN_COMMIT = (
+        require("./src/version.generated.js") as { PLUGIN_COMMIT: string }
+      ).PLUGIN_COMMIT;
+    } catch {
+      // version.generated.js may not exist in all environments
+    }
 
     // ── Gateway-status liveness integration ───────────────────
     //
@@ -266,7 +258,11 @@ const plugin = {
     });
 
     // Register the tlon tool
-    const tlonBinary = findTlonBinary();
+    const tlonBinary = resolveTlonBinary({
+      moduleDir: __dirname,
+      resolveModule: require.resolve,
+      log: (msg) => api.logger.debug?.(msg),
+    });
     api.logger.info(`[tlon] Registering tlon tool, binary: ${tlonBinary}`);
 
     // Capture credentials from config at registration time
@@ -308,8 +304,6 @@ const plugin = {
         try {
           const args = shellSplit(params.command);
 
-          // Skip credential flags (--config, --url, --ship, --code, --cookie)
-          // to find the actual subcommand, matching what the skill binary does.
           const subIdx = findSubcommandIndex(args);
           const subcommand = subIdx >= 0 ? args[subIdx] : undefined;
           if (!subcommand || !ALLOWED_TLON_COMMANDS.has(subcommand)) {
@@ -423,10 +417,6 @@ const plugin = {
     });
 
     // ── Slash commands for approval & admin ────────────────────────────
-    // These bypass the LLM and call the monitor's command bridge directly.
-    // Each handler resolves the correct bridge (multi-account safe) and
-    // enforces owner-only access (default-deny).
-
     api.registerCommand({
       name: "allow",
       description: "Allow a pending DM/channel/group request",
@@ -510,6 +500,4 @@ const plugin = {
       },
     });
   },
-};
-
-export default plugin;
+});

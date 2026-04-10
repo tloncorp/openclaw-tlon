@@ -16,7 +16,7 @@ else
   GATEWAY_PORT="${OPENCLAW_GATEWAY_PORT:-18789}"
   GATEWAY_URL="http://localhost:${GATEWAY_PORT}"
 fi
-MAX_WAIT=60
+MAX_WAIT=120
 
 echo "Waiting for gateway at $GATEWAY_URL..."
 

@@ -18,7 +18,15 @@ echo "==> Installing plugin dependencies..."
 # Install openclaw-tlon plugin dependencies (includes @tloncorp/api and @tloncorp/tlon-skill from npm)
 cd /workspace/openclaw-tlon
 pnpm install
+pnpm build
 ./dev/build-local-api-override.sh
+
+# Expose tlon CLI to PATH
+TLON_BIN_DIR="/workspace/openclaw-tlon/node_modules/.bin"
+if [ -f "$TLON_BIN_DIR/tlon" ]; then
+  export PATH="$TLON_BIN_DIR:$PATH"
+  echo "==> tlon CLI available at $TLON_BIN_DIR/tlon"
+fi
 
 # Expose the plugin at an id-shaped path so OpenClaw's path hint matches the manifest id.
 ln -sfn /workspace/openclaw-tlon /workspace/tlon
@@ -79,6 +87,8 @@ if [ -f "$CONFIG_PATH" ]; then
     .plugins.load.paths |= map(
       if . == "/workspace/openclaw-tlon" then "/workspace/tlon" else . end
     )
+    | .plugins.allow = (.plugins.allow // []) + ["@tloncorp/openclaw"]
+    | .plugins.allow |= unique
   ' "$CONFIG_PATH" > "$CONFIG_PATH.tmp" && mv "$CONFIG_PATH.tmp" "$CONFIG_PATH"
 fi
 

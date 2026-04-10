@@ -36,8 +36,11 @@ rsync -av --delete \
     --include='package.json' \
     --include='openclaw.plugin.json' \
     --include='src/***' \
+    --include='dist/***' \
     --include='README.md' \
     --include='index.ts' \
+    --include='scripts/' \
+    --include='scripts/generate-version.js' \
     --exclude='*' \
     "$PLUGIN_DIR/" "$TARGET_DIR/"
 
