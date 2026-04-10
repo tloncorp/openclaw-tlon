@@ -17,7 +17,14 @@ describe("renderHistoryContent", () => {
       content: "",
       timestamp: Date.now(),
       blob: JSON.stringify([
-        { type: "voicememo", version: 1, duration: 10, transcription: "Hey there" },
+        {
+          type: "voicememo",
+          version: 1,
+          fileUri: "https://storage.example.com/memo.m4a",
+          size: 51200,
+          duration: 10,
+          transcription: "Hey there",
+        },
       ]),
     };
     expect(renderHistoryContent(entry)).toBe('[🎙️ voice memo: "Hey there"]');
@@ -29,7 +36,14 @@ describe("renderHistoryContent", () => {
       content: "Check this out",
       timestamp: Date.now(),
       blob: JSON.stringify([
-        { type: "file", version: 1, name: "notes.pdf" },
+        {
+          type: "file",
+          version: 1,
+          fileUri: "https://storage.example.com/notes.pdf",
+          mimeType: "application/pdf",
+          name: "notes.pdf",
+          size: 245760,
+        },
       ]),
     };
     const result = renderHistoryContent(entry);
@@ -45,6 +59,8 @@ describe("renderHistoryContent", () => {
         {
           type: "voicememo",
           version: 1,
+          fileUri: "https://storage.example.com/deploy-issue.m4a",
+          size: 76800,
           duration: 30,
           transcription: "Can you look into the deploy issue from yesterday",
         },
@@ -87,8 +103,22 @@ describe("renderHistoryContent", () => {
       content: "Here are the files",
       timestamp: Date.now(),
       blob: JSON.stringify([
-        { type: "file", version: 1, name: "a.pdf" },
-        { type: "file", version: 1, name: "b.txt" },
+        {
+          type: "file",
+          version: 1,
+          fileUri: "https://storage.example.com/a.pdf",
+          mimeType: "application/pdf",
+          name: "a.pdf",
+          size: 1024,
+        },
+        {
+          type: "file",
+          version: 1,
+          fileUri: "https://storage.example.com/b.txt",
+          mimeType: "text/plain",
+          name: "b.txt",
+          size: 2048,
+        },
       ]),
     };
     const result = renderHistoryContent(entry);
