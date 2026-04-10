@@ -1,4 +1,4 @@
-import type { RuntimeEnv, ReplyPayload, OpenClawConfig } from "openclaw/plugin-sdk";
+import type { RuntimeEnv, ReplyPayload, OpenClawConfig } from "openclaw/plugin-sdk/tlon";
 import type { Story } from "@tloncorp/api";
 
 // Local structural types — @tloncorp/api defines these internally but
@@ -78,6 +78,13 @@ import {
   sanitizeMessageText,
   type ParsedCite,
 } from "./utils.js";
+import {
+  getGatewayStatusManager,
+  computeLeaseUntil,
+  ACTIVE_WINDOW_SECS,
+  OFFLINE_REPLY_COOLDOWN_SECS,
+} from "../gateway-status.js";
+import { configureGatewayStatus, gatewayStart } from "@tloncorp/api";
 
 export type MonitorTlonOpts = {
   runtime?: RuntimeEnv;
@@ -492,6 +499,51 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     runtime.log?.(`[tlon] Settings store not available, using file config: ${String(err)}`);
   }
 
+  // ── Gateway-status: non-blocking background activation ──────
+  // getGatewayStatusManager() returns null when multi-account or zero accounts configured
+  // (see index.ts registration gate).
+  const gsManager = getGatewayStatusManager();
+
+  if (gsManager && effectiveOwnerShip) {
+    const capturedOwnerShip = effectiveOwnerShip;
+    const signal = opts.abortSignal;
+
+    // Fire-and-forget: wait for gateway_start signal, then activate.
+    // Does NOT block monitor startup — discovery, subscriptions, etc. proceed immediately.
+    void (async () => {
+      try {
+        const raced = await Promise.race([
+          gsManager.waitForGatewayStart().then(() => "started" as const),
+          ...(signal
+            ? [
+                new Promise<"aborted">((r) =>
+                  signal.addEventListener("abort", () => r("aborted"), { once: true }),
+                ),
+              ]
+            : []),
+        ]);
+        if (raced !== "started" || gsManager.stopped) return;
+
+        await configureGatewayStatus({
+          owner: capturedOwnerShip,
+          activeWindowSecs: ACTIVE_WINDOW_SECS,
+          offlineReplyCooldownSecs: OFFLINE_REPLY_COOLDOWN_SECS,
+        });
+        await gatewayStart({
+          bootId: gsManager.bootId,
+          leaseUntil: computeLeaseUntil(),
+        });
+        gsManager.markActivated();
+        gsManager.startHeartbeat();
+        runtime.log?.(
+          `[gateway-status] activated (bootId=${gsManager.bootId}, owner=${capturedOwnerShip})`,
+        );
+      } catch (err) {
+        runtime.error?.(`[gateway-status] start failed: ${String(err)}`);
+      }
+    })();
+  }
+
   // Run channel discovery AFTER settings are loaded (so settings store value is used)
   if (effectiveAutoDiscoverChannels) {
     try {
@@ -756,6 +808,11 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
   async function unblockShip(ship: string): Promise<boolean> {
     const normalizedShip = normalizeShip(ship);
     try {
+      const blocked = await isShipBlocked(normalizedShip);
+      if (!blocked) {
+        runtime.log?.(`[tlon] Ship ${normalizedShip} is not blocked; skipping unblock`);
+        return true;
+      }
       await api!.poke({
         app: "chat",
         mark: "chat-unblock-ship",
@@ -2667,6 +2724,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
           () => {
             clearInterval(pollInterval);
             clearInterval(settingsRefreshInterval);
+            gsManager?.stopHeartbeat();
             resolve(null);
           },
           { once: true },

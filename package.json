@@ -1,6 +1,6 @@
 {
   "name": "@tloncorp/openclaw",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "OpenClaw Tlon/Urbit channel plugin",
   "license": "MIT",
   "repository": {
@@ -46,17 +46,16 @@
     "test:watch": "vitest src/"
   },
   "dependencies": {
-    "@tloncorp/api": "0.0.4",
+    "@tloncorp/api": "0.0.6",
     "@tloncorp/tlon-skill": "^0.3.4",
     "@urbit/aura": "^3.0.0",
-    "@urbit/http-api": "^3.0.0",
     "posthog-node": "^5.28.9",
     "zod": "^4.3.6"
   },
   "devDependencies": {
     "@types/node": "^25.4.0",
     "dotenv": "^17.2.4",
-    "openclaw": "2026.2.25",
+    "openclaw": "2026.4.2",
     "oxfmt": "0.27.0",
     "oxlint": "^1.42.0",
     "oxlint-tsgolint": "^0.16.0",
@@ -65,9 +64,11 @@
     "zod": "^4.3.6"
   },
   "peerDependencies": {
-    "openclaw": ">=2026.2.0"
+    "openclaw": ">=2026.3.22"
   },
   "openclaw": {
+    "extensions": ["./dist/index.js"],
+    "setupEntry": "./dist/setup-entry.js",
     "channel": {
       "id": "tlon",
       "label": "Tlon",
@@ -79,6 +80,7 @@
       "quickstartAllowFrom": true
     },
     "install": {
+      "minHostVersion": ">=2026.3.22",
       "npmSpec": "@tloncorp/openclaw",
       "localPath": "extensions/tlon",
       "defaultChoice": "npm"

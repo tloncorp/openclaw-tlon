@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("openclaw/plugin-sdk", () => ({
+vi.mock("openclaw/plugin-sdk/tlon", () => ({
   fetchWithSsrFGuard: vi.fn(),
 }));
 
@@ -11,7 +11,7 @@ vi.mock("../urbit/context.js", () => ({
   getDefaultSsrFPolicy: vi.fn(() => ({})),
 }));
 
-import { fetchWithSsrFGuard } from "openclaw/plugin-sdk";
+import { fetchWithSsrFGuard } from "openclaw/plugin-sdk/tlon";
 import {
   MAX_BLOB_DOWNLOAD_BYTES,
   downloadBlobAttachments,
@@ -30,8 +30,8 @@ describe("parseBlobData", () => {
     expect(parseBlobData("")).toBeNull();
   });
 
-  it("returns null for invalid JSON", () => {
-    expect(parseBlobData("not json")).toBeNull();
+  it("returns an unknown sentinel for invalid JSON", () => {
+    expect(parseBlobData("not json")).toEqual([{ type: "unknown" }]);
   });
 
   it("returns null for empty array", () => {
