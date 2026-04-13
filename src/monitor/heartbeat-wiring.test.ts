@@ -387,6 +387,44 @@ describe("owner-message re-engagement", () => {
     expect(getPendingNudge(accountId)).toBeNull();
   });
 
+  it("uses inbound message time, not processing time, for the attribution window", () => {
+    const captureFn = vi.fn();
+    const sentAt = 1_000;
+    const messageTimestamp = sentAt + DEFAULT_ATTRIBUTION_WINDOW_MS - 1;
+    const delayedProcessingNow = sentAt + DEFAULT_ATTRIBUTION_WINDOW_MS + 60_000;
+
+    const pending = makePendingNudge({ sentAt });
+    setPendingNudge(accountId, pending);
+
+    const retrieved = getPendingNudge(accountId);
+    expect(retrieved).not.toBeNull();
+    expect(isNudgeEligible(retrieved!, delayedProcessingNow)).toBe(false);
+    expect(isNudgeEligible(retrieved!, messageTimestamp)).toBe(true);
+
+    captureFn({
+      ownerShip: retrieved!.ownerShip,
+      botShip,
+      nudgeStage: retrieved!.stage,
+      nudgeSentAt: retrieved!.sentAt,
+      reengagedAt: messageTimestamp,
+      reengagementDelayMs: messageTimestamp - retrieved!.sentAt,
+      channel: "tlon",
+      accountId: retrieved!.accountId,
+      provider: retrieved!.provider,
+      model: retrieved!.model,
+      sessionKey: retrieved!.sessionKey,
+    });
+
+    clearPendingNudge(accountId);
+
+    expect(captureFn).toHaveBeenCalledTimes(1);
+    expect(captureFn.mock.calls[0][0]).toMatchObject({
+      reengagedAt: messageTimestamp,
+      reengagementDelayMs: DEFAULT_ATTRIBUTION_WINDOW_MS - 1,
+    });
+    expect(getPendingNudge(accountId)).toBeNull();
+  });
+
   it("clears expired pending nudge without emitting reengagement", () => {
     const captureFn = vi.fn();
     const expiredNudge = makePendingNudge({

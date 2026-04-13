@@ -1313,7 +1313,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       // Check for pending nudge re-engagement
       const pending = getPendingNudge(account.accountId);
       if (pending) {
-        if (isNudgeEligible(pending)) {
+        if (isNudgeEligible(pending, timestamp)) {
           const reengagedAt = timestamp;
           telemetry?.captureHeartbeatReengagement({
             ownerShip: pending.ownerShip,
