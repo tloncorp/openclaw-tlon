@@ -28,16 +28,10 @@ export function resolveSettingsMirrorSync(params: {
   // ownerShip: compare string values (normalize for comparison)
   const prevOwner = prevSettings.ownerShip;
   const newOwner = newSettings.ownerShip;
-  const ownerShipChanged = prevOwner !== newOwner;
-  let effectiveOwnerShip: string | null;
-  if (ownerShipChanged) {
-    // New value set and truthy → normalize it
-    // Otherwise → fall back to file config
-    effectiveOwnerShip = newOwner ? normalizeShip(newOwner) : fileConfigOwnerShip;
-  } else {
-    // No change — preserve current state; caller doesn't need to update
-    effectiveOwnerShip = newOwner ? normalizeShip(newOwner) : fileConfigOwnerShip;
-  }
+  const normalizedPrevOwner = prevOwner ? normalizeShip(prevOwner) : null;
+  const normalizedNewOwner = newOwner ? normalizeShip(newOwner) : null;
+  const ownerShipChanged = normalizedPrevOwner !== normalizedNewOwner;
+  const effectiveOwnerShip: string | null = normalizedNewOwner ?? fileConfigOwnerShip;
 
   // pendingNudge: reference equality since applySettingsUpdate uses shallow spread
   const pendingNudgeChanged = prevSettings.pendingNudge !== newSettings.pendingNudge;
