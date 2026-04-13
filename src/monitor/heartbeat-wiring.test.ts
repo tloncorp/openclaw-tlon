@@ -15,6 +15,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createHeartbeatTelemetryHandlers, _testing as hbTesting } from "../heartbeat-telemetry.js";
 import {
+  clearCandidateSend,
   getCandidateSend,
   setCandidateSend,
   confirmNudgeCandidate,
@@ -31,6 +32,7 @@ import {
   _testing as pendingTesting,
 } from "../pending-nudge.js";
 import type { PendingNudge } from "../pending-nudge.js";
+import { resolveSettingsMirrorSync } from "./settings-sync.js";
 
 beforeEach(() => {
   hbTesting.clearSessions();
@@ -101,6 +103,25 @@ describe("gateway_stop cleanup", () => {
 });
 
 describe("startup rehydration — expired pendingNudge", () => {
+  it("clears stale candidate state before monitor startup continues", () => {
+    const accountId = "default";
+
+    setCandidateSend(accountId, {
+      accountId,
+      sessionKey: "old-sess",
+      sentAt: Date.now(),
+      ownerShip: "~zod",
+      content: "stale candidate",
+      provider: null,
+      model: null,
+    });
+
+    // The monitor now clears per-account candidate state before settings load.
+    clearCandidateSend(accountId);
+
+    expect(confirmNudgeCandidate(accountId, 1)).toBeNull();
+  });
+
   it("clears an expired persisted pendingNudge on startup", () => {
     const persistCb = vi.fn();
     const accountId = "default";
@@ -208,6 +229,72 @@ describe("startup rehydration — expired pendingNudge", () => {
 
     // If settingsManager.load() then throws, no stale state remains to misattribute.
     expect(getPendingNudge(accountId)).toBeNull();
+  });
+});
+
+describe("settings refresh fallback", () => {
+  it("rehydrates pendingNudge from store when refresh sees a changed record", () => {
+    const accountId = "default";
+    const refreshedNudge: PendingNudge = {
+      sentAt: Date.now(),
+      stage: 2,
+      ownerShip: "~zod",
+      accountId,
+      sessionKey: "persisted",
+      provider: "anthropic",
+      model: "claude-3",
+    };
+
+    const sync = resolveSettingsMirrorSync({
+      prevSettings: {},
+      newSettings: { pendingNudge: refreshedNudge },
+      fileConfigOwnerShip: null,
+    });
+
+    expect(sync.pendingNudgeChanged).toBe(true);
+    syncPendingNudgeFromStore(accountId, sync.pendingNudge);
+    expect(getPendingNudge(accountId)).toEqual(refreshedNudge);
+  });
+
+  it("can confirm a candidate from refreshed lastNudgeStage state", () => {
+    const accountId = "default";
+
+    setCandidateSend(accountId, {
+      accountId,
+      sessionKey: "hb-1",
+      sentAt: Date.now(),
+      ownerShip: "~zod",
+      content: "Quick ideas for your week",
+      provider: "anthropic",
+      model: "claude-3",
+    });
+
+    const sync = resolveSettingsMirrorSync({
+      prevSettings: {},
+      newSettings: { lastNudgeStage: 1 },
+      fileConfigOwnerShip: null,
+    });
+
+    expect(sync.lastNudgeStageChanged).toBe(true);
+    const confirmed = confirmNudgeCandidate(accountId, sync.lastNudgeStage!);
+    expect(confirmed).not.toBeNull();
+    setPendingNudge(accountId, {
+      sentAt: confirmed!.sentAt,
+      stage: confirmed!.nudgeStage,
+      ownerShip: confirmed!.ownerShip,
+      accountId: confirmed!.accountId,
+      sessionKey: confirmed!.sessionKey,
+      provider: confirmed!.provider,
+      model: confirmed!.model,
+    });
+
+    expect(getPendingNudge(accountId)).toEqual(
+      expect.objectContaining({
+        stage: 1,
+        ownerShip: "~zod",
+        sessionKey: "hb-1",
+      }),
+    );
   });
 });
 

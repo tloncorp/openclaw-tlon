@@ -58,7 +58,7 @@ import {
   ACTIVE_WINDOW_SECS,
   OFFLINE_REPLY_COOLDOWN_SECS,
 } from "../gateway-status.js";
-import { confirmNudgeCandidate } from "../nudge-candidate.js";
+import { clearCandidateSend, confirmNudgeCandidate } from "../nudge-candidate.js";
 import {
   registerPersistCallback,
   syncPendingNudgeFromStore,
@@ -109,6 +109,7 @@ import {
   formatBlobAnnotations,
   downloadBlobAttachments,
 } from "./media.js";
+import { createPendingNudgePersistenceQueue } from "./pending-nudge-persistence.js";
 import { createProcessedMessageTracker } from "./processed-messages.js";
 import { resolveSettingsMirrorSync } from "./settings-sync.js";
 import {
@@ -475,6 +476,12 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     }
   }
 
+  // Clear stale candidate state before settings load.
+  // Candidate-send state is per-account and only valid for the currently running
+  // monitor instance. If this account restarts in the same process, a later
+  // lastNudgeStage update must not confirm a send from the previous instance.
+  clearCandidateSend(account.accountId);
+
   // Clear stale in-memory pending-nudge state before settings load.
   // If load fails during a same-process restart, we should not keep attributing
   // owner replies against a previous monitor run's record.
@@ -546,11 +553,10 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     runtime.log?.(`[tlon] Settings store not available, using file config: ${String(err)}`);
   }
 
-  // Register per-account persist callback for pending nudge writes.
-  registerPersistCallback(account.accountId, (nudge) => {
-    if (nudge) {
-      api
-        .poke({
+  const pendingNudgePersistence = createPendingNudgePersistenceQueue(async (nudge) => {
+    try {
+      if (nudge) {
+        await api.poke({
           app: "settings",
           mark: "settings-event",
           json: {
@@ -561,13 +567,9 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
               value: JSON.stringify(nudge),
             },
           },
-        })
-        .catch((err: unknown) => {
-          runtime.error?.(`[tlon] Failed to persist pendingNudge: ${String(err)}`);
         });
-    } else {
-      api
-        .poke({
+      } else {
+        await api.poke({
           app: "settings",
           mark: "settings-event",
           json: {
@@ -577,11 +579,20 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
               "entry-key": "pendingNudge",
             },
           },
-        })
-        .catch((err: unknown) => {
-          runtime.error?.(`[tlon] Failed to clear pendingNudge: ${String(err)}`);
         });
+      }
+    } catch (err: unknown) {
+      runtime.error?.(
+        nudge
+          ? `[tlon] Failed to persist pendingNudge: ${String(err)}`
+          : `[tlon] Failed to clear pendingNudge: ${String(err)}`,
+      );
     }
+  });
+
+  // Register per-account persist callback for pending nudge writes.
+  registerPersistCallback(account.accountId, (nudge) => {
+    pendingNudgePersistence.enqueue(nudge);
   });
 
   // Clear expired pending nudge on startup (after persist callback is registered so del-entry fires).
@@ -2431,9 +2442,15 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     runtime.log?.("[tlon] Subscribed to contacts updates (/v1/news)");
 
     // Subscribe to settings store for hot-reloading config
-    settingsManager.onChange((newSettings) => {
+    const applySettingsSnapshot = (
+      newSettings: TlonSettingsStore,
+      source: "subscription" | "refresh",
+    ) => {
       const prevSettings = currentSettings;
-      currentSettings = newSettings;
+      if (source === "refresh" && JSON.stringify(prevSettings) === JSON.stringify(newSettings)) {
+        currentSettings = newSettings;
+        return;
+      }
 
       // Update watched channels if settings changed
       if (newSettings.groupChannels?.length) {
@@ -2499,7 +2516,10 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         runtime.log?.(`[tlon] Settings: autoDiscoverChannels = ${effectiveAutoDiscoverChannels}`);
       }
 
-      // ownerShip, pendingNudge, lastNudgeStage — all handled by resolveSettingsMirrorSync
+      // ownerShip and lastNudgeStage are applied on both live subscription and refresh.
+      // pendingNudge is only rehydrated from the store on startup/refresh; during normal
+      // operation, in-memory pending state is the source of truth to avoid self-echo races
+      // from asynchronous put-entry/del-entry writes.
       const sync = resolveSettingsMirrorSync({
         prevSettings,
         newSettings,
@@ -2512,9 +2532,11 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         setEffectiveOwnerShip(account.accountId, effectiveOwnerShip);
       }
 
-      if (sync.pendingNudgeChanged) {
+      if (source === "refresh" && sync.pendingNudgeChanged) {
         syncPendingNudgeFromStore(account.accountId, sync.pendingNudge);
-        runtime.log?.(`[tlon] Settings: pendingNudge ${sync.pendingNudge ? "updated" : "cleared"}`);
+        runtime.log?.(
+          `[tlon] Settings refresh: pendingNudge ${sync.pendingNudge ? "updated" : "cleared"}`,
+        );
       }
 
       if (sync.lastNudgeStageChanged && sync.lastNudgeStage != null) {
@@ -2555,6 +2577,14 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
           `[tlon] Settings: pendingApprovals updated (${pendingApprovals.length} items)`,
         );
       }
+      currentSettings =
+        source === "subscription"
+          ? { ...newSettings, pendingNudge: getPendingNudge(account.accountId) ?? undefined }
+          : newSettings;
+    };
+
+    settingsManager.onChange((newSettings) => {
+      applySettingsSnapshot(newSettings, "subscription");
     });
 
     try {
@@ -2908,7 +2938,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
 
     // Periodically re-scry settings as a fallback for stale subscriptions.
     // The settings subscription can silently die (SSE quit without reconnect),
-    // leaving the in-memory allowlist permanently stale.
+    // leaving both authorization state and heartbeat telemetry mirrors stale.
     const settingsRefreshInterval = setInterval(
       async () => {
         if (opts.abortSignal?.aborted) {
@@ -2916,23 +2946,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         }
         try {
           const refreshed = await settingsManager.load();
-
-          if (refreshed.dmAllowlist !== undefined) {
-            const newList = refreshed.dmAllowlist;
-            if (JSON.stringify(newList) !== JSON.stringify(effectiveDmAllowlist)) {
-              effectiveDmAllowlist = newList;
-              runtime.log?.(
-                `[tlon] Settings refresh: dmAllowlist updated to ${effectiveDmAllowlist.join(", ")}`,
-              );
-            }
-          }
-
-          if (refreshed.defaultAuthorizedShips !== undefined) {
-            currentSettings = {
-              ...currentSettings,
-              defaultAuthorizedShips: refreshed.defaultAuthorizedShips,
-            };
-          }
+          applySettingsSnapshot(refreshed, "refresh");
         } catch (err) {
           runtime.error?.(`[tlon] Settings refresh failed: ${String(err)}`);
         }
@@ -2959,6 +2973,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     }
   } finally {
     removeBridge(accountKey, commandBridge);
+    await pendingNudgePersistence.flush();
     await telemetry?.close();
     try {
       await api?.close();
