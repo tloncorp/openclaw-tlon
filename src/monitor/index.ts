@@ -331,7 +331,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
   // Sanitize nickname to prevent format injection
   function sanitizeNickname(nickname: string): string {
     return nickname
-      .replace(/[[\]()]/g, "") // Remove format-breaking chars
+      .replace(/[\[\]()]/g, "") // Remove format-breaking chars
       .slice(0, 50); // Reasonable length limit
   }
 
