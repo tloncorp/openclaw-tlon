@@ -148,6 +148,9 @@ interface ChannelFirehoseEvent {
  */
 type ChatFirehoseEvent = DmInvite[] | WritResponse;
 
+/** Refresh stale settings subscription state often enough to rescue heartbeat candidates before TTL expiry. */
+const SETTINGS_REFRESH_INTERVAL_MS = 60 * 1000;
+
 /**
  * Extract ship from author field, handling both string (ship) and object (bot-meta) formats.
  */
@@ -2948,7 +2951,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
           runtime.error?.(`[tlon] Settings refresh failed: ${String(err)}`);
         }
       },
-      5 * 60 * 1000,
+      SETTINGS_REFRESH_INTERVAL_MS,
     );
 
     if (opts.abortSignal) {
