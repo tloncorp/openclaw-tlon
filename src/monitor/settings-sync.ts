@@ -15,7 +15,7 @@ export type SettingsMirrorSyncResult = {
   pendingNudgeChanged: boolean;
   pendingNudge: PendingNudge | null;
   lastNudgeStageChanged: boolean;
-  lastNudgeStage: number | undefined;
+  lastNudgeStage: TlonSettingsStore["lastNudgeStage"];
 };
 
 export function resolveSettingsMirrorSync(params: {

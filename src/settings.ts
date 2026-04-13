@@ -66,7 +66,7 @@ export type TlonSettingsStore = {
   /** Pending heartbeat nudge attribution awaiting owner re-engagement */
   pendingNudge?: PendingNudge;
   /** Last nudge stage written by heartbeat flow (1, 2, or 3) */
-  lastNudgeStage?: number;
+  lastNudgeStage?: PendingNudge["stage"];
 };
 
 export type TlonSettingsState = {
@@ -154,7 +154,7 @@ function parsePendingNudge(value: unknown): PendingNudge | undefined {
 /**
  * Parse lastNudgeStage — accepts number or numeric string, must be 1, 2, or 3.
  */
-function parseLastNudgeStage(value: unknown): number | undefined {
+function parseLastNudgeStage(value: unknown): PendingNudge["stage"] | undefined {
   const num = typeof value === "string" ? Number(value) : value;
   if (num === 1 || num === 2 || num === 3) {
     return num;

@@ -475,6 +475,11 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     }
   }
 
+  // Clear stale in-memory pending-nudge state before settings load.
+  // If load fails during a same-process restart, we should not keep attributing
+  // owner replies against a previous monitor run's record.
+  syncPendingNudgeFromStore(account.accountId, null);
+
   // Load settings from settings store (hot-reloadable config)
   try {
     currentSettings = await settingsManager.load();
@@ -1298,7 +1303,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       const pending = getPendingNudge(account.accountId);
       if (pending) {
         if (isNudgeEligible(pending)) {
-          const reengagedAt = Date.now();
+          const reengagedAt = timestamp;
           telemetry?.captureHeartbeatReengagement({
             ownerShip: pending.ownerShip,
             botShip: account.ship ?? "",

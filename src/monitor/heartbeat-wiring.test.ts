@@ -189,6 +189,26 @@ describe("startup rehydration — expired pendingNudge", () => {
     // sync does NOT fire persist callback — that's intentional
     expect(persistCb).not.toHaveBeenCalled();
   });
+
+  it("clears stale in-memory state before a failed settings load", () => {
+    const accountId = "default";
+
+    setPendingNudge(accountId, {
+      sentAt: Date.now(),
+      stage: 1,
+      ownerShip: "~zod",
+      accountId,
+      sessionKey: "stale",
+      provider: null,
+      model: null,
+    });
+
+    // The monitor now clears pending-nudge state before attempting settings load.
+    syncPendingNudgeFromStore(accountId, null);
+
+    // If settingsManager.load() then throws, no stale state remains to misattribute.
+    expect(getPendingNudge(accountId)).toBeNull();
+  });
 });
 
 describe("owner-message re-engagement", () => {
@@ -220,8 +240,8 @@ describe("owner-message re-engagement", () => {
     expect(retrieved).not.toBeNull();
     expect(isNudgeEligible(retrieved!)).toBe(true);
 
-    // Emit reengagement event
-    const reengagedAt = Date.now();
+    // Emit reengagement event using the inbound message timestamp
+    const reengagedAt = retrieved!.sentAt + 1234;
     captureFn({
       ownerShip: retrieved!.ownerShip,
       botShip,
@@ -243,7 +263,8 @@ describe("owner-message re-engagement", () => {
     const event = captureFn.mock.calls[0][0];
     expect(event.ownerShip).toBe("~zod");
     expect(event.nudgeStage).toBe(2);
-    expect(event.reengagementDelayMs).toBeGreaterThan(0);
+    expect(event.reengagedAt).toBe(reengagedAt);
+    expect(event.reengagementDelayMs).toBe(1234);
     expect(event.provider).toBe("anthropic");
     expect(event.model).toBe("claude-3");
 
@@ -343,10 +364,11 @@ describe("full nudge confirmation → re-engagement lifecycle", () => {
     expect(pending).not.toBeNull();
     expect(isNudgeEligible(pending!)).toBe(true);
 
-    const reengagedAt = Date.now();
+    const reengagedAt = pending!.sentAt + 4321;
     captureReengage({
       ownerShip: pending!.ownerShip,
       nudgeStage: pending!.stage,
+      reengagedAt,
       reengagementDelayMs: reengagedAt - pending!.sentAt,
     });
 

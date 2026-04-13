@@ -47,6 +47,20 @@ describe("Settings: parseSettingsResponse", () => {
     expect(result.ownerShip).toBe("~sampel-palnet");
     expect(result.lastOwnerMessageAt).toBe(1700000000000);
   });
+
+  it("parses lastNudgeStage when it is 1, 2, or 3", () => {
+    expect(parseSettingsResponse({ tlon: { lastNudgeStage: 1 } }).lastNudgeStage).toBe(1);
+    expect(parseSettingsResponse({ tlon: { lastNudgeStage: "2" } }).lastNudgeStage).toBe(2);
+    expect(parseSettingsResponse({ tlon: { lastNudgeStage: 3 } }).lastNudgeStage).toBe(3);
+  });
+
+  it("ignores invalid lastNudgeStage values", () => {
+    expect(parseSettingsResponse({ tlon: { lastNudgeStage: 0 } }).lastNudgeStage).toBeUndefined();
+    expect(parseSettingsResponse({ tlon: { lastNudgeStage: 4 } }).lastNudgeStage).toBeUndefined();
+    expect(
+      parseSettingsResponse({ tlon: { lastNudgeStage: "not-a-stage" } }).lastNudgeStage,
+    ).toBeUndefined();
+  });
 });
 
 describe("Settings: applySettingsUpdate", () => {
@@ -81,5 +95,11 @@ describe("Settings: applySettingsUpdate", () => {
     const result = applySettingsUpdate(base, "lastOwnerMessageAt", 1800000000000);
     expect(base.lastOwnerMessageAt).toBe(1700000000000);
     expect(result.lastOwnerMessageAt).toBe(1800000000000);
+  });
+
+  it("updates lastNudgeStage with valid values only", () => {
+    expect(applySettingsUpdate({}, "lastNudgeStage", 1).lastNudgeStage).toBe(1);
+    expect(applySettingsUpdate({}, "lastNudgeStage", "2").lastNudgeStage).toBe(2);
+    expect(applySettingsUpdate({}, "lastNudgeStage", 4).lastNudgeStage).toBeUndefined();
   });
 });
