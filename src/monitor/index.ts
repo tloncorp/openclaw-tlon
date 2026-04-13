@@ -2447,8 +2447,15 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       source: "subscription" | "refresh",
     ) => {
       const prevSettings = currentSettings;
-      if (source === "refresh" && JSON.stringify(prevSettings) === JSON.stringify(newSettings)) {
-        currentSettings = newSettings;
+      const nextRuntimeSettings: TlonSettingsStore = {
+        ...newSettings,
+        pendingNudge: getPendingNudge(account.accountId) ?? undefined,
+      };
+      if (
+        source === "refresh" &&
+        JSON.stringify(prevSettings) === JSON.stringify(nextRuntimeSettings)
+      ) {
+        currentSettings = nextRuntimeSettings;
         return;
       }
 
@@ -2517,9 +2524,9 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       }
 
       // ownerShip and lastNudgeStage are applied on both live subscription and refresh.
-      // pendingNudge is only rehydrated from the store on startup/refresh; during normal
-      // operation, in-memory pending state is the source of truth to avoid self-echo races
-      // from asynchronous put-entry/del-entry writes.
+      // pendingNudge is only rehydrated from the store during startup load. Once the
+      // monitor is running, the in-memory pending state is authoritative so refreshes
+      // cannot clobber live state or resurrect stale store echoes.
       const sync = resolveSettingsMirrorSync({
         prevSettings,
         newSettings,
@@ -2530,13 +2537,6 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         effectiveOwnerShip = sync.effectiveOwnerShip;
         runtime.log?.(`[tlon] Settings: ownerShip = ${effectiveOwnerShip}`);
         setEffectiveOwnerShip(account.accountId, effectiveOwnerShip);
-      }
-
-      if (source === "refresh" && sync.pendingNudgeChanged) {
-        syncPendingNudgeFromStore(account.accountId, sync.pendingNudge);
-        runtime.log?.(
-          `[tlon] Settings refresh: pendingNudge ${sync.pendingNudge ? "updated" : "cleared"}`,
-        );
       }
 
       if (sync.lastNudgeStageChanged && sync.lastNudgeStage != null) {
@@ -2577,10 +2577,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
           `[tlon] Settings: pendingApprovals updated (${pendingApprovals.length} items)`,
         );
       }
-      currentSettings =
-        source === "subscription"
-          ? { ...newSettings, pendingNudge: getPendingNudge(account.accountId) ?? undefined }
-          : newSettings;
+      currentSettings = nextRuntimeSettings;
     };
 
     settingsManager.onChange((newSettings) => {

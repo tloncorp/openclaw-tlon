@@ -233,27 +233,55 @@ describe("startup rehydration — expired pendingNudge", () => {
 });
 
 describe("settings refresh fallback", () => {
-  it("rehydrates pendingNudge from store when refresh sees a changed record", () => {
+  it("preserves a live pendingNudge when refresh sees an empty store copy", () => {
     const accountId = "default";
-    const refreshedNudge: PendingNudge = {
+    const liveNudge: PendingNudge = {
       sentAt: Date.now(),
       stage: 2,
       ownerShip: "~zod",
       accountId,
-      sessionKey: "persisted",
+      sessionKey: "live",
       provider: "anthropic",
       model: "claude-3",
     };
 
+    setPendingNudge(accountId, liveNudge);
+
     const sync = resolveSettingsMirrorSync({
-      prevSettings: {},
-      newSettings: { pendingNudge: refreshedNudge },
+      prevSettings: { pendingNudge: liveNudge },
+      newSettings: {},
       fileConfigOwnerShip: null,
     });
 
     expect(sync.pendingNudgeChanged).toBe(true);
-    syncPendingNudgeFromStore(accountId, sync.pendingNudge);
-    expect(getPendingNudge(accountId)).toEqual(refreshedNudge);
+    // Refresh path intentionally does NOT sync pendingNudge from store.
+    expect(getPendingNudge(accountId)).toEqual(liveNudge);
+  });
+
+  it("does not resurrect a cleared pendingNudge from a stale store copy", () => {
+    const accountId = "default";
+    const staleStoreNudge: PendingNudge = {
+      sentAt: Date.now(),
+      stage: 2,
+      ownerShip: "~zod",
+      accountId,
+      sessionKey: "stale-store",
+      provider: "anthropic",
+      model: "claude-3",
+    };
+
+    setPendingNudge(accountId, staleStoreNudge);
+    clearPendingNudge(accountId);
+
+    const sync = resolveSettingsMirrorSync({
+      prevSettings: {},
+      newSettings: { pendingNudge: staleStoreNudge },
+      fileConfigOwnerShip: null,
+    });
+
+    expect(sync.pendingNudgeChanged).toBe(true);
+    // Refresh path intentionally does NOT sync pendingNudge from store.
+    expect(getPendingNudge(accountId)).toBeNull();
   });
 
   it("can confirm a candidate from refreshed lastNudgeStage state", () => {
