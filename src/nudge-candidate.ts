@@ -35,6 +35,10 @@ const CANDIDATE_TTL_MS = 5 * 60 * 1000;
 
 const candidates = new Map<string, NudgeCandidate>();
 
+function isNudgeStage(stage: number): stage is 1 | 2 | 3 {
+  return stage === 1 || stage === 2 || stage === 3;
+}
+
 function cleanupStaleCandidates(now = Date.now()): void {
   for (const [key, candidate] of candidates) {
     if (now - candidate.sentAt > CANDIDATE_TTL_MS) {
@@ -60,6 +64,7 @@ export function setCandidateSend(
 }
 
 export function getCandidateSend(accountId: string): NudgeCandidate | null {
+  cleanupStaleCandidates();
   return candidates.get(accountId) ?? null;
 }
 
@@ -76,6 +81,8 @@ export function confirmNudgeCandidate(
   accountId: string,
   lastNudgeStage: number,
 ): ConfirmedNudge | null {
+  cleanupStaleCandidates();
+  if (!isNudgeStage(lastNudgeStage)) {return null;}
   const candidate = candidates.get(accountId);
   if (!candidate) {return null;}
   candidates.delete(accountId);
@@ -85,7 +92,7 @@ export function confirmNudgeCandidate(
     sessionKey: candidate.sessionKey,
     sentAt: candidate.sentAt,
     ownerShip: candidate.ownerShip,
-    nudgeStage: lastNudgeStage as 1 | 2 | 3,
+    nudgeStage: lastNudgeStage,
     content: candidate.content,
     provider: candidate.provider,
     model: candidate.model,

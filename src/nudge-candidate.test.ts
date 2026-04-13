@@ -14,10 +14,11 @@ describe("nudge-candidate", () => {
 
   describe("set/get/clear lifecycle", () => {
     it("stores and retrieves a candidate", () => {
+      const now = Date.now();
       setCandidateSend("default", {
         accountId: "default",
         sessionKey: "sess-1",
-        sentAt: 1000,
+        sentAt: now,
         ownerShip: "~sampel-palnet",
         content: "Hello owner",
         provider: "anthropic",
@@ -27,7 +28,7 @@ describe("nudge-candidate", () => {
       expect(candidate).toMatchObject({
         accountId: "default",
         sessionKey: "sess-1",
-        sentAt: 1000,
+        sentAt: now,
         ownerShip: "~sampel-palnet",
         content: "Hello owner",
         provider: "anthropic",
@@ -37,10 +38,11 @@ describe("nudge-candidate", () => {
     });
 
     it("clears a candidate", () => {
+      const now = Date.now();
       setCandidateSend("default", {
         accountId: "default",
         sessionKey: "sess-1",
-        sentAt: 1000,
+        sentAt: now,
         ownerShip: "~sampel-palnet",
         content: "Hello",
         provider: null,
@@ -57,10 +59,11 @@ describe("nudge-candidate", () => {
 
   describe("account isolation", () => {
     it("different accounts are independent", () => {
+      const now = Date.now();
       setCandidateSend("account-a", {
         accountId: "account-a",
         sessionKey: "sess-a",
-        sentAt: 1000,
+        sentAt: now,
         ownerShip: "~ship-a",
         content: "msg-a",
         provider: null,
@@ -69,7 +72,7 @@ describe("nudge-candidate", () => {
       setCandidateSend("account-b", {
         accountId: "account-b",
         sessionKey: "sess-b",
-        sentAt: 2000,
+        sentAt: now + 1000,
         ownerShip: "~ship-b",
         content: "msg-b",
         provider: null,
@@ -84,10 +87,11 @@ describe("nudge-candidate", () => {
 
   describe("ambiguity detection", () => {
     it("first send in session is not ambiguous", () => {
+      const now = Date.now();
       setCandidateSend("default", {
         accountId: "default",
         sessionKey: "sess-1",
-        sentAt: 1000,
+        sentAt: now,
         ownerShip: "~owner",
         content: "first",
         provider: null,
@@ -120,10 +124,11 @@ describe("nudge-candidate", () => {
     });
 
     it("different session replaces and is not ambiguous", () => {
+      const now = Date.now();
       setCandidateSend("default", {
         accountId: "default",
         sessionKey: "sess-1",
-        sentAt: 1000,
+        sentAt: now,
         ownerShip: "~owner",
         content: "first",
         provider: null,
@@ -132,7 +137,7 @@ describe("nudge-candidate", () => {
       setCandidateSend("default", {
         accountId: "default",
         sessionKey: "sess-2",
-        sentAt: 2000,
+        sentAt: now + 1000,
         ownerShip: "~owner",
         content: "second",
         provider: null,
@@ -146,10 +151,11 @@ describe("nudge-candidate", () => {
 
   describe("confirmNudgeCandidate", () => {
     it("confirms a valid candidate with the given stage", () => {
+      const now = Date.now();
       setCandidateSend("default", {
         accountId: "default",
         sessionKey: "sess-1",
-        sentAt: 1000,
+        sentAt: now,
         ownerShip: "~owner",
         content: "nudge content",
         provider: "anthropic",
@@ -159,7 +165,7 @@ describe("nudge-candidate", () => {
       expect(confirmed).toMatchObject({
         accountId: "default",
         sessionKey: "sess-1",
-        sentAt: 1000,
+        sentAt: now,
         ownerShip: "~owner",
         nudgeStage: 2,
         content: "nudge content",
@@ -199,11 +205,26 @@ describe("nudge-candidate", () => {
       expect(confirmNudgeCandidate("default", 1)).toBeNull();
     });
 
-    it("uses lastNudgeStage for stage, not content", () => {
+    it("returns null for invalid stages and preserves the candidate", () => {
       setCandidateSend("default", {
         accountId: "default",
         sessionKey: "sess-1",
-        sentAt: 1000,
+        sentAt: Date.now(),
+        ownerShip: "~owner",
+        content: "msg",
+        provider: null,
+        model: null,
+      });
+      expect(confirmNudgeCandidate("default", 4)).toBeNull();
+      expect(getCandidateSend("default")).not.toBeNull();
+    });
+
+    it("uses lastNudgeStage for stage, not content", () => {
+      const now = Date.now();
+      setCandidateSend("default", {
+        accountId: "default",
+        sessionKey: "sess-1",
+        sentAt: now,
         ownerShip: "~owner",
         content: "Quick ideas for your week", // stage 1 marker
         provider: null,
@@ -214,10 +235,11 @@ describe("nudge-candidate", () => {
     });
 
     it("carries provider/model from candidate", () => {
+      const now = Date.now();
       setCandidateSend("default", {
         accountId: "default",
         sessionKey: "sess-1",
-        sentAt: 1000,
+        sentAt: now,
         ownerShip: "~owner",
         content: "msg",
         provider: "openai",
@@ -258,6 +280,39 @@ describe("nudge-candidate", () => {
 
       expect(getCandidateSend("stale-account")).toBeNull();
       expect(getCandidateSend("fresh-account")).not.toBeNull();
+    });
+
+    it("removes stale candidates on get", () => {
+      const ttlMs = _testing.getCandidateTtlMs();
+
+      setCandidateSend("stale-account", {
+        accountId: "stale-account",
+        sessionKey: "old-sess",
+        sentAt: Date.now() - ttlMs - 1000,
+        ownerShip: "~old-owner",
+        content: "old",
+        provider: null,
+        model: null,
+      });
+
+      expect(getCandidateSend("stale-account")).toBeNull();
+    });
+
+    it("removes stale candidates on confirm", () => {
+      const ttlMs = _testing.getCandidateTtlMs();
+
+      setCandidateSend("stale-account", {
+        accountId: "stale-account",
+        sessionKey: "old-sess",
+        sentAt: Date.now() - ttlMs - 1000,
+        ownerShip: "~old-owner",
+        content: "old",
+        provider: null,
+        model: null,
+      });
+
+      expect(confirmNudgeCandidate("stale-account", 1)).toBeNull();
+      expect(getCandidateSend("stale-account")).toBeNull();
     });
   });
 });
