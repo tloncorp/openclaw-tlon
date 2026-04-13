@@ -9,6 +9,7 @@
  * without requiring a gateway restart.
  */
 
+import type { PendingNudge } from "./pending-nudge.js";
 import type { UrbitSSEClient } from "./urbit/sse-client.js";
 
 /** Pending approval request stored for persistence */
@@ -62,6 +63,10 @@ export type TlonSettingsStore = {
   lastOwnerMessageAt?: number;
   /** ISO date (YYYY-MM-DD) of the last owner message — human-readable for LLM heartbeat checks */
   lastOwnerMessageDate?: string;
+  /** Pending heartbeat nudge attribution awaiting owner re-engagement */
+  pendingNudge?: PendingNudge;
+  /** Last nudge stage written by heartbeat flow (1, 2, or 3) */
+  lastNudgeStage?: number;
 };
 
 export type TlonSettingsState = {
@@ -100,6 +105,60 @@ function parseChannelRules(
     return value;
   }
 
+  return undefined;
+}
+
+/**
+ * Parse pendingNudge — handles both JSON string and object formats.
+ * Settings-store stores complex objects as JSON strings.
+ */
+function parsePendingNudge(value: unknown): PendingNudge | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  let parsed: unknown = value;
+  if (typeof value === "string") {
+    try {
+      parsed = JSON.parse(value);
+    } catch {
+      return undefined;
+    }
+  }
+
+  if (!parsed || typeof parsed !== "object") {
+    return undefined;
+  }
+
+  const obj = parsed as Record<string, unknown>;
+  if (
+    typeof obj.sentAt !== "number" ||
+    typeof obj.ownerShip !== "string" ||
+    typeof obj.accountId !== "string" ||
+    !(obj.stage === 1 || obj.stage === 2 || obj.stage === 3)
+  ) {
+    return undefined;
+  }
+
+  return {
+    sentAt: obj.sentAt,
+    stage: obj.stage,
+    ownerShip: obj.ownerShip,
+    accountId: obj.accountId,
+    sessionKey: typeof obj.sessionKey === "string" ? obj.sessionKey : null,
+    provider: typeof obj.provider === "string" ? obj.provider : null,
+    model: typeof obj.model === "string" ? obj.model : null,
+  };
+}
+
+/**
+ * Parse lastNudgeStage — accepts number or numeric string, must be 1, 2, or 3.
+ */
+function parseLastNudgeStage(value: unknown): number | undefined {
+  const num = typeof value === "string" ? Number(value) : value;
+  if (num === 1 || num === 2 || num === 3) {
+    return num;
+  }
   return undefined;
 }
 
@@ -148,6 +207,8 @@ export function parseSettingsResponse(raw: unknown): TlonSettingsStore {
       typeof settings.lastOwnerMessageAt === "number" ? settings.lastOwnerMessageAt : undefined,
     lastOwnerMessageDate:
       typeof settings.lastOwnerMessageDate === "string" ? settings.lastOwnerMessageDate : undefined,
+    pendingNudge: parsePendingNudge(settings.pendingNudge),
+    lastNudgeStage: parseLastNudgeStage(settings.lastNudgeStage),
   };
 }
 
@@ -303,6 +364,12 @@ export function applySettingsUpdate(
       break;
     case "lastOwnerMessageDate":
       next.lastOwnerMessageDate = typeof value === "string" ? value : undefined;
+      break;
+    case "pendingNudge":
+      next.pendingNudge = parsePendingNudge(value);
+      break;
+    case "lastNudgeStage":
+      next.lastNudgeStage = parseLastNudgeStage(value);
       break;
   }
 
