@@ -154,8 +154,8 @@ interface ChannelFirehoseEvent {
  */
 type ChatFirehoseEvent = DmInvite[] | WritResponse;
 
-/** Refresh stale settings subscription state often enough to rescue heartbeat candidates before TTL expiry. */
-const SETTINGS_REFRESH_INTERVAL_MS = 60 * 1000;
+/** Refresh stale settings subscription state periodically as a fallback for silently-dead SSE subscriptions. */
+const SETTINGS_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 
 /**
  * Extract ship from author field, handling both string (ship) and object (bot-meta) formats.
@@ -1367,6 +1367,23 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
             sessionKey: pending.sessionKey,
           });
           clearPendingNudge(account.accountId);
+          // Reset lastNudgeStage so the next inactivity cycle can send a
+          // same-stage nudge and its telemetry won't be suppressed.
+          api
+            .poke({
+              app: "settings",
+              mark: "settings-event",
+              json: {
+                "del-entry": {
+                  desk: "moltbot",
+                  "bucket-key": "tlon",
+                  "entry-key": "lastNudgeStage",
+                },
+              },
+            })
+            .catch((err: unknown) => {
+              runtime.error?.(`[tlon] Failed to clear lastNudgeStage: ${String(err)}`);
+            });
           runtime.log?.(
             `[tlon] Heartbeat nudge re-engagement: stage ${pending.stage}, delay ${reengagedAt - pending.sentAt}ms`,
           );

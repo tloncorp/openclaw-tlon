@@ -34,7 +34,6 @@ describe("nudge-candidate", () => {
         content: "Hello owner",
         provider: "anthropic",
         model: "claude-3",
-        ambiguous: false,
       });
     });
 
@@ -86,22 +85,8 @@ describe("nudge-candidate", () => {
     });
   });
 
-  describe("ambiguity detection", () => {
-    it("first send in session is not ambiguous", () => {
-      const now = Date.now();
-      setCandidateSend("default", {
-        accountId: "default",
-        sessionKey: "sess-1",
-        sentAt: now,
-        ownerShip: "~owner",
-        content: "first",
-        provider: null,
-        model: null,
-      });
-      expect(getCandidateSend("default")?.ambiguous).toBe(false);
-    });
-
-    it("second send in same session marks ambiguous", () => {
+  describe("same-session multiple sends", () => {
+    it("keeps the most recent candidate from the same session", () => {
       const now = Date.now();
       setCandidateSend("default", {
         accountId: "default",
@@ -121,10 +106,12 @@ describe("nudge-candidate", () => {
         provider: null,
         model: null,
       });
-      expect(getCandidateSend("default")?.ambiguous).toBe(true);
+      const candidate = getCandidateSend("default");
+      expect(candidate?.content).toBe("second");
+      expect(candidate?.sentAt).toBe(now + 1000);
     });
 
-    it("different session replaces and is not ambiguous", () => {
+    it("different session replaces candidate", () => {
       const now = Date.now();
       setCandidateSend("default", {
         accountId: "default",
@@ -146,7 +133,6 @@ describe("nudge-candidate", () => {
       });
       const candidate = getCandidateSend("default");
       expect(candidate?.sessionKey).toBe("sess-2");
-      expect(candidate?.ambiguous).toBe(false);
     });
   });
 
@@ -177,7 +163,7 @@ describe("nudge-candidate", () => {
       expect(getCandidateSend("default")).toBeNull();
     });
 
-    it("returns null and clears ambiguous candidate", () => {
+    it("confirms the most recent candidate after same-session multiple sends", () => {
       const now = Date.now();
       setCandidateSend("default", {
         accountId: "default",
@@ -198,7 +184,9 @@ describe("nudge-candidate", () => {
         model: null,
       });
       const confirmed = confirmNudgeCandidate("default", 1);
-      expect(confirmed).toBeNull();
+      expect(confirmed).not.toBeNull();
+      expect(confirmed?.content).toBe("second");
+      expect(confirmed?.sentAt).toBe(now + 1000);
       expect(getCandidateSend("default")).toBeNull();
     });
 

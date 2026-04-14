@@ -17,7 +17,6 @@ export type NudgeCandidate = {
   content: string;
   provider: string | null;
   model: string | null;
-  ambiguous: boolean;
 };
 
 export type ConfirmedNudge = {
@@ -31,8 +30,8 @@ export type ConfirmedNudge = {
   model: string | null;
 };
 
-/** TTL for unconfirmed candidates (5 minutes). */
-const CANDIDATE_TTL_MS = 5 * 60 * 1000;
+/** TTL for unconfirmed candidates (10 minutes). Longer than the 5-minute settings refresh interval to give the stale-subscription fallback time to deliver a missed lastNudgeStage update. */
+const CANDIDATE_TTL_MS = 10 * 60 * 1000;
 
 const candidates = new Map<string, NudgeCandidate>();
 const pendingStageSignals = new Map<string, { stage: 1 | 2 | 3; observedAt: number }>();
@@ -61,10 +60,7 @@ function cleanupStaleStageSignals(now = Date.now()): void {
 function buildConfirmedNudge(
   candidate: NudgeCandidate,
   stage: 1 | 2 | 3,
-): ConfirmedNudge | null {
-  if (candidate.ambiguous) {
-    return null;
-  }
+): ConfirmedNudge {
   return {
     accountId: candidate.accountId,
     sessionKey: candidate.sessionKey,
@@ -97,19 +93,14 @@ function consumePendingConfirmation(accountId: string): ConfirmedNudge | null {
 
 export function setCandidateSend(
   accountId: string,
-  candidate: Omit<NudgeCandidate, "ambiguous">,
+  candidate: NudgeCandidate,
 ): ConfirmedNudge | null {
   cleanupStaleCandidates();
   cleanupStaleStageSignals();
 
-  const existing = candidates.get(accountId);
-  if (existing && existing.sessionKey === candidate.sessionKey) {
-    // Second owner-targeted send in same session → ambiguous
-    candidates.set(accountId, { ...candidate, ambiguous: true });
-  } else {
-    // New session or first send → fresh candidate
-    candidates.set(accountId, { ...candidate, ambiguous: false });
-  }
+  // Always keep the most recent candidate — if the same heartbeat session
+  // produces multiple owner-targeted sends, we attribute to the latest one.
+  candidates.set(accountId, candidate);
   return emitConfirmedNudge(accountId, consumePendingConfirmation(accountId));
 }
 

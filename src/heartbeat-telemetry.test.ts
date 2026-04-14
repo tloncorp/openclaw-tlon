@@ -43,6 +43,7 @@ function makeMessageSentEvent(overrides?: {
   success?: boolean;
   channelId?: string;
   accountId?: string | null;
+  timestamp?: Date;
 }) {
   const context: Record<string, unknown> = {
     to: overrides?.to ?? "~sampel-palnet",
@@ -59,7 +60,7 @@ function makeMessageSentEvent(overrides?: {
     action: "sent" as const,
     sessionKey: overrides?.sessionKey ?? "hb-sess-1",
     context,
-    timestamp: new Date(),
+    timestamp: overrides?.timestamp ?? new Date(),
     messages: [],
   };
 }
@@ -155,8 +156,21 @@ describe("heartbeat-telemetry", () => {
         content: "Hello owner!",
         provider: "anthropic",
         model: "claude-3",
-        ambiguous: false,
       });
+    });
+
+    it("uses hook event timestamp for sentAt", () => {
+      const deps = makeDeps({
+        getEffectiveOwnerShip: () => "~sampel-palnet",
+      });
+      const handlers = createHeartbeatTelemetryHandlers(deps);
+      setupHeartbeatSession(handlers);
+
+      const hookTimestamp = new Date(Date.now() - 500); // 500ms ago
+      handlers.onMessageSent(makeMessageSentEvent({ timestamp: hookTimestamp }));
+
+      const candidate = getCandidateSend("default");
+      expect(candidate?.sentAt).toBe(hookTimestamp.getTime());
     });
 
     it("ignores non-Tlon sends", () => {

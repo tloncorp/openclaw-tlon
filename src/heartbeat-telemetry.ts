@@ -158,7 +158,7 @@ export function createHeartbeatTelemetryHandlers(deps: HeartbeatTelemetryDeps) {
     setCandidateSend(accountId, {
       accountId,
       sessionKey: event.sessionKey,
-      sentAt: Date.now(),
+      sentAt: event.timestamp.getTime(),
       ownerShip,
       content: typeof content === "string" ? content : "",
       provider: session.provider,
