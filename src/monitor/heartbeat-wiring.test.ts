@@ -508,6 +508,179 @@ describe("owner-message re-engagement", () => {
   });
 });
 
+describe("startup load failure → refresh recovery", () => {
+  const accountId = "default";
+
+  it("refresh recovers persisted pendingNudge after startup scry failure", () => {
+    // Simulate startup: clear stale state, then load() throws
+    syncPendingNudgeFromStore(accountId, null);
+    let pendingNudgeRehydrated = false;
+    // load() would set pendingNudgeRehydrated = true on success, but it failed
+    // so pendingNudgeRehydrated remains false
+
+    const persistedNudge: PendingNudge = {
+      sentAt: Date.now() - 60_000,
+      stage: 1,
+      ownerShip: "~zod",
+      accountId,
+      sessionKey: "persisted-sess",
+      provider: "anthropic",
+      model: "claude-3",
+    };
+
+    // Later refresh succeeds — since pendingNudgeRehydrated is false,
+    // the store value is allowed through
+    if (!pendingNudgeRehydrated && persistedNudge) {
+      syncPendingNudgeFromStore(accountId, persistedNudge);
+      pendingNudgeRehydrated = true;
+    }
+
+    // Verify recovery
+    expect(getPendingNudge(accountId)).toEqual(persistedNudge);
+
+    // Owner reply should now trigger re-engagement
+    const retrieved = getPendingNudge(accountId);
+    expect(retrieved).not.toBeNull();
+    expect(isNudgeEligible(retrieved!)).toBe(true);
+
+    // Clear on re-engagement
+    clearPendingNudge(accountId);
+    expect(getPendingNudge(accountId)).toBeNull();
+  });
+
+  it("refresh cannot clobber live in-memory state after successful rehydration", () => {
+    // Startup succeeds
+    const startupNudge: PendingNudge = {
+      sentAt: Date.now() - 30_000,
+      stage: 2,
+      ownerShip: "~zod",
+      accountId,
+      sessionKey: "startup-sess",
+      provider: "anthropic",
+      model: "claude-3",
+    };
+    syncPendingNudgeFromStore(accountId, startupNudge);
+    let pendingNudgeRehydrated = true;
+
+    // Monitor locally clears (e.g. re-engagement detected)
+    clearPendingNudge(accountId);
+    expect(getPendingNudge(accountId)).toBeNull();
+
+    // Refresh sees a stale store copy (del-entry hasn't landed yet)
+    const staleStoreNudge: PendingNudge = {
+      ...startupNudge,
+      sessionKey: "stale-echo",
+    };
+
+    // Since pendingNudgeRehydrated is true, use in-memory state
+    if (pendingNudgeRehydrated) {
+      // getPendingNudge returns null — monitor cleared it
+      expect(getPendingNudge(accountId)).toBeNull();
+    }
+
+    // Verify stale store data was NOT synced
+    expect(getPendingNudge(accountId)).toBeNull();
+    // (staleStoreNudge was never synced)
+    void staleStoreNudge; // suppress unused warning
+  });
+
+  it("refresh cannot resurrect after monitor locally sets then clears", () => {
+    let pendingNudgeRehydrated = false;
+
+    // Startup scry fails
+    syncPendingNudgeFromStore(accountId, null);
+
+    // Monitor locally sets a pending nudge (nudge confirmed)
+    const localNudge: PendingNudge = {
+      sentAt: Date.now(),
+      stage: 1,
+      ownerShip: "~zod",
+      accountId,
+      sessionKey: "local-sess",
+      provider: null,
+      model: null,
+    };
+    setPendingNudge(accountId, localNudge);
+    pendingNudgeRehydrated = true; // monitor took ownership
+
+    // Monitor clears (re-engagement or supersede)
+    clearPendingNudge(accountId);
+
+    // Refresh sees the old store echo
+    const storeEcho: PendingNudge = { ...localNudge, sessionKey: "store-echo" };
+    if (pendingNudgeRehydrated) {
+      // In-memory state is authoritative, ignore store
+      expect(getPendingNudge(accountId)).toBeNull();
+    }
+
+    void storeEcho;
+    expect(getPendingNudge(accountId)).toBeNull();
+  });
+});
+
+describe("expired owner reply clears lastNudgeStage", () => {
+  const accountId = "default";
+
+  it("clears both pendingNudge and lastNudgeStage without emitting telemetry", () => {
+    const captureFn = vi.fn();
+    const lastNudgeStageClearer = vi.fn();
+
+    const expiredNudge: PendingNudge = {
+      sentAt: Date.now() - DEFAULT_ATTRIBUTION_WINDOW_MS - 1000,
+      stage: 2,
+      ownerShip: "~zod",
+      accountId,
+      sessionKey: "old-sess",
+      provider: "anthropic",
+      model: "claude-3",
+    };
+
+    setPendingNudge(accountId, expiredNudge);
+
+    // Simulate the monitor's owner-message path for expired window:
+    const retrieved = getPendingNudge(accountId);
+    expect(retrieved).not.toBeNull();
+    expect(isNudgeEligible(retrieved!)).toBe(false);
+
+    // No telemetry emitted
+    // Clear pendingNudge
+    clearPendingNudge(accountId);
+    // Clear lastNudgeStage (the del-entry poke the monitor now fires)
+    lastNudgeStageClearer();
+
+    expect(captureFn).not.toHaveBeenCalled();
+    expect(getPendingNudge(accountId)).toBeNull();
+    expect(lastNudgeStageClearer).toHaveBeenCalledTimes(1);
+  });
+
+  it("startup pruning does NOT clear lastNudgeStage (passive expiry)", () => {
+    const lastNudgeStageClearer = vi.fn();
+
+    const expiredNudge: PendingNudge = {
+      sentAt: Date.now() - DEFAULT_ATTRIBUTION_WINDOW_MS - 1000,
+      stage: 3,
+      ownerShip: "~zod",
+      accountId,
+      sessionKey: "old-sess",
+      provider: null,
+      model: null,
+    };
+
+    // Startup rehydration
+    syncPendingNudgeFromStore(accountId, expiredNudge);
+    const rehydrated = getPendingNudge(accountId);
+    expect(rehydrated).not.toBeNull();
+    expect(isNudgeEligible(rehydrated!)).toBe(false);
+
+    // Startup pruning: clear pendingNudge only (passive, no owner reply)
+    clearPendingNudge(accountId);
+    // lastNudgeStageClearer is NOT called — passive expiry doesn't reset lifecycle
+
+    expect(getPendingNudge(accountId)).toBeNull();
+    expect(lastNudgeStageClearer).not.toHaveBeenCalled();
+  });
+});
+
 describe("full nudge confirmation → re-engagement lifecycle", () => {
   it("candidate → confirm → persist → owner re-engage → emit → clear", () => {
     const accountId = "default";

@@ -72,6 +72,7 @@ import {
   clearPendingNudge,
   setPendingNudge,
   isNudgeEligible,
+  type PendingNudge,
 } from "../pending-nudge.js";
 import { getTlonRuntime } from "../runtime.js";
 import { setSessionRole } from "../session-roles.js";
@@ -316,6 +317,11 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
   setEffectiveOwnerShip(account.accountId, effectiveOwnerShip);
   let pendingApprovals: PendingApproval[] = [];
   let currentSettings: TlonSettingsStore = {};
+  // Tracks whether pendingNudge has been successfully rehydrated from the settings
+  // store (or locally set/cleared). While false, refresh is allowed to recover a
+  // persisted pendingNudge that was missed due to a transient startup scry failure.
+  // Once true, the in-memory state is authoritative and refresh cannot clobber it.
+  let pendingNudgeRehydrated = false;
   const telemetry = createTlonTelemetry({
     config: account.telemetry,
     runtime,
@@ -553,6 +559,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     // When present: rehydrates in-memory state from previous gateway run.
     // When absent: clears stale in-memory record from previous monitor run in same process.
     syncPendingNudgeFromStore(account.accountId, currentSettings.pendingNudge ?? null);
+    pendingNudgeRehydrated = true;
 
     if (currentSettings.pendingApprovals?.length) {
       pendingApprovals = currentSettings.pendingApprovals;
@@ -1388,8 +1395,25 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
             `[tlon] Heartbeat nudge re-engagement: stage ${pending.stage}, delay ${reengagedAt - pending.sentAt}ms`,
           );
         } else {
-          // Attribution window expired — clear without emitting
+          // Attribution window expired — clear without emitting telemetry,
+          // but still reset lastNudgeStage so the next inactivity cycle can
+          // send a same-stage nudge (owner did reply, just outside the 72h window).
           clearPendingNudge(account.accountId);
+          api
+            .poke({
+              app: "settings",
+              mark: "settings-event",
+              json: {
+                "del-entry": {
+                  desk: "moltbot",
+                  "bucket-key": "tlon",
+                  "entry-key": "lastNudgeStage",
+                },
+              },
+            })
+            .catch((err: unknown) => {
+              runtime.error?.(`[tlon] Failed to clear lastNudgeStage: ${String(err)}`);
+            });
           runtime.log?.(
             `[tlon] Pending nudge expired (stage ${pending.stage}, sent ${pending.sentAt})`,
           );
@@ -2502,9 +2526,26 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       source: "subscription" | "refresh",
     ) => {
       const prevSettings = currentSettings;
+
+      // If pendingNudge has been rehydrated (startup succeeded or monitor has locally
+      // set/cleared it), the in-memory state is authoritative — refreshes cannot clobber
+      // it or resurrect stale store echoes. If not yet rehydrated (startup scry failed),
+      // allow the store value through so refresh can recover the persisted record.
+      let effectivePendingNudge: PendingNudge | undefined;
+      if (pendingNudgeRehydrated) {
+        effectivePendingNudge = getPendingNudge(account.accountId) ?? undefined;
+      } else if (newSettings.pendingNudge) {
+        syncPendingNudgeFromStore(account.accountId, newSettings.pendingNudge);
+        pendingNudgeRehydrated = true;
+        effectivePendingNudge = newSettings.pendingNudge;
+        runtime.log?.("[tlon] Settings refresh: recovered persisted pendingNudge after startup failure");
+      } else {
+        effectivePendingNudge = undefined;
+      }
+
       const nextRuntimeSettings: TlonSettingsStore = {
         ...newSettings,
-        pendingNudge: getPendingNudge(account.accountId) ?? undefined,
+        pendingNudge: effectivePendingNudge,
       };
       if (
         source === "refresh" &&
