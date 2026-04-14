@@ -436,9 +436,9 @@ export function createSettingsManager(api: UrbitSSEClient, logger?: SettingsLogg
         logger?.log?.(`[settings] Loaded: ${JSON.stringify(state.current)}`);
         return state.current;
       } catch (err) {
-        // Settings desk may not exist yet - that's fine, use defaults
-        logger?.log?.(`[settings] No settings found (using defaults): ${String(err)}`);
-        state.current = {};
+        // Preserve the last good snapshot on scry failure so refresh fallback
+        // does not transiently clobber live runtime state with an empty object.
+        logger?.log?.(`[settings] Load failed (keeping previous settings): ${String(err)}`);
         state.loaded = true;
         return state.current;
       }

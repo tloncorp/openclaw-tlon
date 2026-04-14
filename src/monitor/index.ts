@@ -58,7 +58,13 @@ import {
   ACTIVE_WINDOW_SECS,
   OFFLINE_REPLY_COOLDOWN_SECS,
 } from "../gateway-status.js";
-import { clearCandidateSend, confirmNudgeCandidate } from "../nudge-candidate.js";
+import {
+  clearCandidateSend,
+  clearConfirmedNudgeCallback,
+  confirmNudgeCandidate,
+  registerConfirmedNudgeCallback,
+  type ConfirmedNudge,
+} from "../nudge-candidate.js";
 import {
   registerPersistCallback,
   syncPendingNudgeFromStore,
@@ -597,6 +603,35 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
   registerPersistCallback(account.accountId, (nudge) => {
     pendingNudgePersistence.enqueue(nudge);
   });
+
+  const handleConfirmedHeartbeatNudge = (confirmed: ConfirmedNudge) => {
+    telemetry?.captureHeartbeatNudge({
+      ownerShip: confirmed.ownerShip,
+      botShip: account.ship ?? "",
+      nudgeStage: confirmed.nudgeStage,
+      nudgeTarget: confirmed.ownerShip,
+      channel: "tlon",
+      success: true,
+      provider: confirmed.provider,
+      model: confirmed.model,
+      sessionKey: confirmed.sessionKey,
+      accountId: confirmed.accountId,
+    });
+    setPendingNudge(account.accountId, {
+      sentAt: confirmed.sentAt,
+      stage: confirmed.nudgeStage,
+      ownerShip: confirmed.ownerShip,
+      accountId: confirmed.accountId,
+      sessionKey: confirmed.sessionKey,
+      provider: confirmed.provider,
+      model: confirmed.model,
+    });
+    runtime.log?.(
+      `[tlon] Heartbeat nudge confirmed: stage ${confirmed.nudgeStage} to ${confirmed.ownerShip}`,
+    );
+  };
+
+  registerConfirmedNudgeCallback(account.accountId, handleConfirmedHeartbeatNudge);
 
   // Clear expired pending nudge on startup (after persist callback is registered so del-entry fires).
   const rehydratedNudge = getPendingNudge(account.accountId);
@@ -2543,34 +2578,9 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       }
 
       if (sync.lastNudgeStageChanged && sync.lastNudgeStage != null) {
-        // Two-signal confirmation: lastNudgeStage update + candidate send → confirmed nudge
-        const confirmed = confirmNudgeCandidate(account.accountId, sync.lastNudgeStage);
-        if (confirmed) {
-          telemetry?.captureHeartbeatNudge({
-            ownerShip: confirmed.ownerShip,
-            botShip: account.ship ?? "",
-            nudgeStage: confirmed.nudgeStage,
-            nudgeTarget: confirmed.ownerShip,
-            channel: "tlon",
-            success: true,
-            provider: confirmed.provider,
-            model: confirmed.model,
-            sessionKey: confirmed.sessionKey,
-            accountId: confirmed.accountId,
-          });
-          setPendingNudge(account.accountId, {
-            sentAt: confirmed.sentAt,
-            stage: confirmed.nudgeStage,
-            ownerShip: confirmed.ownerShip,
-            accountId: confirmed.accountId,
-            sessionKey: confirmed.sessionKey,
-            provider: confirmed.provider,
-            model: confirmed.model,
-          });
-          runtime.log?.(
-            `[tlon] Heartbeat nudge confirmed: stage ${confirmed.nudgeStage} to ${confirmed.ownerShip}`,
-          );
-        }
+        // Two-signal confirmation can complete in either order:
+        // lastNudgeStage update first, or candidate send first.
+        confirmNudgeCandidate(account.accountId, sync.lastNudgeStage);
       }
 
       // Update pending approvals
@@ -2973,6 +2983,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     }
   } finally {
     removeBridge(accountKey, commandBridge);
+    clearConfirmedNudgeCallback(account.accountId);
     await pendingNudgePersistence.flush();
     await telemetry?.close();
     try {

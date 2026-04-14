@@ -1,9 +1,10 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   setCandidateSend,
   getCandidateSend,
   clearCandidateSend,
   confirmNudgeCandidate,
+  registerConfirmedNudgeCallback,
   _testing,
 } from "./nudge-candidate.js";
 
@@ -205,6 +206,39 @@ describe("nudge-candidate", () => {
       expect(confirmNudgeCandidate("default", 1)).toBeNull();
     });
 
+    it("confirms when the stage update arrives before the candidate send", () => {
+      const onConfirmed = vi.fn();
+      registerConfirmedNudgeCallback("default", onConfirmed);
+
+      expect(confirmNudgeCandidate("default", 2)).toBeNull();
+      expect(getCandidateSend("default")).toBeNull();
+
+      const confirmed = setCandidateSend("default", {
+        accountId: "default",
+        sessionKey: "sess-1",
+        sentAt: Date.now(),
+        ownerShip: "~owner",
+        content: "nudge content",
+        provider: "anthropic",
+        model: "claude-3",
+      });
+
+      expect(confirmed).toMatchObject({
+        accountId: "default",
+        sessionKey: "sess-1",
+        ownerShip: "~owner",
+        nudgeStage: 2,
+      });
+      expect(onConfirmed).toHaveBeenCalledWith(
+        expect.objectContaining({
+          accountId: "default",
+          sessionKey: "sess-1",
+          nudgeStage: 2,
+        }),
+      );
+      expect(getCandidateSend("default")).toBeNull();
+    });
+
     it("returns null for invalid stages and preserves the candidate", () => {
       setCandidateSend("default", {
         accountId: "default",
@@ -313,6 +347,23 @@ describe("nudge-candidate", () => {
 
       expect(confirmNudgeCandidate("stale-account", 1)).toBeNull();
       expect(getCandidateSend("stale-account")).toBeNull();
+    });
+
+    it("clearing the candidate also clears any pending stage signal", () => {
+      expect(confirmNudgeCandidate("default", 1)).toBeNull();
+      clearCandidateSend("default");
+
+      setCandidateSend("default", {
+        accountId: "default",
+        sessionKey: "sess-1",
+        sentAt: Date.now(),
+        ownerShip: "~owner",
+        content: "msg",
+        provider: null,
+        model: null,
+      });
+
+      expect(getCandidateSend("default")).not.toBeNull();
     });
   });
 });

@@ -3,7 +3,8 @@
  *
  * A successful `message:sent` to ownerShip during a heartbeat session is stored
  * as a "candidate" here. The candidate is only promoted to a confirmed nudge
- * when the monitor detects a matching `lastNudgeStage` settings-store update.
+ * when it is paired with a matching `lastNudgeStage` settings-store update,
+ * regardless of which signal arrives first.
  *
  * Keyed by accountId — each account has at most one candidate at a time.
  */
@@ -34,6 +35,8 @@ export type ConfirmedNudge = {
 const CANDIDATE_TTL_MS = 5 * 60 * 1000;
 
 const candidates = new Map<string, NudgeCandidate>();
+const pendingStageSignals = new Map<string, { stage: 1 | 2 | 3; observedAt: number }>();
+const confirmationCallbacks = new Map<string, (confirmed: ConfirmedNudge) => void>();
 
 function isNudgeStage(stage: number): stage is 1 | 2 | 3 {
   return stage === 1 || stage === 2 || stage === 3;
@@ -47,11 +50,57 @@ function cleanupStaleCandidates(now = Date.now()): void {
   }
 }
 
+function cleanupStaleStageSignals(now = Date.now()): void {
+  for (const [key, signal] of pendingStageSignals) {
+    if (now - signal.observedAt > CANDIDATE_TTL_MS) {
+      pendingStageSignals.delete(key);
+    }
+  }
+}
+
+function buildConfirmedNudge(
+  candidate: NudgeCandidate,
+  stage: 1 | 2 | 3,
+): ConfirmedNudge | null {
+  if (candidate.ambiguous) {
+    return null;
+  }
+  return {
+    accountId: candidate.accountId,
+    sessionKey: candidate.sessionKey,
+    sentAt: candidate.sentAt,
+    ownerShip: candidate.ownerShip,
+    nudgeStage: stage,
+    content: candidate.content,
+    provider: candidate.provider,
+    model: candidate.model,
+  };
+}
+
+function emitConfirmedNudge(accountId: string, confirmed: ConfirmedNudge | null): ConfirmedNudge | null {
+  if (confirmed) {
+    confirmationCallbacks.get(accountId)?.(confirmed);
+  }
+  return confirmed;
+}
+
+function consumePendingConfirmation(accountId: string): ConfirmedNudge | null {
+  const candidate = candidates.get(accountId);
+  const signal = pendingStageSignals.get(accountId);
+  if (!candidate || !signal) {
+    return null;
+  }
+  candidates.delete(accountId);
+  pendingStageSignals.delete(accountId);
+  return buildConfirmedNudge(candidate, signal.stage);
+}
+
 export function setCandidateSend(
   accountId: string,
   candidate: Omit<NudgeCandidate, "ambiguous">,
-): void {
+): ConfirmedNudge | null {
   cleanupStaleCandidates();
+  cleanupStaleStageSignals();
 
   const existing = candidates.get(accountId);
   if (existing && existing.sessionKey === candidate.sessionKey) {
@@ -61,20 +110,24 @@ export function setCandidateSend(
     // New session or first send → fresh candidate
     candidates.set(accountId, { ...candidate, ambiguous: false });
   }
+  return emitConfirmedNudge(accountId, consumePendingConfirmation(accountId));
 }
 
 export function getCandidateSend(accountId: string): NudgeCandidate | null {
   cleanupStaleCandidates();
+  cleanupStaleStageSignals();
   return candidates.get(accountId) ?? null;
 }
 
 export function clearCandidateSend(accountId: string): void {
   candidates.delete(accountId);
+  pendingStageSignals.delete(accountId);
 }
 
 /** Clear all candidate state (shutdown cleanup). */
 export function clearAllCandidates(): void {
   candidates.clear();
+  pendingStageSignals.clear();
 }
 
 export function confirmNudgeCandidate(
@@ -82,24 +135,31 @@ export function confirmNudgeCandidate(
   lastNudgeStage: number,
 ): ConfirmedNudge | null {
   cleanupStaleCandidates();
+  cleanupStaleStageSignals();
   if (!isNudgeStage(lastNudgeStage)) {return null;}
-  const candidate = candidates.get(accountId);
-  if (!candidate) {return null;}
-  candidates.delete(accountId);
-  if (candidate.ambiguous) {return null;}
-  return {
-    accountId: candidate.accountId,
-    sessionKey: candidate.sessionKey,
-    sentAt: candidate.sentAt,
-    ownerShip: candidate.ownerShip,
-    nudgeStage: lastNudgeStage,
-    content: candidate.content,
-    provider: candidate.provider,
-    model: candidate.model,
-  };
+  pendingStageSignals.set(accountId, {
+    stage: lastNudgeStage,
+    observedAt: Date.now(),
+  });
+  return emitConfirmedNudge(accountId, consumePendingConfirmation(accountId));
+}
+
+export function registerConfirmedNudgeCallback(
+  accountId: string,
+  cb: (confirmed: ConfirmedNudge) => void,
+): void {
+  confirmationCallbacks.set(accountId, cb);
+}
+
+export function clearConfirmedNudgeCallback(accountId: string): void {
+  confirmationCallbacks.delete(accountId);
 }
 
 export const _testing = {
-  clearAll: () => candidates.clear(),
+  clearAll: () => {
+    candidates.clear();
+    pendingStageSignals.clear();
+    confirmationCallbacks.clear();
+  },
   getCandidateTtlMs: () => CANDIDATE_TTL_MS,
 };

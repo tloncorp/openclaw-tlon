@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseSettingsResponse, applySettingsUpdate } from "./settings.js";
+import { applySettingsUpdate, createSettingsManager, parseSettingsResponse } from "./settings.js";
 
 describe("Settings: parseSettingsResponse", () => {
   it("parses lastOwnerMessageAt as number", () => {
@@ -101,5 +101,59 @@ describe("Settings: applySettingsUpdate", () => {
     expect(applySettingsUpdate({}, "lastNudgeStage", 1).lastNudgeStage).toBe(1);
     expect(applySettingsUpdate({}, "lastNudgeStage", "2").lastNudgeStage).toBe(2);
     expect(applySettingsUpdate({}, "lastNudgeStage", 4).lastNudgeStage).toBeUndefined();
+  });
+});
+
+describe("Settings: createSettingsManager.load", () => {
+  it("preserves the last good snapshot when a later load fails", async () => {
+    let callCount = 0;
+    const manager = createSettingsManager(
+      {
+        scry: async () => {
+          callCount += 1;
+          if (callCount === 1) {
+            return {
+              all: {
+                moltbot: {
+                  tlon: {
+                    ownerShip: "~zod",
+                    dmAllowlist: ["~nec"],
+                  },
+                },
+              },
+            };
+          }
+          throw new Error("temporary outage");
+        },
+      } as never,
+      { log: () => undefined },
+    );
+
+    await expect(manager.load()).resolves.toEqual({
+      ownerShip: "~zod",
+      dmAllowlist: ["~nec"],
+    });
+    await expect(manager.load()).resolves.toEqual({
+      ownerShip: "~zod",
+      dmAllowlist: ["~nec"],
+    });
+    expect(manager.current).toEqual({
+      ownerShip: "~zod",
+      dmAllowlist: ["~nec"],
+    });
+  });
+
+  it("returns an empty snapshot on the first load failure", async () => {
+    const manager = createSettingsManager(
+      {
+        scry: async () => {
+          throw new Error("desk unavailable");
+        },
+      } as never,
+      { log: () => undefined },
+    );
+
+    await expect(manager.load()).resolves.toEqual({});
+    expect(manager.current).toEqual({});
   });
 });

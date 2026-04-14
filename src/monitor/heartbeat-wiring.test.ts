@@ -16,9 +16,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createHeartbeatTelemetryHandlers, _testing as hbTesting } from "../heartbeat-telemetry.js";
 import {
   clearCandidateSend,
+  clearConfirmedNudgeCallback,
   getCandidateSend,
   setCandidateSend,
   confirmNudgeCandidate,
+  registerConfirmedNudgeCallback,
   _testing as candidateTesting,
 } from "../nudge-candidate.js";
 import {
@@ -323,6 +325,41 @@ describe("settings refresh fallback", () => {
         sessionKey: "hb-1",
       }),
     );
+  });
+
+  it("confirms when lastNudgeStage lands before the outbound hook candidate", () => {
+    const accountId = "default";
+    const onConfirmed = vi.fn();
+    registerConfirmedNudgeCallback(accountId, onConfirmed);
+
+    const sync = resolveSettingsMirrorSync({
+      prevSettings: {},
+      newSettings: { lastNudgeStage: 3 },
+      fileConfigOwnerShip: null,
+    });
+
+    expect(sync.lastNudgeStageChanged).toBe(true);
+    expect(confirmNudgeCandidate(accountId, sync.lastNudgeStage!)).toBeNull();
+
+    setCandidateSend(accountId, {
+      accountId,
+      sessionKey: "hb-late-hook",
+      sentAt: Date.now(),
+      ownerShip: "~zod",
+      content: "Still here! Here's what I can do",
+      provider: "anthropic",
+      model: "claude-3",
+    });
+
+    expect(onConfirmed).toHaveBeenCalledWith(
+      expect.objectContaining({
+        accountId,
+        sessionKey: "hb-late-hook",
+        nudgeStage: 3,
+      }),
+    );
+    expect(getCandidateSend(accountId)).toBeNull();
+    clearConfirmedNudgeCallback(accountId);
   });
 });
 
