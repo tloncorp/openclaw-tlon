@@ -322,6 +322,19 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
   // persisted pendingNudge that was missed due to a transient startup scry failure.
   // Once true, the in-memory state is authoritative and refresh cannot clobber it.
   let pendingNudgeRehydrated = false;
+
+  /** Set pending nudge and take ownership so refresh cannot clobber. */
+  const setLocalPendingNudge = (accountId: string, nudge: PendingNudge) => {
+    setPendingNudge(accountId, nudge);
+    pendingNudgeRehydrated = true;
+  };
+
+  /** Clear pending nudge and take ownership so refresh cannot resurrect stale store data. */
+  const clearLocalPendingNudge = (accountId: string) => {
+    clearPendingNudge(accountId);
+    pendingNudgeRehydrated = true;
+  };
+
   const telemetry = createTlonTelemetry({
     config: account.telemetry,
     runtime,
@@ -624,7 +637,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       sessionKey: confirmed.sessionKey,
       accountId: confirmed.accountId,
     });
-    setPendingNudge(account.accountId, {
+    setLocalPendingNudge(account.accountId, {
       sentAt: confirmed.sentAt,
       stage: confirmed.nudgeStage,
       ownerShip: confirmed.ownerShip,
@@ -644,7 +657,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
   const rehydratedNudge = getPendingNudge(account.accountId);
   if (rehydratedNudge && !isNudgeEligible(rehydratedNudge)) {
     const ageMs = Date.now() - rehydratedNudge.sentAt;
-    clearPendingNudge(account.accountId);
+    clearLocalPendingNudge(account.accountId);
     runtime.log?.(
       `[tlon] Cleared expired pending nudge on startup (stage ${rehydratedNudge.stage}, age ${ageMs}ms)`,
     );
@@ -1373,7 +1386,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
             model: pending.model,
             sessionKey: pending.sessionKey,
           });
-          clearPendingNudge(account.accountId);
+          clearLocalPendingNudge(account.accountId);
           // Reset lastNudgeStage so the next inactivity cycle can send a
           // same-stage nudge and its telemetry won't be suppressed.
           api
@@ -1398,7 +1411,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
           // Attribution window expired — clear without emitting telemetry,
           // but still reset lastNudgeStage so the next inactivity cycle can
           // send a same-stage nudge (owner did reply, just outside the 72h window).
-          clearPendingNudge(account.accountId);
+          clearLocalPendingNudge(account.accountId);
           api
             .poke({
               app: "settings",

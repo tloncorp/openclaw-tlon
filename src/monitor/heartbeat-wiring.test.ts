@@ -681,6 +681,129 @@ describe("expired owner reply clears lastNudgeStage", () => {
   });
 });
 
+describe("local mutations take pendingNudge ownership after startup failure", () => {
+  const accountId = "default";
+
+  it("locally confirmed nudge blocks stale refresh from overwriting", () => {
+    // Startup: clear stale state, then load() throws
+    syncPendingNudgeFromStore(accountId, null);
+    let pendingNudgeRehydrated = false;
+
+    // Later: nudge confirmed locally — setLocalPendingNudge flips the guard
+    const localNudge: PendingNudge = {
+      sentAt: Date.now(),
+      stage: 1,
+      ownerShip: "~zod",
+      accountId,
+      sessionKey: "confirmed-local",
+      provider: "anthropic",
+      model: "claude-3",
+    };
+    setPendingNudge(accountId, localNudge);
+    pendingNudgeRehydrated = true; // setLocalPendingNudge does this
+
+    // Refresh arrives with a stale store echo (e.g. from a previous run)
+    const staleStoreNudge: PendingNudge = {
+      sentAt: Date.now() - 120_000,
+      stage: 2,
+      ownerShip: "~zod",
+      accountId,
+      sessionKey: "stale-store-echo",
+      provider: null,
+      model: null,
+    };
+
+    // applySettingsSnapshot logic: pendingNudgeRehydrated is true → use in-memory
+    let effectivePendingNudge: PendingNudge | undefined;
+    if (pendingNudgeRehydrated) {
+      effectivePendingNudge = getPendingNudge(accountId) ?? undefined;
+    } else if (staleStoreNudge) {
+      syncPendingNudgeFromStore(accountId, staleStoreNudge);
+      pendingNudgeRehydrated = true;
+      effectivePendingNudge = staleStoreNudge;
+    }
+
+    // The locally confirmed nudge is preserved, not overwritten
+    expect(effectivePendingNudge).toEqual(localNudge);
+    expect(getPendingNudge(accountId)).toEqual(localNudge);
+  });
+
+  it("local clear blocks stale refresh from resurrecting", () => {
+    // Startup: clear stale state, then load() throws
+    syncPendingNudgeFromStore(accountId, null);
+    let pendingNudgeRehydrated = false;
+
+    // Nudge confirmed locally
+    const localNudge: PendingNudge = {
+      sentAt: Date.now(),
+      stage: 1,
+      ownerShip: "~zod",
+      accountId,
+      sessionKey: "confirmed-then-cleared",
+      provider: null,
+      model: null,
+    };
+    setPendingNudge(accountId, localNudge);
+    pendingNudgeRehydrated = true; // setLocalPendingNudge
+
+    // Owner replies → re-engagement → clear
+    clearPendingNudge(accountId);
+    // clearLocalPendingNudge keeps pendingNudgeRehydrated = true
+
+    // Refresh arrives with stale store echo
+    const staleStoreNudge: PendingNudge = { ...localNudge, sessionKey: "stale-echo" };
+
+    let effectivePendingNudge: PendingNudge | undefined;
+    if (pendingNudgeRehydrated) {
+      effectivePendingNudge = getPendingNudge(accountId) ?? undefined;
+    } else if (staleStoreNudge) {
+      syncPendingNudgeFromStore(accountId, staleStoreNudge);
+      pendingNudgeRehydrated = true;
+      effectivePendingNudge = staleStoreNudge;
+    }
+
+    // Cleared state is authoritative — stale store data NOT resurrected
+    expect(effectivePendingNudge).toBeUndefined();
+    expect(getPendingNudge(accountId)).toBeNull();
+  });
+
+  it("refresh recovery still works when no local ownership has occurred", () => {
+    // Startup: clear stale state, then load() throws
+    syncPendingNudgeFromStore(accountId, null);
+    let pendingNudgeRehydrated = false;
+
+    // No local mutations happen — pendingNudgeRehydrated stays false
+
+    // Refresh arrives with a valid persisted nudge
+    const persistedNudge: PendingNudge = {
+      sentAt: Date.now() - 60_000,
+      stage: 1,
+      ownerShip: "~zod",
+      accountId,
+      sessionKey: "persisted-recovery",
+      provider: "anthropic",
+      model: "claude-3",
+    };
+
+    let effectivePendingNudge: PendingNudge | undefined;
+    if (pendingNudgeRehydrated) {
+      effectivePendingNudge = getPendingNudge(accountId) ?? undefined;
+    } else if (persistedNudge) {
+      syncPendingNudgeFromStore(accountId, persistedNudge);
+      pendingNudgeRehydrated = true;
+      effectivePendingNudge = persistedNudge;
+    }
+
+    // Recovery succeeds — persisted nudge rehydrated
+    expect(effectivePendingNudge).toEqual(persistedNudge);
+    expect(getPendingNudge(accountId)).toEqual(persistedNudge);
+    expect(pendingNudgeRehydrated).toBe(true);
+
+    // Subsequent owner reply can trigger re-engagement
+    expect(isNudgeEligible(getPendingNudge(accountId)!)).toBe(true);
+  });
+});
+
 describe("full nudge confirmation → re-engagement lifecycle", () => {
   it("candidate → confirm → persist → owner re-engage → emit → clear", () => {
     const accountId = "default";
