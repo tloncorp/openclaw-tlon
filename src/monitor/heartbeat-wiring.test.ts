@@ -618,6 +618,138 @@ describe("startup load failure → refresh recovery", () => {
   });
 });
 
+describe("fresh vs fallback startup load", () => {
+  const accountId = "default";
+
+  it("fresh startup load with persisted pendingNudge marks rehydration complete", () => {
+    // Simulate: startup clears stale state, then load() returns { fresh: true }
+    syncPendingNudgeFromStore(accountId, null);
+    let pendingNudgeRehydrated = false;
+
+    // Fresh load succeeds — monitor syncs and flips the guard
+    const freshLoadResult = { fresh: true };
+    const persistedNudge: PendingNudge = {
+      sentAt: Date.now() - 60_000,
+      stage: 1,
+      ownerShip: "~zod",
+      accountId,
+      sessionKey: "fresh-load-sess",
+      provider: "anthropic",
+      model: "claude-3",
+    };
+
+    if (freshLoadResult.fresh) {
+      syncPendingNudgeFromStore(accountId, persistedNudge);
+      pendingNudgeRehydrated = true;
+    }
+
+    expect(pendingNudgeRehydrated).toBe(true);
+    expect(getPendingNudge(accountId)).toEqual(persistedNudge);
+
+    // Later refresh cannot clobber
+    const staleStore: PendingNudge = { ...persistedNudge, sessionKey: "stale" };
+    let effectivePendingNudge: PendingNudge | undefined;
+    if (pendingNudgeRehydrated) {
+      effectivePendingNudge = getPendingNudge(accountId) ?? undefined;
+    } else if (staleStore) {
+      syncPendingNudgeFromStore(accountId, staleStore);
+      pendingNudgeRehydrated = true;
+      effectivePendingNudge = staleStore;
+    }
+    expect(effectivePendingNudge).toEqual(persistedNudge);
+    void staleStore;
+  });
+
+  it("fallback startup load leaves pendingNudgeRehydrated false", () => {
+    // Simulate: startup clears stale state, then load() returns { fresh: false }
+    syncPendingNudgeFromStore(accountId, null);
+    let pendingNudgeRehydrated = false;
+
+    const fallbackLoadResult = { fresh: false };
+
+    // Fallback: monitor does NOT sync or flip the guard
+    if (fallbackLoadResult.fresh) {
+      syncPendingNudgeFromStore(accountId, null);
+      pendingNudgeRehydrated = true;
+    }
+
+    expect(pendingNudgeRehydrated).toBe(false);
+    expect(getPendingNudge(accountId)).toBeNull();
+  });
+
+  it("refresh after fallback startup can recover persisted pendingNudge", () => {
+    // Startup: fallback load — guard stays false
+    syncPendingNudgeFromStore(accountId, null);
+    let pendingNudgeRehydrated = false;
+    // load() returned { fresh: false } so no sync or guard flip
+
+    // Later refresh arrives with persisted nudge from store
+    const persistedNudge: PendingNudge = {
+      sentAt: Date.now() - 60_000,
+      stage: 2,
+      ownerShip: "~zod",
+      accountId,
+      sessionKey: "recovered-sess",
+      provider: "anthropic",
+      model: "claude-3",
+    };
+
+    // applySettingsSnapshot logic
+    let effectivePendingNudge: PendingNudge | undefined;
+    if (pendingNudgeRehydrated) {
+      effectivePendingNudge = getPendingNudge(accountId) ?? undefined;
+    } else if (persistedNudge) {
+      syncPendingNudgeFromStore(accountId, persistedNudge);
+      pendingNudgeRehydrated = true;
+      effectivePendingNudge = persistedNudge;
+    }
+
+    // Recovery succeeds
+    expect(effectivePendingNudge).toEqual(persistedNudge);
+    expect(getPendingNudge(accountId)).toEqual(persistedNudge);
+    expect(pendingNudgeRehydrated).toBe(true);
+  });
+
+  it("local set/clear after fallback still takes ownership", () => {
+    // Startup: fallback load — guard stays false
+    syncPendingNudgeFromStore(accountId, null);
+    let pendingNudgeRehydrated = false;
+
+    // Local confirmed nudge — setLocalPendingNudge flips the guard
+    const localNudge: PendingNudge = {
+      sentAt: Date.now(),
+      stage: 1,
+      ownerShip: "~zod",
+      accountId,
+      sessionKey: "local-after-fallback",
+      provider: null,
+      model: null,
+    };
+    setPendingNudge(accountId, localNudge);
+    pendingNudgeRehydrated = true; // setLocalPendingNudge does this
+
+    // Local clear
+    clearPendingNudge(accountId);
+    // clearLocalPendingNudge keeps pendingNudgeRehydrated = true
+
+    // Refresh with stale store data
+    const staleStore: PendingNudge = { ...localNudge, sessionKey: "stale-echo" };
+    let effectivePendingNudge: PendingNudge | undefined;
+    if (pendingNudgeRehydrated) {
+      effectivePendingNudge = getPendingNudge(accountId) ?? undefined;
+    } else if (staleStore) {
+      syncPendingNudgeFromStore(accountId, staleStore);
+      pendingNudgeRehydrated = true;
+      effectivePendingNudge = staleStore;
+    }
+
+    // Cleared state is authoritative
+    expect(effectivePendingNudge).toBeUndefined();
+    expect(getPendingNudge(accountId)).toBeNull();
+    void staleStore;
+  });
+});
+
 describe("expired owner reply clears lastNudgeStage", () => {
   const accountId = "default";
 

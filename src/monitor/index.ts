@@ -517,7 +517,8 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
 
   // Load settings from settings store (hot-reloadable config)
   try {
-    currentSettings = await settingsManager.load();
+    const loadResult = await settingsManager.load();
+    currentSettings = loadResult.settings;
 
     // Migrate file config to settings store if not already present
     await migrateConfigToSettings();
@@ -568,11 +569,13 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       runtime.log?.(`[tlon] Using ownerShip from settings store: ${effectiveOwnerShip}`);
     }
 
-    // Unconditional pending nudge rehydration from settings store.
-    // When present: rehydrates in-memory state from previous gateway run.
-    // When absent: clears stale in-memory record from previous monitor run in same process.
-    syncPendingNudgeFromStore(account.accountId, currentSettings.pendingNudge ?? null);
-    pendingNudgeRehydrated = true;
+    // Rehydrate pending nudge from settings store only if the scry returned real data.
+    // On fallback (scry failure), leave pendingNudgeRehydrated false so the refresh
+    // recovery path can still pick up a persisted pendingNudge later.
+    if (loadResult.fresh) {
+      syncPendingNudgeFromStore(account.accountId, currentSettings.pendingNudge ?? null);
+      pendingNudgeRehydrated = true;
+    }
 
     if (currentSettings.pendingApprovals?.length) {
       pendingApprovals = currentSettings.pendingApprovals;
@@ -3026,8 +3029,8 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
           return;
         }
         try {
-          const refreshed = await settingsManager.load();
-          applySettingsSnapshot(refreshed, "refresh");
+          const refreshResult = await settingsManager.load();
+          applySettingsSnapshot(refreshResult.settings, "refresh");
         } catch (err) {
           runtime.error?.(`[tlon] Settings refresh failed: ${String(err)}`);
         }

@@ -425,7 +425,7 @@ export function createSettingsManager(api: UrbitSSEClient, logger?: SettingsLogg
     /**
      * Load initial settings via scry.
      */
-    async load(): Promise<TlonSettingsStore> {
+    async load(): Promise<{ settings: TlonSettingsStore; fresh: boolean }> {
       try {
         const raw = await api.scry("/settings/all.json");
         // Response shape: { all: { [desk]: { [bucket]: { [key]: value } } } }
@@ -434,13 +434,13 @@ export function createSettingsManager(api: UrbitSSEClient, logger?: SettingsLogg
         state.current = parseSettingsResponse(deskData ?? {});
         state.loaded = true;
         logger?.log?.(`[settings] Loaded: ${JSON.stringify(state.current)}`);
-        return state.current;
+        return { settings: state.current, fresh: true };
       } catch (err) {
         // Preserve the last good snapshot on scry failure so refresh fallback
         // does not transiently clobber live runtime state with an empty object.
         logger?.log?.(`[settings] Load failed (keeping previous settings): ${String(err)}`);
         state.loaded = true;
-        return state.current;
+        return { settings: state.current, fresh: false };
       }
     },
 

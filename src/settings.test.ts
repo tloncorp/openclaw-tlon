@@ -130,12 +130,12 @@ describe("Settings: createSettingsManager.load", () => {
     );
 
     await expect(manager.load()).resolves.toEqual({
-      ownerShip: "~zod",
-      dmAllowlist: ["~nec"],
+      settings: { ownerShip: "~zod", dmAllowlist: ["~nec"] },
+      fresh: true,
     });
     await expect(manager.load()).resolves.toEqual({
-      ownerShip: "~zod",
-      dmAllowlist: ["~nec"],
+      settings: { ownerShip: "~zod", dmAllowlist: ["~nec"] },
+      fresh: false,
     });
     expect(manager.current).toEqual({
       ownerShip: "~zod",
@@ -153,7 +153,10 @@ describe("Settings: createSettingsManager.load", () => {
       { log: () => undefined },
     );
 
-    await expect(manager.load()).resolves.toEqual({});
+    await expect(manager.load()).resolves.toEqual({
+      settings: {},
+      fresh: false,
+    });
     expect(manager.current).toEqual({});
   });
 });
