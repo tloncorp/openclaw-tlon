@@ -16,6 +16,14 @@ find /workspace/openclaw-tlon -not -path '*/.git/*' -exec chown root:root {} \; 
 echo "==> Installing plugin dependencies..."
 cd /workspace/openclaw-tlon
 pnpm install
+pnpm build
+
+# Expose tlon CLI to PATH
+TLON_BIN_DIR="/workspace/openclaw-tlon/node_modules/.bin"
+if [ -f "$TLON_BIN_DIR/tlon" ]; then
+  export PATH="$TLON_BIN_DIR:$PATH"
+  echo "==> tlon CLI available at $TLON_BIN_DIR/tlon"
+fi
 
 # Expose the plugin at an id-shaped path so OpenClaw's path hint matches the manifest id.
 ln -sfn /workspace/openclaw-tlon /workspace/tlon
@@ -72,6 +80,7 @@ cat > "$CONFIG_DIR/openclaw.json" << EOF
     }
   },
   "plugins": {
+    "allow": ["@tloncorp/openclaw"],
     "load": {
       "paths": ["/workspace/tlon"]
     },

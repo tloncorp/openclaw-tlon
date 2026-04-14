@@ -10,12 +10,9 @@ describe("channels", () => {
 
   test("lists DM contacts", async () => {
     const prompt = "List your DM contacts. Show me who you can message directly.";
-    console.log(`\n[TEST] Sending prompt: "${prompt}"`);
-
+    
     const response = await fixtures.client.prompt(prompt);
-    console.log(`[TEST] Response success: ${response.success}`);
-    console.log(`[TEST] Response text: ${response.text?.slice(0, 500)}`);
-
+        
     if (!response.success) {
       throw new Error(response.error ?? "Prompt failed");
     }
@@ -27,12 +24,9 @@ describe("channels", () => {
 
   test("lists subscribed groups", async () => {
     const prompt = "List all the groups you are subscribed to.";
-    console.log(`\n[TEST] Sending prompt: "${prompt}"`);
-
+    
     const response = await fixtures.client.prompt(prompt);
-    console.log(`[TEST] Response success: ${response.success}`);
-    console.log(`[TEST] Response text: ${response.text?.slice(0, 500)}`);
-
+        
     if (!response.success) {
       throw new Error(response.error ?? "Prompt failed");
     }
@@ -46,12 +40,9 @@ describe("channels", () => {
 
   test("lists all channels", async () => {
     const prompt = "Show me all your channels - DMs, group DMs, and group channels.";
-    console.log(`\n[TEST] Sending prompt: "${prompt}"`);
-
+    
     const response = await fixtures.client.prompt(prompt);
-    console.log(`[TEST] Response success: ${response.success}`);
-    console.log(`[TEST] Response text: ${response.text?.slice(0, 500)}`);
-
+        
     if (!response.success) {
       throw new Error(response.error ?? "Prompt failed");
     }
@@ -70,12 +61,9 @@ describe("channels", () => {
   test("gets channel info for DM", async () => {
     // Ask about the DM channel with the test user
     const prompt = `Get detailed information about your DM channel with ${fixtures.userShip}.`;
-    console.log(`\n[TEST] Sending prompt: "${prompt}"`);
-
+    
     const response = await fixtures.client.prompt(prompt);
-    console.log(`[TEST] Response success: ${response.success}`);
-    console.log(`[TEST] Response text: ${response.text?.slice(0, 500)}`);
-
+        
     if (!response.success) {
       throw new Error(response.error ?? "Prompt failed");
     }
@@ -95,12 +83,9 @@ describe("channels", () => {
 
     const channelName = `test-${Date.now().toString(36)}`;
     const prompt = `Add a new chat channel called "${channelName}" to your group ${fixtures.group.id}.`;
-    console.log(`\n[TEST] Sending prompt: "${prompt}"`);
-
+    
     const response = await fixtures.client.prompt(prompt);
-    console.log(`[TEST] Response success: ${response.success}`);
-    console.log(`[TEST] Response text: ${response.text?.slice(0, 500)}`);
-
+        
     if (!response.success) {
       throw new Error(response.error ?? "Prompt failed");
     }
@@ -135,12 +120,9 @@ describe("channels", () => {
 
     const newTitle = `Updated Title ${Date.now().toString(36)}`;
     const prompt = `Update the title of channel ${fixtures.group.chatChannel} to "${newTitle}".`;
-    console.log(`\n[TEST] Sending prompt: "${prompt}"`);
-
+    
     const response = await fixtures.client.prompt(prompt);
-    console.log(`[TEST] Response success: ${response.success}`);
-    console.log(`[TEST] Response text: ${response.text?.slice(0, 500)}`);
-
+        
     if (!response.success) {
       throw new Error(response.error ?? "Prompt failed");
     }
@@ -160,12 +142,9 @@ describe("channels", () => {
     requireFixtureGroup(fixtures);
 
     const prompt = `Get detailed information about channel ${fixtures.group.chatChannel}.`;
-    console.log(`\n[TEST] Sending prompt: "${prompt}"`);
-
+    
     const response = await fixtures.client.prompt(prompt);
-    console.log(`[TEST] Response success: ${response.success}`);
-    console.log(`[TEST] Response text: ${response.text?.slice(0, 500)}`);
-
+        
     if (!response.success) {
       throw new Error(response.error ?? "Prompt failed");
     }

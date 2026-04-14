@@ -10,10 +10,20 @@ import crypto from "node:crypto";
 import { Urbit, getTextContent } from "@tloncorp/api";
 import { scot, da } from "@urbit/aura";
 import { createStateClient, type StateClient, type StateClientConfig } from "./state.js";
+import { startLiveToolTrace, type LiveToolTraceHandle } from "./docker-logs.js";
 import { markdownToStory, type Story } from "../../src/urbit/story.js";
 
 /** Matches the correlation tag format injected by prompt(). */
 const CORRELATION_TAG_RE = /\[ref-[a-f0-9]{8}\]/;
+
+function liveToolTraceEnabled(): boolean {
+  const raw = process.env.TEST_LIVE_TOOL_TRACE ?? process.env.CI_LIVE_TOOL_TRACE ?? "";
+  return /^(1|true|yes|on)$/i.test(raw);
+}
+
+function buildLiveToolTraceLabel(mode: string, tag: string | null): string {
+  return tag ? `${mode} ${tag}` : mode;
+}
 
 /** Ship connection credentials */
 export interface ShipCredentials {
@@ -169,19 +179,32 @@ export function createTlonClient(config: TlonClientConfig): TestClient {
     throw new Error(`Failed to send DM after 3 attempts: ${lastSendError}`);
   };
 
+  const bestEffortStopAfterTimeout = async (): Promise<void> => {
+    try {
+      console.log(`[timeout cleanup] sending /stop to ${bot.shipName}`);
+      await sendDmWithRetry("/stop");
+      await sleep(3000);
+      console.log(`[timeout cleanup] /stop sent; gave it 3s to drain`);
+    } catch (err) {
+      console.log(`[timeout cleanup] failed to send /stop: ${err}`);
+    }
+  };
+
   return {
     async sendDm(text) {
       await sendDmWithRetry(text);
     },
     async prompt(text, opts = {}) {
-      const timeoutMs = opts.timeoutMs ?? 120_000;
+      const timeoutMs = opts.timeoutMs ?? 90_000;
+
+      console.log(`\n[TEST] Sending prompt: ${JSON.stringify(text)}`);
 
       try {
         const botShipNorm = bot.shipName.startsWith("~") ? bot.shipName : `~${bot.shipName}`;
 
         // Determine correlation mode:
-        //   slash commands  → no token, wall-clock baseline
-        //   correlate:false → no token, wall-clock baseline, skip tagged posts
+        //   slash commands  → no token, sequence baseline
+        //   correlate:false → no token, sequence baseline, skip tagged posts
         //   default         → inject token, match by token
         const isSlash = text.trimStart().startsWith("/");
         const useToken = !isSlash && opts.correlate !== false;
@@ -194,109 +217,162 @@ export function createTlonClient(config: TlonClientConfig): TestClient {
           textToSend = `${text}\n\n(Include reference: ${tag} in your reply.)`;
         }
 
-        const sendBaseline = Date.now();
-        const mode = useToken ? "correlated" : "timestamp";
-
-        // Send DM via direct poke (can't use plugin's sendDm since it uses global API client)
-        // Retry transient channel failures so tests don't fail fast and cascade prompts.
-        try {
-          await sendDmWithRetry(textToSend);
-        } catch (err) {
-          const lastSendError = err instanceof Error ? err.message : String(err);
-          return {
-            success: false,
-            error: `Failed to send DM after 3 attempts: ${lastSendError}`,
-          };
-        }
-
-        // Poll for response
-        const startTime = Date.now();
-        let lastPollError = "";
-        let attempts = 0;
-
-        while (Date.now() - startTime < timeoutMs) {
-          attempts += 1;
-          await sleep(2000);
-
+        let sendBaselineSequence = -1;
+        if (!useToken) {
           try {
-            const dmPosts = await testUserState.channelPosts(botShipNorm, 30);
-            const allBotPosts = (dmPosts ?? [])
+            const beforePosts = await testUserState.channelPosts(botShipNorm, 30);
+            sendBaselineSequence = (beforePosts ?? [])
               .map((post) => {
-                const p = post as {
-                  authorId?: string;
-                  sentAt?: number;
-                  textContent?: string | null;
-                  content?: unknown;
-                };
-                const textContent = p.textContent ?? getTextContent(p.content);
-                return {
-                  authorId: p.authorId,
-                  sentAt: p.sentAt,
-                  text: (textContent ?? "").trim(),
-                };
+                const p = post as { authorId?: string; sequenceNum?: number | null };
+                return p.authorId === botShipNorm && typeof p.sequenceNum === "number"
+                  ? p.sequenceNum
+                  : -1;
               })
-              .filter((post) => post.authorId === botShipNorm)
-              .filter((post) => post.text.length > 0);
-
-            if (useToken) {
-              // Correlated path: accept only posts containing this prompt's tag.
-              // No sentAt filter needed — the tag IS the correlation.
-              const matched = allBotPosts.find((p) => p.text.includes(tag!));
-
-              if (attempts === 1 || attempts % 5 === 0) {
-                console.log(`[poll #${attempts}] mode=${mode} token=${tag} matched=${!!matched} botPosts=${allBotPosts.length}`);
-                if (allBotPosts.length > 0) {
-                  console.log(`[poll #${attempts}] last 3 bot posts: ${JSON.stringify(allBotPosts.slice(-3).map((p) => ({ sentAt: p.sentAt, text: p.text.slice(0, 40) })))}`);
-                }
-              }
-
-              if (matched) {
-                const cleanText = matched.text.replace(CORRELATION_TAG_RE, "").trim();
-                return { success: true, text: cleanText };
-              }
-            } else {
-              // No-token path (slash commands and correlate:false):
-              // Accept posts newer than sendBaseline, but skip any post bearing
-              // a correlation tag — those belong to a correlated prompt.
-              const candidates = allBotPosts
-                .filter((p) => typeof p.sentAt === "number" && p.sentAt > sendBaseline)
-                .filter((p) => !CORRELATION_TAG_RE.test(p.text));
-              const skippedTagged = allBotPosts
-                .filter((p) => typeof p.sentAt === "number" && p.sentAt > sendBaseline)
-                .filter((p) => CORRELATION_TAG_RE.test(p.text)).length;
-
-              if (attempts === 1 || attempts % 5 === 0) {
-                console.log(`[poll #${attempts}] mode=${mode} baseline=${sendBaseline} candidates=${candidates.length} skippedTagged=${skippedTagged} botPosts=${allBotPosts.length}`);
-                if (allBotPosts.length > 0) {
-                  console.log(`[poll #${attempts}] last 3 bot posts: ${JSON.stringify(allBotPosts.slice(-3).map((p) => ({ sentAt: p.sentAt, text: p.text.slice(0, 40) })))}`);
-                }
-              }
-
-              if (candidates.length > 0) {
-                const latest = candidates.sort((a, b) => (b.sentAt ?? 0) - (a.sentAt ?? 0))[0];
-                return { success: true, text: latest.text };
-              }
-            }
+              .reduce((max, seq) => Math.max(max, seq), -1);
           } catch (err) {
-            lastPollError = String(err);
-            console.log(`DM poll failed: ${err}`);
+            console.log(`Failed to capture DM baseline sequence: ${err}`);
           }
         }
 
-        return {
-          success: false,
-          error:
+        const mode = useToken ? "correlated" : "sequence";
+        const composeFile = process.env.TEST_COMPOSE_FILE;
+        const liveTraceLabel = buildLiveToolTraceLabel(mode, tag);
+        const liveToolTrace: LiveToolTraceHandle | null =
+          composeFile && liveToolTraceEnabled()
+            ? startLiveToolTrace({
+                composeFile,
+                sinceIso: new Date().toISOString(),
+                label: liveTraceLabel,
+              })
+            : null;
+
+        if (liveToolTrace) {
+          console.log(`[tooltrace ${liveTraceLabel}] live tool tracing enabled`);
+        }
+
+        try {
+          // Send DM via direct poke (can't use plugin's sendDm since it uses global API client)
+          // Retry transient channel failures so tests don't fail fast and cascade prompts.
+          try {
+            await sendDmWithRetry(textToSend);
+          } catch (err) {
+            const lastSendError = err instanceof Error ? err.message : String(err);
+            console.log(`[TEST] Response success: false`);
+            console.log(`[TEST] Response text: ${JSON.stringify(`Failed to send DM after 3 attempts: ${lastSendError}`.slice(0, 500))}`);
+            return {
+              success: false,
+              error: `Failed to send DM after 3 attempts: ${lastSendError}`,
+            };
+          }
+
+          // Poll for response
+          const startTime = Date.now();
+          let lastPollError = "";
+          let attempts = 0;
+
+          while (Date.now() - startTime < timeoutMs) {
+            attempts += 1;
+            await sleep(2000);
+
+            try {
+              const dmPosts = await testUserState.channelPosts(botShipNorm, 30);
+              const allBotPosts = (dmPosts ?? [])
+                .map((post) => {
+                  const p = post as {
+                    authorId?: string;
+                    sentAt?: number;
+                    sequenceNum?: number | null;
+                    textContent?: string | null;
+                    content?: unknown;
+                  };
+                  const textContent = p.textContent ?? getTextContent(p.content);
+                  return {
+                    authorId: p.authorId,
+                    sentAt: p.sentAt,
+                    sequenceNum: p.sequenceNum,
+                    text: (textContent ?? "").trim(),
+                  };
+                })
+                .filter((post) => post.authorId === botShipNorm)
+                .filter((post) => post.text.length > 0);
+
+              if (useToken) {
+                // Correlated path: accept only posts containing this prompt's tag.
+                // No sentAt filter needed — the tag IS the correlation.
+                const matched = allBotPosts.find((p) => p.text.includes(tag!));
+
+                if (attempts === 1 || attempts % 5 === 0) {
+                  console.log(`[poll #${attempts}] mode=${mode} token=${tag} matched=${!!matched} botPosts=${allBotPosts.length}`);
+                  if (allBotPosts.length > 0) {
+                    console.log(`[poll #${attempts}] last 3 bot posts: ${JSON.stringify(allBotPosts.slice(-3).map((p) => ({ sentAt: p.sentAt, text: p.text.slice(0, 40) })))}`);
+                  }
+                }
+
+                if (matched) {
+                  const cleanText = matched.text.replace(CORRELATION_TAG_RE, "").trim();
+                  console.log(`[TEST] Response success: true`);
+                  console.log(`[TEST] Response text: ${JSON.stringify(cleanText.slice(0, 500))}`);
+                  return { success: true, text: cleanText };
+                }
+              } else {
+                // No-token path (slash commands and correlate:false):
+                // Accept posts with a newer sequence number than the snapshot we took
+                // before sending, but skip any post bearing a correlation tag — those
+                // belong to a correlated prompt.
+                const candidates = allBotPosts
+                  .filter((p) => typeof p.sequenceNum === "number" && p.sequenceNum > sendBaselineSequence)
+                  .filter((p) => !CORRELATION_TAG_RE.test(p.text));
+                const skippedTagged = allBotPosts
+                  .filter((p) => typeof p.sequenceNum === "number" && p.sequenceNum > sendBaselineSequence)
+                  .filter((p) => CORRELATION_TAG_RE.test(p.text)).length;
+
+                if (attempts === 1 || attempts % 5 === 0) {
+                  console.log(`[poll #${attempts}] mode=${mode} baselineSequence=${sendBaselineSequence} candidates=${candidates.length} skippedTagged=${skippedTagged} botPosts=${allBotPosts.length}`);
+                  if (allBotPosts.length > 0) {
+                    console.log(`[poll #${attempts}] last 3 bot posts: ${JSON.stringify(allBotPosts.slice(-3).map((p) => ({ sequenceNum: p.sequenceNum, sentAt: p.sentAt, text: p.text.slice(0, 40) })))}`);
+                  }
+                }
+
+                if (candidates.length > 0) {
+                  const latest = candidates.sort((a, b) => (b.sequenceNum ?? -1) - (a.sequenceNum ?? -1))[0];
+                  console.log(`[TEST] Response success: true`);
+                  console.log(`[TEST] Response text: ${JSON.stringify(latest.text.slice(0, 500))}`);
+                  return { success: true, text: latest.text };
+                }
+              }
+            } catch (err) {
+              lastPollError = String(err);
+              console.log(`DM poll failed: ${err}`);
+            }
+          }
+
+          await bestEffortStopAfterTimeout();
+          const timeoutError =
             `Timeout waiting for bot response after ${timeoutMs}ms ` +
             `(mode=${mode}, attempts=${attempts}` +
-            (tag ? `, token=${tag}` : `, baseline=${sendBaseline}`) +
+            (tag ? `, token=${tag}` : `, baselineSequence=${sendBaselineSequence}`) +
             (lastPollError ? `, lastPollError=${lastPollError}` : "") +
-            `)`,
-        };
+            `; sent /stop for cleanup)`;
+          console.log(`[TEST] Response success: false`);
+          console.log(`[TEST] Response text: ${JSON.stringify(timeoutError.slice(0, 500))}`);
+          return {
+            success: false,
+            error: timeoutError,
+          };
+        } finally {
+          if (liveToolTrace) {
+            const lines = await liveToolTrace.stop();
+            console.log(`[tooltrace ${liveTraceLabel}] stopped (${lines.length} tool line(s))`);
+          }
+        }
       } catch (err) {
         console.log(`Failed to send DM: ${err}`);
+        const fatalError = `Failed to send DM: ${err}`;
+        console.log(`[TEST] Response success: false`);
+        console.log(`[TEST] Response text: ${JSON.stringify(fatalError.slice(0, 500))}`);
         return {
           success: false,
-          error: `Failed to send DM: ${err}`,
+          error: fatalError,
         };
       }
     },

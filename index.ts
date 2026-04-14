@@ -1,24 +1,47 @@
-import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { dirname, join } from "node:path";
+import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { PLUGIN_COMMIT } from "./src/version.generated.js";
-
-// Get package version at runtime
-const require = createRequire(import.meta.url);
-const { version: PLUGIN_VERSION } = require("./package.json") as { version: string };
-import { emptyPluginConfigSchema } from "openclaw/plugin-sdk";
+import { defineChannelPluginEntry } from "openclaw/plugin-sdk/core";
 import { tlonPlugin } from "./src/channel.js";
 import { resolveBridgeForCommand } from "./src/monitor/command-auth.js";
 import { setTlonRuntime } from "./src/runtime.js";
 import { getSessionRole } from "./src/session-roles.js";
 import { recordToolCall } from "./src/telemetry.js";
+import { resolveTlonBinary } from "./src/tlon-binary.js";
+import {
+  formatToolTraceEvent,
+  liveToolTraceContentsEnabled,
+  shouldLogAfterToolTrace,
+} from "./src/tool-trace.js";
 import { checkBlockedSendOperation } from "./src/tlon-tool-guard.js";
-import { resolveTlonAccount } from "./src/types.js";
+import { resolveTlonAccount, listTlonAccountIds } from "./src/types.js";
+import {
+  createGatewayStatusManager,
+  setGatewayStatusManager,
+} from "./src/gateway-status.js";
+import { gatewayStop } from "@tloncorp/api";
+
+export { tlonPlugin } from "./src/channel.js";
+export { setTlonRuntime } from "./src/runtime.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+const require = createRequire(import.meta.url);
+
+function readPluginVersion(): string {
+  try {
+    const { version } = require("./package.json") as { version: string };
+    return version;
+  } catch {
+    try {
+      const raw = readFileSync(new URL("./package.json", import.meta.url), "utf-8");
+      return (JSON.parse(raw) as { version: string }).version;
+    } catch {
+      return "unknown";
+    }
+  }
+}
 
 // Whitelist of allowed tlon subcommands
 const ALLOWED_TLON_COMMANDS = new Set([
@@ -75,32 +98,6 @@ function findSubcommandIndex(args: string[]): number {
 }
 
 /**
- * Find the tlon binary from the skill package
- */
-function findTlonBinary(): string {
-  // Check in node_modules/.bin
-  const skillBin = join(__dirname, "node_modules", ".bin", "tlon");
-  console.log(
-    `[tlon] Checking for binary at: ${skillBin}, exists: ${existsSync(skillBin)}`,
-  );
-  if (existsSync(skillBin)) return skillBin;
-
-  // Check for platform-specific binary directly
-  const platform = process.platform;
-  const arch = process.arch;
-  const platformPkg = `@tloncorp/tlon-skill-${platform}-${arch}`;
-  const platformBin = join(__dirname, "node_modules", platformPkg, "tlon");
-  console.log(
-    `[tlon] Checking for platform binary at: ${platformBin}, exists: ${existsSync(platformBin)}`,
-  );
-  if (existsSync(platformBin)) return platformBin;
-
-  // Fallback to PATH
-  console.log(`[tlon] Falling back to PATH lookup for 'tlon'`);
-  return "tlon";
-}
-
-/**
  * Shell-like argument splitter that respects quotes
  */
 function shellSplit(str: string): string[] {
@@ -150,8 +147,6 @@ function runTlonCommand(
   credentials?: { url: string; ship: string; code: string },
 ): Promise<string> {
   return new Promise((resolve, reject) => {
-    // Build environment with Tlon credentials
-    // Pass all credentials - skill checks cache first, falls back to these if miss
     const env = { ...process.env };
     if (credentials) {
       env.URBIT_SHIP = credentials.ship;
@@ -186,14 +181,72 @@ function runTlonCommand(
   });
 }
 
-const plugin = {
+export default defineChannelPluginEntry({
   id: "tlon",
   name: "Tlon",
   description: "Tlon/Urbit channel plugin",
-  configSchema: emptyPluginConfigSchema(),
-  register(api: OpenClawPluginApi) {
-    setTlonRuntime(api.runtime);
-    api.registerChannel({ plugin: tlonPlugin });
+  plugin: tlonPlugin,
+  setRuntime: setTlonRuntime,
+  registerFull(api) {
+    // Import version info lazily
+    const PLUGIN_VERSION = readPluginVersion();
+    let PLUGIN_COMMIT = "unknown";
+    try {
+      PLUGIN_COMMIT = (
+        require("./src/version.generated.js") as { PLUGIN_COMMIT: string }
+      ).PLUGIN_COMMIT;
+    } catch {
+      // version.generated.js may not exist in all environments
+    }
+
+    // ── Gateway-status liveness integration ───────────────────
+    //
+    // v1 requires exactly one Tlon account. With multiple accounts, multiple
+    // monitors call configureTlonApiWithPoke() and the last one wins the global
+    // @tloncorp/api singleton — making it unsafe to route heartbeats or stop
+    // pokes to a specific ship. Disable entirely rather than route to the wrong ship.
+    const gsAccountIds = listTlonAccountIds(api.config);
+    setGatewayStatusManager(null);
+
+    if (gsAccountIds.length > 1) {
+      api.logger.warn(
+        `[gateway-status] disabled: ${gsAccountIds.length} Tlon accounts configured, ` +
+          `but v1 only supports one (global @tloncorp/api client cannot target multiple ships)`,
+      );
+    } else if (gsAccountIds.length === 1) {
+      const gsManager = createGatewayStatusManager({
+        logger: {
+          log: (m) => api.logger.info(m),
+          error: (m) => api.logger.warn(m),
+        },
+      });
+      setGatewayStatusManager(gsManager);
+
+      api.on("gateway_start", () => {
+        gsManager.signalGatewayStarted();
+        api.logger.info("[gateway-status] gateway_start received");
+      });
+
+      api.on("gateway_stop", async (event) => {
+        if (!gsManager.activated || gsManager.stopped) {
+          return;
+        }
+        gsManager.stopHeartbeat();
+        gsManager.markStopped();
+        try {
+          await gatewayStop({
+            bootId: gsManager.bootId,
+            reason: event.reason ?? "shutdown",
+          });
+          api.logger.info(
+            `[gateway-status] stopped (reason=${event.reason ?? "shutdown"})`,
+          );
+        } catch (err) {
+          api.logger.warn(`[gateway-status] stop poke failed: ${String(err)}`);
+        }
+      });
+    }
+    // else: zero accounts configured — nothing to do
 
     // Register /tlon-version command
     api.registerCommand({
@@ -205,7 +258,11 @@ const plugin = {
     });
 
     // Register the tlon tool
-    const tlonBinary = findTlonBinary();
+    const tlonBinary = resolveTlonBinary({
+      moduleDir: __dirname,
+      resolveModule: require.resolve,
+      log: (msg) => api.logger.debug?.(msg),
+    });
     api.logger.info(`[tlon] Registering tlon tool, binary: ${tlonBinary}`);
 
     // Capture credentials from config at registration time
@@ -247,8 +304,6 @@ const plugin = {
         try {
           const args = shellSplit(params.command);
 
-          // Skip credential flags (--config, --url, --ship, --code, --cookie)
-          // to find the actual subcommand, matching what the skill binary does.
           const subIdx = findSubcommandIndex(args);
           const subcommand = subIdx >= 0 ? args[subIdx] : undefined;
           if (!subcommand || !ALLOWED_TLON_COMMANDS.has(subcommand)) {
@@ -278,7 +333,8 @@ const plugin = {
             details: undefined,
           };
         } catch (error: unknown) {
-          const message = error instanceof Error ? error.message : String(error);
+          const message =
+            error instanceof Error ? error.message : String(error);
           return {
             content: [{ type: "text" as const, text: `Error: ${message}` }],
             details: { error: true },
@@ -289,24 +345,44 @@ const plugin = {
 
     // Tool access control: block sensitive tools for non-owners
     const ownerOnlyTools = new Set(["tlon", "cron", "read"]);
+    const logToolTraceContents = liveToolTraceContentsEnabled();
 
     api.on("before_tool_call", (event, ctx) => {
-      if (!ownerOnlyTools.has(event.toolName)) {
-        return;
+      const role = getSessionRole(ctx.sessionKey ?? "");
+      const isOwnerOnlyTool = ownerOnlyTools.has(event.toolName);
+      const isBlocked = isOwnerOnlyTool && role === "user";
+      const blockReason = isBlocked ? `The ${event.toolName} tool is not available.` : undefined;
+
+      if (logToolTraceContents) {
+        api.logger.info(
+          formatToolTraceEvent({
+            phase: "before",
+            sessionKey: ctx.sessionKey,
+            toolName: event.toolName,
+            payload: {
+              params: event.params,
+              role: role ?? "internal",
+              blocked: isBlocked,
+              ...(blockReason ? { blockReason } : {}),
+            },
+          }),
+        );
       }
 
-      const role = getSessionRole(ctx.sessionKey ?? "");
+      if (!isOwnerOnlyTool) {
+        return;
+      }
 
       // Allow owner sessions and internal sessions (heartbeat, cron, etc.).
       // Internal sessions have no role because they're not triggered by DMs.
       // Only block when role is explicitly "user" (non-owner DM).
-      if (role === "user") {
+      if (isBlocked) {
         api.logger.warn(
           `[tlon] Blocked ${event.toolName} tool for non-owner. Session: ${ctx.sessionKey}, Role: ${role}`,
         );
         return {
           block: true,
-          blockReason: `The ${event.toolName} tool is not available.`,
+          blockReason,
         };
       }
 
@@ -316,6 +392,22 @@ const plugin = {
     });
 
     api.on("after_tool_call", (event, ctx) => {
+      if (logToolTraceContents && shouldLogAfterToolTrace(event)) {
+        api.logger.info(
+          formatToolTraceEvent({
+            phase: "after",
+            sessionKey: ctx.sessionKey,
+            toolName: event.toolName,
+            payload: {
+              params: event.params,
+              result: event.result,
+              error: event.error ?? null,
+              durationMs: event.durationMs ?? null,
+            },
+          }),
+        );
+      }
+
       recordToolCall({
         sessionKey: ctx.sessionKey,
         toolName: event.toolName,
@@ -325,10 +417,6 @@ const plugin = {
     });
 
     // ── Slash commands for approval & admin ────────────────────────────
-    // These bypass the LLM and call the monitor's command bridge directly.
-    // Each handler resolves the correct bridge (multi-account safe) and
-    // enforces owner-only access (default-deny).
-
     api.registerCommand({
       name: "allow",
       description: "Allow a pending DM/channel/group request",
@@ -336,7 +424,12 @@ const plugin = {
       handler: async (ctx) => {
         const result = resolveBridgeForCommand(ctx);
         if ("error" in result) return { text: result.error };
-        return { text: await result.bridge.handleAction("approve", ctx.args?.trim() || undefined) };
+        return {
+          text: await result.bridge.handleAction(
+            "approve",
+            ctx.args?.trim() || undefined,
+          ),
+        };
       },
     });
 
@@ -347,7 +440,12 @@ const plugin = {
       handler: async (ctx) => {
         const result = resolveBridgeForCommand(ctx);
         if ("error" in result) return { text: result.error };
-        return { text: await result.bridge.handleAction("deny", ctx.args?.trim() || undefined) };
+        return {
+          text: await result.bridge.handleAction(
+            "deny",
+            ctx.args?.trim() || undefined,
+          ),
+        };
       },
     });
 
@@ -358,7 +456,12 @@ const plugin = {
       handler: async (ctx) => {
         const result = resolveBridgeForCommand(ctx);
         if ("error" in result) return { text: result.error };
-        return { text: await result.bridge.handleAction("block", ctx.args?.trim() || undefined) };
+        return {
+          text: await result.bridge.handleAction(
+            "block",
+            ctx.args?.trim() || undefined,
+          ),
+        };
       },
     });
 
@@ -397,6 +500,4 @@ const plugin = {
       },
     });
   },
-};
-
-export default plugin;
+});
