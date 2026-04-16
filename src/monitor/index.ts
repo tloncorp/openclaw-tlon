@@ -64,7 +64,7 @@ import {
 } from "./approval.js";
 import { setBridge, removeBridge, type ApprovalCommandBridge } from "./command-bridge.js";
 import { fetchAllChannels, fetchInitData } from "./discovery.js";
-import { cacheMessage, lookupCachedMessage, getChannelHistory, fetchChannelHistory, fetchThreadHistory } from "./history.js";
+import { cacheMessage, lookupCachedMessage, getChannelHistory, fetchChannelHistory, fetchThreadHistory, renderHistoryContent } from "./history.js";
 import { downloadMessageImages, parseBlobData, formatBlobAnnotations, downloadBlobAttachments } from "./media.js";
 import { createProcessedMessageTracker } from "./processed-messages.js";
 import {
@@ -1247,7 +1247,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         if (threadHistory.length > 0) {
           const threadContext = threadHistory
             .slice(-20) // Last 20 thread messages for context
-            .map((msg) => `${formatShipWithNickname(msg.author)}: ${sanitizeMessageText(msg.content)}`)
+            .map((msg) => `${formatShipWithNickname(msg.author)}: ${sanitizeMessageText(renderHistoryContent(msg))}`)
             .join("\n");
 
           // Prepend thread context to the message
@@ -1275,7 +1275,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
             .filter((msg) => msg.id !== params.messageId)
             .slice(0, 20)
             .reverse() // oldest first for natural reading order
-            .map((msg) => `${formatShipWithNickname(msg.author)}: ${sanitizeMessageText(msg.content)}`)
+            .map((msg) => `${formatShipWithNickname(msg.author)}: ${sanitizeMessageText(renderHistoryContent(msg))}`)
             .join("\n");
 
           if (contextMessages) {
@@ -1318,7 +1318,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
 
         const historyText = history
           .map(
-            (msg) => `[${new Date(msg.timestamp).toLocaleString()}] ${msg.author}: ${sanitizeMessageText(msg.content)}`,
+            (msg) => `[${new Date(msg.timestamp).toLocaleString()}] ${msg.author}: ${sanitizeMessageText(renderHistoryContent(msg))}`,
           )
           .join("\n");
 
@@ -1765,6 +1765,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         content: messageText,
         timestamp: content.sent || Date.now(),
         id: messageId,
+        blob: content.blob ?? null,
       });
 
       // Check if sender is a bot (BotProfile object has ship, nickname, avatar)
@@ -2076,12 +2077,14 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       // Cache DM messages (including bot's own) so reaction lookups have context
       const dmCacheKey = `dm/${whom}`;
       const rawCacheText = extractMessageText(dmContent.content);
-      if (rawCacheText.trim()) {
+      const hasDmBlob = Boolean(dmContent.blob);
+      if (rawCacheText.trim() || hasDmBlob) {
         cacheMessage(dmCacheKey, {
           author: authorShip,
           content: rawCacheText,
           timestamp: dmContent.sent || Date.now(),
           id: effectiveMessageId,
+          blob: dmContent.blob ?? null,
         });
       }
 

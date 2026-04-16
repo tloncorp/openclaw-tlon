@@ -1,4 +1,6 @@
+import type { ClientPostBlobData } from "@tloncorp/api";
 import type { RuntimeEnv } from "openclaw/plugin-sdk/tlon";
+import { parseBlobData, formatBlobForHistory } from "./media.js";
 import { extractMessageText } from "./utils.js";
 
 /**
@@ -25,12 +27,41 @@ export type TlonHistoryEntry = {
   content: string;
   timestamp: number;
   id?: string;
+  blob?: string | null;
+  parsedBlobData?: ClientPostBlobData | null;
 };
+
+function getParsedBlobData(entry: TlonHistoryEntry): ClientPostBlobData | null {
+  if (entry.parsedBlobData !== undefined) {
+    return entry.parsedBlobData;
+  }
+
+  entry.parsedBlobData = parseBlobData(entry.blob);
+  return entry.parsedBlobData;
+}
+
+/**
+ * Render a history entry's full content for context display.
+ * Combines text content with compact blob annotations (e.g. voice memo transcripts).
+ */
+export function renderHistoryContent(entry: TlonHistoryEntry): string {
+  const parts: string[] = [];
+  const blobData = getParsedBlobData(entry);
+  if (blobData) {
+    const blobText = formatBlobForHistory(blobData);
+    if (blobText) parts.push(blobText);
+  }
+  if (entry.content) parts.push(entry.content);
+  return parts.join("\n");
+}
 
 const messageCache = new Map<string, TlonHistoryEntry[]>();
 const MAX_CACHED_MESSAGES = 100;
 
-export function lookupCachedMessage(channelNest: string, messageId: string): TlonHistoryEntry | undefined {
+export function lookupCachedMessage(
+  channelNest: string,
+  messageId: string,
+): TlonHistoryEntry | undefined {
   const cache = messageCache.get(channelNest);
   if (!cache) return undefined;
   const normalizedId = String(messageId).replace(/\./g, "");
@@ -85,9 +116,10 @@ export async function fetchChannelHistory(
           content: extractMessageText(essay?.content || []),
           timestamp: essay?.sent || Date.now(),
           id: seal?.id,
+          blob: essay?.blob ?? null,
         } as TlonHistoryEntry;
       })
-      .filter((msg) => msg.content);
+      .filter((msg) => msg.content || msg.blob);
 
     runtime?.log?.(`[tlon] Extracted ${messages.length} messages from history`);
     return messages;
@@ -162,9 +194,10 @@ export async function fetchThreadHistory(
           content: extractMessageText(memo?.content || []),
           timestamp: memo?.sent || Date.now(),
           id: seal?.id || item.id,
+          blob: memo?.blob ?? null,
         } as TlonHistoryEntry;
       })
-      .filter((msg) => msg.content);
+      .filter((msg) => msg.content || msg.blob);
 
     runtime?.log?.(`[tlon] Extracted ${messages.length} thread replies from history`);
     return messages;
@@ -184,8 +217,9 @@ export async function fetchThreadHistory(
             content: extractMessageText(reply.memo?.content || []),
             timestamp: reply.memo?.sent || Date.now(),
             id: reply.seal?.id,
+            blob: reply.memo?.blob ?? null,
           }))
-          .filter((msg: TlonHistoryEntry) => msg.content);
+          .filter((msg: TlonHistoryEntry) => msg.content || msg.blob);
 
         runtime?.log?.(`[tlon] Extracted ${messages.length} replies from post data`);
         return messages;

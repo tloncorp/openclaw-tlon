@@ -1,3 +1,5 @@
+import type { ClientPostBlobData } from "@tloncorp/api";
+import { parsePostBlob } from "@tloncorp/api";
 import { randomUUID } from "node:crypto";
 import { createWriteStream } from "node:fs";
 import { mkdir, unlink } from "node:fs/promises";
@@ -6,8 +8,6 @@ import * as path from "node:path";
 import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { fetchWithSsrFGuard } from "openclaw/plugin-sdk/tlon";
-import { parsePostBlob } from "@tloncorp/api";
-import type { ClientPostBlobData } from "@tloncorp/api";
 import { getDefaultSsrFPolicy } from "../urbit/context.js";
 
 // Default to OpenClaw workspace media directory
@@ -110,8 +110,14 @@ export async function downloadMedia(
 
       const contentLength = response.headers.get("content-length");
       const declaredSizeBytes =
-        contentLength && /^\d+$/.test(contentLength) ? Number.parseInt(contentLength, 10) : undefined;
-      if (options.maxBytes !== undefined && declaredSizeBytes !== undefined && declaredSizeBytes > options.maxBytes) {
+        contentLength && /^\d+$/.test(contentLength)
+          ? Number.parseInt(contentLength, 10)
+          : undefined;
+      if (
+        options.maxBytes !== undefined &&
+        declaredSizeBytes !== undefined &&
+        declaredSizeBytes > options.maxBytes
+      ) {
         options.onTooLarge?.({ declaredSizeBytes });
         console.warn(
           `[tlon-media] Skipping ${url}: declared size ${declaredSizeBytes} exceeds ${options.maxBytes} byte limit`,
@@ -146,7 +152,11 @@ export async function downloadMedia(
               },
             });
 
-      await pipeline(Readable.fromWeb(body as any), ...(limitTransform ? [limitTransform] : []), writeStream);
+      await pipeline(
+        Readable.fromWeb(body as any),
+        ...(limitTransform ? [limitTransform] : []),
+        writeStream,
+      );
 
       return {
         localPath,
@@ -259,34 +269,74 @@ export function parseBlobData(blob: string | null | undefined): ClientPostBlobDa
  *   🎙️ [voice memo] (12s) "Hey, check this out"
  *   🎬 [clip.mp4] (video/mp4, 1.2MB)
  */
+type BlobFormatMode = "annotation" | "history";
+
+function formatBlobEntry(entry: ClientPostBlobData[number], mode: BlobFormatMode): string[] {
+  if (entry.type === "file") {
+    const name = entry.name || "file";
+    if (mode === "history") {
+      return [`[📎 ${name}]`];
+    }
+    const mime = entry.mimeType || "unknown";
+    const size = entry.size ? formatFileSize(entry.size) : "?";
+    let line = `📎 [${name}] (${mime}, ${size})`;
+    if (entry.fileUri) line += ` ${entry.fileUri}`;
+    return [line];
+  }
+
+  if (entry.type === "voicememo") {
+    if (mode === "history") {
+      if (entry.transcription) {
+        return [`[🎙️ voice memo: "${entry.transcription}"]`];
+      }
+      const dur = entry.duration ? `${Math.round(entry.duration)}s` : "";
+      return [`[🎙️ voice memo${dur ? `, ${dur}` : ""}]`];
+    }
+
+    const dur = entry.duration ? `${Math.round(entry.duration)}s` : "?";
+    let line = `🎙️ [voice memo] (${dur})`;
+    if (entry.fileUri) line += ` ${entry.fileUri}`;
+    const lines = [line];
+    if (entry.transcription) {
+      lines.push(`  "${entry.transcription}"`);
+    }
+    return lines;
+  }
+
+  if (entry.type === "video") {
+    const name = entry.name || "video";
+    if (mode === "history") {
+      return [`[🎬 ${name}]`];
+    }
+    const mime = entry.mimeType || "video";
+    const size = entry.size ? formatFileSize(entry.size) : "?";
+    let line = `🎬 [${name}] (${mime}, ${size})`;
+    if (entry.fileUri) line += ` ${entry.fileUri}`;
+    return [line];
+  }
+
+  return [];
+}
+
 export function formatBlobAnnotations(blobData: ClientPostBlobData): string {
   const lines: string[] = [];
 
   for (const entry of blobData) {
-    if (entry.type === "file") {
-      const name = entry.name || "file";
-      const mime = entry.mimeType || "unknown";
-      const size = entry.size ? formatFileSize(entry.size) : "?";
-      let line = `📎 [${name}] (${mime}, ${size})`;
-      if (entry.fileUri) line += ` ${entry.fileUri}`;
-      lines.push(line);
-    } else if (entry.type === "voicememo") {
-      const dur = entry.duration ? `${Math.round(entry.duration)}s` : "?";
-      let line = `🎙️ [voice memo] (${dur})`;
-      if (entry.fileUri) line += ` ${entry.fileUri}`;
-      lines.push(line);
-      if (entry.transcription) {
-        lines.push(`  "${entry.transcription}"`);
-      }
-    } else if (entry.type === "video") {
-      const name = entry.name || "video";
-      const mime = entry.mimeType || "video";
-      const size = entry.size ? formatFileSize(entry.size) : "?";
-      let line = `🎬 [${name}] (${mime}, ${size})`;
-      if (entry.fileUri) line += ` ${entry.fileUri}`;
-      lines.push(line);
-    }
-    // Skip unknown types silently
+    lines.push(...formatBlobEntry(entry, "annotation"));
+  }
+
+  return lines.join("\n");
+}
+
+/**
+ * Compact blob annotation for history/context display.
+ * Omits URIs and sizes; surfaces voice memo transcripts prominently.
+ */
+export function formatBlobForHistory(blobData: ClientPostBlobData): string {
+  const lines: string[] = [];
+
+  for (const entry of blobData) {
+    lines.push(...formatBlobEntry(entry, "history"));
   }
 
   return lines.join("\n");
@@ -339,7 +389,10 @@ export async function downloadBlobAttachments(
   return { attachments, notices };
 }
 
-function formatBlobTooLargeNotice(entry: Exclude<ClientPostBlobData[number], { type: "unknown" }>, sizeBytes?: number): string {
+function formatBlobTooLargeNotice(
+  entry: Exclude<ClientPostBlobData[number], { type: "unknown" }>,
+  sizeBytes?: number,
+): string {
   const label = entry.type === "voicememo" ? "voice memo" : entry.name || "blob attachment";
   const sizeText = sizeBytes !== undefined ? formatFileSize(sizeBytes) : "unknown size";
   return `[blob not downloaded: ${label} is ${sizeText}, over the ${formatFileSize(MAX_BLOB_DOWNLOAD_BYTES)} limit]`;
