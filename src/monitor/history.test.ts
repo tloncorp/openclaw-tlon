@@ -71,9 +71,48 @@ describe("renderHistoryContent", () => {
     expect(result).toContain("🎙️");
   });
 
+  it("memoizes parsed blob data on the history entry", () => {
+    const entry: TlonHistoryEntry = {
+      author: "~zod",
+      content: "",
+      timestamp: Date.now(),
+      blob: JSON.stringify([
+        {
+          type: "file",
+          version: 1,
+          fileUri: "https://storage.example.com/notes.pdf",
+          mimeType: "application/pdf",
+          name: "notes.pdf",
+          size: 245760,
+        },
+      ]),
+    };
+
+    expect(entry.parsedBlobData).toBeUndefined();
+    expect(renderHistoryContent(entry)).toBe("[📎 notes.pdf]");
+    expect(entry.parsedBlobData).toEqual([
+      {
+        type: "file",
+        version: 1,
+        fileUri: "https://storage.example.com/notes.pdf",
+        mimeType: "application/pdf",
+        name: "notes.pdf",
+        size: 245760,
+      },
+    ]);
+
+    const memoized = entry.parsedBlobData;
+    expect(renderHistoryContent(entry)).toBe("[📎 notes.pdf]");
+    expect(entry.parsedBlobData).toBe(memoized);
+  });
+
   it("handles null/undefined blob gracefully", () => {
-    expect(renderHistoryContent({ author: "~zod", content: "hi", timestamp: 0, blob: null })).toBe("hi");
-    expect(renderHistoryContent({ author: "~zod", content: "hi", timestamp: 0, blob: undefined })).toBe("hi");
+    expect(renderHistoryContent({ author: "~zod", content: "hi", timestamp: 0, blob: null })).toBe(
+      "hi",
+    );
+    expect(
+      renderHistoryContent({ author: "~zod", content: "hi", timestamp: 0, blob: undefined }),
+    ).toBe("hi");
   });
 
   it("handles invalid blob JSON gracefully", () => {

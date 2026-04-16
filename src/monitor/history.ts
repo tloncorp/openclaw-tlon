@@ -1,6 +1,7 @@
+import type { ClientPostBlobData } from "@tloncorp/api";
 import type { RuntimeEnv } from "openclaw/plugin-sdk/tlon";
-import { extractMessageText } from "./utils.js";
 import { parseBlobData, formatBlobForHistory } from "./media.js";
+import { extractMessageText } from "./utils.js";
 
 /**
  * Format a number as @ud (with dots every 3 digits from the right)
@@ -27,7 +28,17 @@ export type TlonHistoryEntry = {
   timestamp: number;
   id?: string;
   blob?: string | null;
+  parsedBlobData?: ClientPostBlobData | null;
 };
+
+function getParsedBlobData(entry: TlonHistoryEntry): ClientPostBlobData | null {
+  if (entry.parsedBlobData !== undefined) {
+    return entry.parsedBlobData;
+  }
+
+  entry.parsedBlobData = parseBlobData(entry.blob);
+  return entry.parsedBlobData;
+}
 
 /**
  * Render a history entry's full content for context display.
@@ -35,12 +46,10 @@ export type TlonHistoryEntry = {
  */
 export function renderHistoryContent(entry: TlonHistoryEntry): string {
   const parts: string[] = [];
-  if (entry.blob) {
-    const blobData = parseBlobData(entry.blob);
-    if (blobData) {
-      const blobText = formatBlobForHistory(blobData);
-      if (blobText) parts.push(blobText);
-    }
+  const blobData = getParsedBlobData(entry);
+  if (blobData) {
+    const blobText = formatBlobForHistory(blobData);
+    if (blobText) parts.push(blobText);
   }
   if (entry.content) parts.push(entry.content);
   return parts.join("\n");
@@ -49,7 +58,10 @@ export function renderHistoryContent(entry: TlonHistoryEntry): string {
 const messageCache = new Map<string, TlonHistoryEntry[]>();
 const MAX_CACHED_MESSAGES = 100;
 
-export function lookupCachedMessage(channelNest: string, messageId: string): TlonHistoryEntry | undefined {
+export function lookupCachedMessage(
+  channelNest: string,
+  messageId: string,
+): TlonHistoryEntry | undefined {
   const cache = messageCache.get(channelNest);
   if (!cache) return undefined;
   const normalizedId = String(messageId).replace(/\./g, "");
