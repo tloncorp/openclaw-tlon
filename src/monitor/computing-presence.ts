@@ -18,6 +18,8 @@ type PublishParams = {
 
 type PublishedState = Omit<PublishParams, "conversationId">;
 
+const DEFAULT_MIN_UPDATE_INTERVAL_MS = 1_000;
+
 export type ComputingPresenceReporter = {
   publish: (params: PublishParams) => Promise<void>;
 };
@@ -53,7 +55,10 @@ export function createComputingPresenceTracker(params?: {
 }) {
   const reporter = params?.reporter ?? createComputingPresenceReporter();
   const runtime = params?.runtime;
-  const minUpdateIntervalMs = Math.max(0, params?.minUpdateIntervalMs ?? 1_000);
+  const minUpdateIntervalMs = Math.max(
+    0,
+    params?.minUpdateIntervalMs ?? DEFAULT_MIN_UPDATE_INTERVAL_MS,
+  );
   const conversations = new Map<string, Map<string, RunState>>();
   const lastPublishedState = new Map<string, PublishedState>();
   const lastPublishedAt = new Map<string, number>();
@@ -240,10 +245,7 @@ export function createComputingPresenceTracker(params?: {
   };
 
   return {
-    refreshRun: async (params: {
-      conversationId: string;
-      runId: string;
-    }) => {
+    refreshRun: async (params: { conversationId: string; runId: string }) => {
       await safelySync(params.conversationId, "refresh", async () => {
         ensureRun(params.conversationId, params.runId);
         await syncConversation(params.conversationId);
