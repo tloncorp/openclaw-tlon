@@ -1,5 +1,5 @@
 import type { Story } from "@tloncorp/api";
-import { createTypingCallbacks } from "openclaw/plugin-sdk";
+import { createTypingCallbacks } from "openclaw/plugin-sdk/channel-runtime";
 import type { RuntimeEnv, ReplyPayload, OpenClawConfig } from "openclaw/plugin-sdk/tlon";
 
 // Local structural types — @tloncorp/api defines these internally but
@@ -1783,14 +1783,14 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
               runId: presenceRunId,
             });
           },
-          onStartError: (err) => {
+          onStartError: (err: unknown) => {
             runtime.error?.(
               `[tlon] Failed to start computing presence for ${presenceConversationId}: ${
                 err instanceof Error ? err.stack ?? err.message : String(err)
               }`,
             );
           },
-          onStopError: (err) => {
+          onStopError: (err: unknown) => {
             runtime.error?.(
               `[tlon] Failed to stop computing presence for ${presenceConversationId}: ${
                 err instanceof Error ? err.stack ?? err.message : String(err)
