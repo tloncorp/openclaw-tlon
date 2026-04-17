@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseSettingsResponse, applySettingsUpdate } from "./settings.js";
+import { applySettingsUpdate, createSettingsManager, parseSettingsResponse } from "./settings.js";
 
 describe("Settings: parseSettingsResponse", () => {
   it("parses lastOwnerMessageAt as number", () => {
@@ -47,6 +47,20 @@ describe("Settings: parseSettingsResponse", () => {
     expect(result.ownerShip).toBe("~sampel-palnet");
     expect(result.lastOwnerMessageAt).toBe(1700000000000);
   });
+
+  it("parses lastNudgeStage when it is 1, 2, or 3", () => {
+    expect(parseSettingsResponse({ tlon: { lastNudgeStage: 1 } }).lastNudgeStage).toBe(1);
+    expect(parseSettingsResponse({ tlon: { lastNudgeStage: "2" } }).lastNudgeStage).toBe(2);
+    expect(parseSettingsResponse({ tlon: { lastNudgeStage: 3 } }).lastNudgeStage).toBe(3);
+  });
+
+  it("ignores invalid lastNudgeStage values", () => {
+    expect(parseSettingsResponse({ tlon: { lastNudgeStage: 0 } }).lastNudgeStage).toBeUndefined();
+    expect(parseSettingsResponse({ tlon: { lastNudgeStage: 4 } }).lastNudgeStage).toBeUndefined();
+    expect(
+      parseSettingsResponse({ tlon: { lastNudgeStage: "not-a-stage" } }).lastNudgeStage,
+    ).toBeUndefined();
+  });
 });
 
 describe("Settings: applySettingsUpdate", () => {
@@ -81,5 +95,68 @@ describe("Settings: applySettingsUpdate", () => {
     const result = applySettingsUpdate(base, "lastOwnerMessageAt", 1800000000000);
     expect(base.lastOwnerMessageAt).toBe(1700000000000);
     expect(result.lastOwnerMessageAt).toBe(1800000000000);
+  });
+
+  it("updates lastNudgeStage with valid values only", () => {
+    expect(applySettingsUpdate({}, "lastNudgeStage", 1).lastNudgeStage).toBe(1);
+    expect(applySettingsUpdate({}, "lastNudgeStage", "2").lastNudgeStage).toBe(2);
+    expect(applySettingsUpdate({}, "lastNudgeStage", 4).lastNudgeStage).toBeUndefined();
+  });
+});
+
+describe("Settings: createSettingsManager.load", () => {
+  it("preserves the last good snapshot when a later load fails", async () => {
+    let callCount = 0;
+    const manager = createSettingsManager(
+      {
+        scry: async () => {
+          callCount += 1;
+          if (callCount === 1) {
+            return {
+              all: {
+                moltbot: {
+                  tlon: {
+                    ownerShip: "~zod",
+                    dmAllowlist: ["~nec"],
+                  },
+                },
+              },
+            };
+          }
+          throw new Error("temporary outage");
+        },
+      } as never,
+      { log: () => undefined },
+    );
+
+    await expect(manager.load()).resolves.toEqual({
+      settings: { ownerShip: "~zod", dmAllowlist: ["~nec"] },
+      fresh: true,
+    });
+    await expect(manager.load()).resolves.toEqual({
+      settings: { ownerShip: "~zod", dmAllowlist: ["~nec"] },
+      fresh: false,
+    });
+    expect(manager.current).toEqual({
+      ownerShip: "~zod",
+      dmAllowlist: ["~nec"],
+    });
+  });
+
+  it("returns an empty snapshot on the first load failure", async () => {
+    const manager = createSettingsManager(
+      {
+        scry: async () => {
+          throw new Error("desk unavailable");
+        },
+      } as never,
+      { log: () => undefined },
+    );
+
+    await expect(manager.load()).resolves.toEqual({
+      settings: {},
+      fresh: false,
+    });
+    expect(manager.current).toEqual({});
   });
 });

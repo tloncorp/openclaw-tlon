@@ -19,7 +19,12 @@ import {
   getGroupAndChannelUnreads,
   scry,
   poke,
+  sendPost,
+  sendReply,
+  joinGroup,
+  inviteGroupMembers,
 } from "@tloncorp/api";
+import type { Story } from "@tloncorp/api";
 
 export interface StateClientConfig {
   shipUrl: string;
@@ -59,7 +64,32 @@ export interface StateClient {
   poke(params: { app: string; mark: string; json: unknown }): Promise<void>;
 
   /** Create a group with a default chat channel */
-  createGroup(title: string): Promise<{ groupId: string; chatChannel: string }>;
+  createGroup(title: string, memberIds?: string[]): Promise<{ groupId: string; chatChannel: string }>;
+
+  /** Invite ships to a group */
+  inviteToGroup(groupId: string, contactIds: string[]): Promise<void>;
+
+  /** Join a group (accept invite) */
+  joinGroup(groupId: string): Promise<void>;
+
+  /** Check if this ship is a member of a group */
+  isMemberOfGroup(groupId: string): Promise<boolean>;
+
+  /** Send a post (DM or channel) via @tloncorp/api sendPost */
+  sendPost(params: {
+    channelId: string;
+    content: Story;
+    blob?: string;
+  }): Promise<void>;
+
+  /** Send a reply (DM or channel) via @tloncorp/api sendReply */
+  sendReply(params: {
+    channelId: string;
+    parentId: string;
+    parentAuthor: string;
+    content: Story;
+    blob?: string;
+  }): Promise<void>;
 }
 
 let apiQueue: Promise<unknown> = Promise.resolve();
@@ -147,7 +177,7 @@ export function createStateClient(config: StateClientConfig): StateClient {
       return withClient(async () => scry<T>({ app, path }));
     },
 
-    async createGroup(title: string) {
+    async createGroup(title: string, memberIds?: string[]) {
       return withClient(async () => {
         const slug = Math.random().toString(36).slice(2, 10);
         const groupId = `~${shipName}/${slug}`;
@@ -155,6 +185,7 @@ export function createStateClient(config: StateClientConfig): StateClient {
         const chatChannel = `chat/~${shipName}/${channelSlug}`;
 
         await createGroup({
+          memberIds,
           group: {
             id: groupId,
             title,
@@ -181,6 +212,61 @@ export function createStateClient(config: StateClientConfig): StateClient {
     async poke(params: { app: string; mark: string; json: unknown }) {
       return withClient(async () => {
         await poke(params);
+      });
+    },
+
+    async inviteToGroup(groupId: string, contactIds: string[]) {
+      return withClient(async () => {
+        await inviteGroupMembers({ groupId, contactIds });
+      });
+    },
+
+    async joinGroup(groupId: string) {
+      return withClient(async () => {
+        await joinGroup(groupId);
+      });
+    },
+
+    async isMemberOfGroup(groupId: string) {
+      return withClient(async () => {
+        const groups = await getGroups();
+        return (groups ?? []).some((g: any) => g.id === groupId);
+      });
+    },
+
+    async sendPost(params: {
+      channelId: string;
+      content: Story;
+      blob?: string;
+    }) {
+      return withClient(async () => {
+        await sendPost({
+          channelId: params.channelId,
+          authorId: `~${shipName}`,
+          sentAt: Date.now(),
+          content: params.content,
+          blob: params.blob,
+        });
+      });
+    },
+
+    async sendReply(params: {
+      channelId: string;
+      parentId: string;
+      parentAuthor: string;
+      content: Story;
+      blob?: string;
+    }) {
+      return withClient(async () => {
+        await sendReply({
+          channelId: params.channelId,
+          parentId: params.parentId,
+          parentAuthor: params.parentAuthor,
+          authorId: `~${shipName}`,
+          sentAt: Date.now(),
+          content: params.content,
+          blob: params.blob,
+        });
       });
     },
   };

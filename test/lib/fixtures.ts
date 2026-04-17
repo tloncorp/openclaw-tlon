@@ -149,7 +149,7 @@ async function setupFixtures(): Promise<TestFixtures> {
           break;
         }
 
-        const { groupId, chatChannel } = await botState.createGroup(groupTitle);
+        const { groupId, chatChannel } = await botState.createGroup(groupTitle, [userShip]);
         group = { id: groupId, title: groupTitle, chatChannel };
         console.log(`[FIXTURES] ✓ Created group: ${groupId}`);
         break;
@@ -165,6 +165,25 @@ async function setupFixtures(): Promise<TestFixtures> {
     if (!group) {
       const elapsed = ((Date.now() - started) / 1000).toFixed(1);
       console.log(`[FIXTURES] Warning: Could not create or find fixture group after ${elapsed}s`);
+    }
+
+    // Ensure the test user is a member of the group
+    if (group) {
+      try {
+        const isMember = await userState.isMemberOfGroup(group.id);
+        if (!isMember) {
+          console.log(`[FIXTURES] Test user not in group, inviting...`);
+          await botState.inviteToGroup(group.id, [userShip]);
+          await sleep(1000);
+          await userState.joinGroup(group.id);
+          await sleep(2000);
+          console.log(`[FIXTURES] ✓ Test user joined group: ${group.id}`);
+        } else {
+          console.log(`[FIXTURES] ✓ Test user already in group: ${group.id}`);
+        }
+      } catch (joinErr) {
+        console.log(`[FIXTURES] Warning: Failed to ensure user in group: ${joinErr}`);
+      }
     }
   }
 

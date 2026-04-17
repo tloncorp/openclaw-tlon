@@ -1,4 +1,4 @@
-import type { RuntimeEnv } from "openclaw/plugin-sdk";
+import type { RuntimeEnv } from "openclaw/plugin-sdk/tlon";
 import type { Foreigns } from "../urbit/foreigns.js";
 import { formatChangesDate } from "./utils.js";
 
@@ -10,7 +10,7 @@ export async function fetchGroupChanges(
   try {
     const changeDate = formatChangesDate(daysAgo);
     runtime.log?.(`[tlon] Fetching group changes since ${daysAgo} days ago (${changeDate})...`);
-    const changes = await api.scry(`/groups-ui/v5/changes/${changeDate}.json`);
+    const changes = await api.scry(`/groups-ui/v8/changes/${changeDate}.json`);
     if (changes) {
       runtime.log?.("[tlon] Successfully fetched changes data");
       return changes;
@@ -42,7 +42,7 @@ export async function fetchInitData(
 ): Promise<InitData> {
   try {
     runtime.log?.("[tlon] Fetching groups-ui init data...");
-    const initData = (await api.scry("/groups-ui/v6/init.json")) as any;
+    const initData = (await api.scry("/groups-ui/v7/init.json")) as any;
 
     const channels: string[] = [];
     const channelToGroup = new Map<string, string>();

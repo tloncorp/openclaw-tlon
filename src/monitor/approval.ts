@@ -27,6 +27,7 @@ export type CreateApprovalParams = {
     timestamp: number;
     parentId?: string;
     isThreadReply?: boolean;
+    blob?: string;
   };
 };
 

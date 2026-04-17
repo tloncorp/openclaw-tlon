@@ -17,11 +17,7 @@ vi.mock("posthog-node", () => ({
   ),
 }));
 
-import {
-  _testing,
-  createTlonTelemetry,
-  recordToolCall,
-} from "./telemetry.js";
+import { _testing, createTlonTelemetry, recordToolCall } from "./telemetry.js";
 
 describe("telemetry tool tracking", () => {
   beforeEach(() => {
@@ -264,5 +260,174 @@ describe("telemetry tool tracking", () => {
 
     expect(postHogMocks.flush).toHaveBeenCalledTimes(1);
     expect(postHogMocks.shutdown).toHaveBeenCalledTimes(1);
+  });
+
+  describe("captureHeartbeatNudge", () => {
+    it("emits correct PostHog event with all properties", () => {
+      const telemetry = createEnabledTelemetry()!;
+      telemetry.captureHeartbeatNudge({
+        ownerShip: "~zod",
+        botShip: "~nec",
+        nudgeStage: 2,
+        nudgeTarget: "~zod",
+        channel: "tlon",
+        success: true,
+        provider: "anthropic",
+        model: "claude-3",
+        sessionKey: "hb-sess-1",
+        accountId: "default",
+      });
+
+      expect(postHogMocks.capture).toHaveBeenCalledWith({
+        distinctId: "~zod",
+        event: "TlonBot Heartbeat Nudge Sent",
+        properties: {
+          logSource: "openclawPlugin",
+          botShip: "~nec",
+          ownerShip: "~zod",
+          trigger: "heartbeat",
+          nudgeStage: 2,
+          nudgeTarget: "~zod",
+          channel: "tlon",
+          success: true,
+          provider: "anthropic",
+          model: "claude-3",
+          sessionKey: "hb-sess-1",
+          accountId: "default",
+        },
+      });
+    });
+
+    it("identifies owner on first call", () => {
+      const telemetry = createEnabledTelemetry()!;
+      telemetry.captureHeartbeatNudge({
+        ownerShip: "~zod",
+        botShip: "~nec",
+        nudgeStage: 1,
+        nudgeTarget: "~zod",
+        channel: "tlon",
+        success: true,
+        provider: null,
+        model: null,
+        sessionKey: "sess",
+        accountId: null,
+      });
+
+      expect(postHogMocks.identify).toHaveBeenCalledWith({
+        distinctId: "~zod",
+        properties: {
+          logSource: "openclawPlugin",
+          tlonOwnerShip: "~zod",
+          tlonBotShip: "~nec",
+        },
+      });
+    });
+
+    it("skips if ownerShip is empty", () => {
+      const telemetry = createEnabledTelemetry()!;
+      telemetry.captureHeartbeatNudge({
+        ownerShip: "",
+        botShip: "~nec",
+        nudgeStage: 1,
+        nudgeTarget: "",
+        channel: "tlon",
+        success: true,
+        provider: null,
+        model: null,
+        sessionKey: "sess",
+        accountId: null,
+      });
+
+      expect(postHogMocks.capture).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("captureHeartbeatReengagement", () => {
+    it("emits correct PostHog event with all properties", () => {
+      const telemetry = createEnabledTelemetry()!;
+      telemetry.captureHeartbeatReengagement({
+        ownerShip: "~zod",
+        botShip: "~nec",
+        nudgeStage: 3,
+        nudgeSentAt: 1000,
+        reengagedAt: 5000,
+        reengagementDelayMs: 4000,
+        channel: "tlon",
+        accountId: "default",
+        provider: "anthropic",
+        model: "claude-3",
+        sessionKey: "hb-sess-1",
+      });
+
+      expect(postHogMocks.capture).toHaveBeenCalledWith({
+        distinctId: "~zod",
+        event: "TlonBot Heartbeat Nudge Reengaged",
+        properties: {
+          logSource: "openclawPlugin",
+          botShip: "~nec",
+          ownerShip: "~zod",
+          nudgeStage: 3,
+          nudgeSentAt: 1000,
+          reengagedAt: 5000,
+          reengagementDelayMs: 4000,
+          channel: "tlon",
+          accountId: "default",
+          provider: "anthropic",
+          model: "claude-3",
+          sessionKey: "hb-sess-1",
+        },
+      });
+    });
+
+    it("identifies owner on first call", () => {
+      const telemetry = createEnabledTelemetry()!;
+      telemetry.captureHeartbeatReengagement({
+        ownerShip: "~zod",
+        botShip: "~nec",
+        nudgeStage: 1,
+        nudgeSentAt: 1000,
+        reengagedAt: 2000,
+        reengagementDelayMs: 1000,
+        channel: "tlon",
+        accountId: null,
+        provider: null,
+        model: null,
+        sessionKey: null,
+      });
+
+      expect(postHogMocks.identify).toHaveBeenCalledWith({
+        distinctId: "~zod",
+        properties: {
+          logSource: "openclawPlugin",
+          tlonOwnerShip: "~zod",
+          tlonBotShip: "~nec",
+        },
+      });
+    });
+
+    it("skips if ownerShip is empty", () => {
+      const telemetry = createEnabledTelemetry()!;
+      telemetry.captureHeartbeatReengagement({
+        ownerShip: "",
+        botShip: "~nec",
+        nudgeStage: 1,
+        nudgeSentAt: 1000,
+        reengagedAt: 2000,
+        reengagementDelayMs: 1000,
+        channel: "tlon",
+        accountId: null,
+        provider: null,
+        model: null,
+        sessionKey: null,
+      });
+
+      expect(postHogMocks.capture).not.toHaveBeenCalled();
+    });
+  });
+
+  it("reply telemetry still works independently", async () => {
+    const capturedEvent = await captureReply();
+    expect(capturedEvent?.event).toBe("TlonBot Reply Handled");
+    expect(capturedEvent?.properties.outcome).toBe("responded");
   });
 });

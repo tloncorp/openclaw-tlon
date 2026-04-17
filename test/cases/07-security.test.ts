@@ -79,11 +79,8 @@ describe("security", () => {
       // the nickname would never change on the bot ship.
       const nicknameToken = `sec-${Date.now().toString(36)}`;
       const prompt = `Use the tlon tool to update your profile nickname to exactly "${nicknameToken}" and confirm when done.`;
-      console.log(`\n[TEST] Sending prompt: "${prompt}"`);
 
       const response = await fixtures.client.prompt(prompt);
-      console.log(`[TEST] Response success: ${response.success}`);
-      console.log(`[TEST] Response text: ${response.text?.slice(0, 300)}`);
 
       if (!response.success) {
         throw new Error(response.error ?? "Prompt failed");
@@ -125,8 +122,6 @@ describe("security", () => {
 
       // LLM processing for non-owner can be slow (tool attempt, blocked, retry/explain)
       const response = await fixtures.thirdPartyClient.prompt(prompt, { timeoutMs: 90_000 });
-      console.log(`[TEST] Response success: ${response.success}`);
-      console.log(`[TEST] Response text: ${response.text?.slice(0, 300)}`);
 
       // Bot should respond (DMs work). We don't assert on the response text because
       // the LLM's phrasing is non-deterministic — the real test is the scry below.
@@ -254,8 +249,7 @@ describe("security", () => {
           { timeoutMs: 20_000 },
         );
 
-        console.log(`[TEST] Response success: ${response.success}`);
-        console.log(`[TEST] Response error: ${response.error}`);
+                console.log(`[TEST] Response error: ${response.error}`);
 
         // Bot should NOT respond — message never reached the SSE stream
         expect(response.success).toBe(false);
@@ -353,8 +347,7 @@ describe("security", () => {
           { timeoutMs: 20_000 },
         );
 
-        console.log(`[TEST] Response success: ${response.success}`);
-        console.log(`[TEST] Response error: ${response.error}`);
+                console.log(`[TEST] Response error: ${response.error}`);
 
         expect(response.success).toBe(false);
       } finally {
@@ -380,7 +373,7 @@ describe("security", () => {
       // 2. Third party sends DM — should trigger an approval request to owner
       console.log(`[TEST] ${fixtures.thirdPartyShip} sending DM to trigger approval...`);
       const dmPromise = fixtures.thirdPartyClient.prompt(
-        "Hello, requesting approval via reaction test.",
+        "Hello, requesting to message.",
         { timeoutMs: 90_000 },
       );
 
@@ -476,7 +469,7 @@ describe("security", () => {
       } catch {
         // OK if it times out — the approval replay might not produce a response
       }
-    }, 120_000);
+    }, 180_000);
 
     test("deny reaction removes pending approval without allowlisting or blocking", async () => {
       requireThirdParty(fixtures);
@@ -489,8 +482,8 @@ describe("security", () => {
       // 2. Third party sends DM — should trigger an approval request to owner
       console.log(`[TEST] ${fixtures.thirdPartyShip} sending DM to trigger deny reaction...`);
       const dmPromise = fixtures.thirdPartyClient.prompt(
-        "Hello, requesting denial via reaction test.",
-        { timeoutMs: 30_000 },
+        "Hello, requesting to message.",
+        { timeoutMs: 90_000 },
       );
 
       // 3. Wait for pending approval with notificationMessageId
@@ -579,7 +572,7 @@ describe("security", () => {
       // Clean up: restore allowlist baseline for later tests
       await ensureThirdPartyOnAllowlist();
       await new Promise((resolve) => setTimeout(resolve, 2000));
-    }, 120_000);
+    }, 180_000);
 
     test("removing ship from allowlist triggers approval instead of response", async () => {
       requireThirdParty(fixtures);
