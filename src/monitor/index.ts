@@ -1,4 +1,5 @@
 import type { Story } from "@tloncorp/api";
+import { createTypingCallbacks } from "openclaw/plugin-sdk/channel-runtime";
 import type { RuntimeEnv, ReplyPayload, OpenClawConfig } from "openclaw/plugin-sdk/tlon";
 
 // Local structural types — @tloncorp/api defines these internally but
@@ -103,6 +104,7 @@ import {
 } from "./approval.js";
 import { setBridge, removeBridge, type ApprovalCommandBridge } from "./command-bridge.js";
 import { fetchAllChannels, fetchInitData } from "./discovery.js";
+import { createComputingPresenceTracker } from "./computing-presence.js";
 import {
   cacheMessage,
   lookupCachedMessage,
@@ -287,6 +289,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
 
   // Configure @tloncorp/api's global client to use the SSE client's poke for all send operations
   configureTlonApiWithPoke(api.poke.bind(api), botShipName, account.url);
+  const computingPresence = createComputingPresenceTracker({ runtime });
 
   const processedTracker = createProcessedMessageTracker(2000);
   let groupChannels: string[] = [];
@@ -1763,6 +1766,67 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       route.agentId,
     ).responsePrefix;
     const humanDelay = core.channel.reply.resolveHumanDelayConfig(cfg, route.agentId);
+    const presenceConversationId = isGroup ? groupChannel ?? null : senderShip;
+    const presenceRunId = String(messageId);
+
+    const typingCallbacks = presenceConversationId
+      ? createTypingCallbacks({
+          start: async () => {
+            await computingPresence.refreshRun({
+              conversationId: presenceConversationId,
+              runId: presenceRunId,
+            });
+          },
+          stop: async () => {
+            await computingPresence.stopRun({
+              conversationId: presenceConversationId,
+              runId: presenceRunId,
+            });
+          },
+          onStartError: (err: unknown) => {
+            runtime.error?.(
+              `[tlon] Failed to start computing presence for ${presenceConversationId}: ${
+                err instanceof Error ? err.stack ?? err.message : String(err)
+              }`,
+            );
+          },
+          onStopError: (err: unknown) => {
+            runtime.error?.(
+              `[tlon] Failed to stop computing presence for ${presenceConversationId}: ${
+                err instanceof Error ? err.stack ?? err.message : String(err)
+              }`,
+            );
+          },
+          keepaliveIntervalMs: 20_000,
+        })
+      : undefined;
+
+    const replyOptions: NonNullable<
+      Parameters<typeof core.channel.reply.dispatchReplyWithBufferedBlockDispatcher>[0]["replyOptions"]
+    > = {
+      onModelSelected: ({ provider, model, thinkLevel }) => {
+        selectedProvider = provider;
+        selectedModel = model;
+        selectedThinkLevel = thinkLevel ?? null;
+      },
+      ...(presenceConversationId
+        ? {
+            onAssistantMessageStart: async () => {
+              await computingPresence.clearToolCalls({
+                conversationId: presenceConversationId,
+                runId: presenceRunId,
+              });
+            },
+            onToolStart: async (payload) => {
+              await computingPresence.addToolCall({
+                conversationId: presenceConversationId,
+                runId: presenceRunId,
+                toolName: payload.name,
+              });
+            },
+          }
+        : {}),
+    };
 
     let dispatchResult:
       | {
@@ -1776,16 +1840,11 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       dispatchResult = await core.channel.reply.dispatchReplyWithBufferedBlockDispatcher({
         ctx: ctxPayload,
         cfg,
-        replyOptions: {
-          onModelSelected: ({ provider, model, thinkLevel }) => {
-            selectedProvider = provider;
-            selectedModel = model;
-            selectedThinkLevel = thinkLevel ?? null;
-          },
-        },
+        replyOptions,
         dispatcherOptions: {
           responsePrefix,
           humanDelay,
+          typingCallbacks,
           deliver: async (payload: ReplyPayload) => {
             let replyText = payload.text;
             if (!replyText) {
@@ -1841,6 +1900,13 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
                 toShip: senderShip,
                 text: replyText,
                 replyToId: deliverParentId ? String(deliverParentId) : undefined,
+              });
+            }
+
+            if (presenceConversationId) {
+              await computingPresence.stopRun({
+                conversationId: presenceConversationId,
+                runId: presenceRunId,
               });
             }
 
