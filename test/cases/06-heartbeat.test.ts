@@ -6,7 +6,7 @@
  *   2. owner reply clears `lastNudgeStage` and produces no duplicate
  *      nudge in the subsequent tick window
  *
- * Requires heartbeat interval set to "1m" in test config so the
+ * Requires the test harness to shorten the nudge tick interval so the
  * scheduler actually fires within the test window.
  */
 
@@ -114,7 +114,7 @@ describe("re-engagement nudges", () => {
   async function readLastNudgeStage(): Promise<number | null> {
     const raw = await botState.scry<{
       all?: { moltbot?: { tlon?: { lastNudgeStage?: number | string } } };
-    }>("settings", "/settings/all.json");
+    }>("settings", "/all");
     const value = raw?.all?.moltbot?.tlon?.lastNudgeStage;
     if (typeof value === "number") {
       return value;
