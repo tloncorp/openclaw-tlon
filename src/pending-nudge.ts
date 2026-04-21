@@ -1,12 +1,14 @@
 /**
  * Pending nudge shared state for heartbeat re-engagement attribution.
  *
- * After a heartbeat nudge is confirmed (two-signal gate), a PendingNudge record
- * is stored here. When the owner messages back within the attribution window,
- * the monitor emits a re-engagement event and clears the record.
+ * When the plugin-driven scheduler sends a re-engagement nudge, a
+ * PendingNudge record is stored here. If the owner replies within the
+ * attribution window, the monitor emits a re-engagement event, injects the
+ * nudge content as context for the agent, and clears the record.
  *
- * Keyed by accountId — each account has at most one pending nudge at a time.
- * Per-account persist callbacks route writes to the correct ship's settings store.
+ * Keyed by accountId — each account has at most one pending nudge at a
+ * time. Per-account persist callbacks route writes to the correct ship's
+ * settings store.
  */
 
 export type PendingNudge = {
@@ -14,9 +16,8 @@ export type PendingNudge = {
   stage: 1 | 2 | 3;
   ownerShip: string;
   accountId: string;
-  sessionKey: string | null;
-  provider: string | null;
-  model: string | null;
+  /** The exact nudge message text, used to inject reply context for the agent. */
+  content?: string;
 };
 
 /** Default re-engagement attribution window: 72 hours */

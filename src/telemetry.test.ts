@@ -272,9 +272,6 @@ describe("telemetry tool tracking", () => {
         nudgeTarget: "~zod",
         channel: "tlon",
         success: true,
-        provider: "anthropic",
-        model: "claude-3",
-        sessionKey: "hb-sess-1",
         accountId: "default",
       });
 
@@ -290,9 +287,6 @@ describe("telemetry tool tracking", () => {
           nudgeTarget: "~zod",
           channel: "tlon",
           success: true,
-          provider: "anthropic",
-          model: "claude-3",
-          sessionKey: "hb-sess-1",
           accountId: "default",
         },
       });
@@ -307,9 +301,6 @@ describe("telemetry tool tracking", () => {
         nudgeTarget: "~zod",
         channel: "tlon",
         success: true,
-        provider: null,
-        model: null,
-        sessionKey: "sess",
         accountId: null,
       });
 
@@ -332,9 +323,6 @@ describe("telemetry tool tracking", () => {
         nudgeTarget: "",
         channel: "tlon",
         success: true,
-        provider: null,
-        model: null,
-        sessionKey: "sess",
         accountId: null,
       });
 
@@ -354,9 +342,6 @@ describe("telemetry tool tracking", () => {
         reengagementDelayMs: 4000,
         channel: "tlon",
         accountId: "default",
-        provider: "anthropic",
-        model: "claude-3",
-        sessionKey: "hb-sess-1",
       });
 
       expect(postHogMocks.capture).toHaveBeenCalledWith({
@@ -372,9 +357,6 @@ describe("telemetry tool tracking", () => {
           reengagementDelayMs: 4000,
           channel: "tlon",
           accountId: "default",
-          provider: "anthropic",
-          model: "claude-3",
-          sessionKey: "hb-sess-1",
         },
       });
     });
@@ -390,9 +372,6 @@ describe("telemetry tool tracking", () => {
         reengagementDelayMs: 1000,
         channel: "tlon",
         accountId: null,
-        provider: null,
-        model: null,
-        sessionKey: null,
       });
 
       expect(postHogMocks.identify).toHaveBeenCalledWith({
@@ -416,9 +395,6 @@ describe("telemetry tool tracking", () => {
         reengagementDelayMs: 1000,
         channel: "tlon",
         accountId: null,
-        provider: null,
-        model: null,
-        sessionKey: null,
       });
 
       expect(postHogMocks.capture).not.toHaveBeenCalled();

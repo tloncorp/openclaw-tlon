@@ -32,9 +32,6 @@ export type TlonHeartbeatNudgeEvent = {
   nudgeTarget: string;
   channel: string;
   success: boolean;
-  provider: string | null;
-  model: string | null;
-  sessionKey: string;
   accountId: string | null;
 };
 
@@ -47,9 +44,6 @@ export type TlonHeartbeatReengagementEvent = {
   reengagementDelayMs: number;
   channel: string;
   accountId: string | null;
-  provider: string | null;
-  model: string | null;
-  sessionKey: string | null;
 };
 
 export type TlonReplyOutcome = "responded" | "no_reply" | "error";
@@ -256,7 +250,9 @@ class PostHogTlonTelemetry implements TlonTelemetryClient {
 
   private captureReplyOutcome(event: TlonReplyOutcomeEvent): void {
     const ownerShip = event.ownerShip ?? "";
-    if (!this.ensureIdentified(ownerShip, event.botShip)) {return;}
+    if (!this.ensureIdentified(ownerShip, event.botShip)) {
+      return;
+    }
 
     this.client.capture({
       distinctId: ownerShip,
@@ -321,7 +317,9 @@ class PostHogTlonTelemetry implements TlonTelemetryClient {
   }
 
   captureHeartbeatNudge(event: TlonHeartbeatNudgeEvent): void {
-    if (!this.ensureIdentified(event.ownerShip, event.botShip)) {return;}
+    if (!this.ensureIdentified(event.ownerShip, event.botShip)) {
+      return;
+    }
 
     this.client.capture({
       distinctId: event.ownerShip,
@@ -335,16 +333,15 @@ class PostHogTlonTelemetry implements TlonTelemetryClient {
         nudgeTarget: event.nudgeTarget,
         channel: event.channel,
         success: event.success,
-        provider: event.provider,
-        model: event.model,
-        sessionKey: event.sessionKey,
         accountId: event.accountId,
       },
     });
   }
 
   captureHeartbeatReengagement(event: TlonHeartbeatReengagementEvent): void {
-    if (!this.ensureIdentified(event.ownerShip, event.botShip)) {return;}
+    if (!this.ensureIdentified(event.ownerShip, event.botShip)) {
+      return;
+    }
 
     this.client.capture({
       distinctId: event.ownerShip,
@@ -359,9 +356,6 @@ class PostHogTlonTelemetry implements TlonTelemetryClient {
         reengagementDelayMs: event.reengagementDelayMs,
         channel: event.channel,
         accountId: event.accountId,
-        provider: event.provider,
-        model: event.model,
-        sessionKey: event.sessionKey,
       },
     });
   }

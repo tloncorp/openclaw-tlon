@@ -1,10 +1,13 @@
 /**
- * Heartbeat Engagement Recovery Tests
+ * Re-engagement nudge tests.
  *
- * Tests that the heartbeat system sends re-engagement nudges
- * when the owner hasn't messaged in a while.
+ * Covers the plugin-driven nudge scheduler end-to-end:
+ *   1. sends a stage-1 nudge when the owner has been idle > 7 days
+ *   2. owner reply clears `lastNudgeStage` and produces no duplicate
+ *      nudge in the subsequent tick window
  *
- * Requires heartbeat interval set to "1m" in test config.
+ * Requires heartbeat interval set to "1m" in test config so the
+ * scheduler actually fires within the test window.
  */
 
 import { getTextContent, type PostContent } from "@tloncorp/api";
@@ -17,7 +20,41 @@ const EIGHT_DAYS_MS = 8 * 24 * 60 * 60 * 1000;
 /** Stage 1 template snippet (first line) */
 const STAGE_1_MARKER = "Quick ideas for your week";
 
-describe("heartbeat engagement recovery", () => {
+type ParsedPost = {
+  authorId?: string;
+  sentAt: number;
+  sequenceNum: number;
+  text: string;
+};
+
+async function readBotPostsSince(
+  ownerState: StateClient,
+  botShip: string,
+  sinceSequence: number,
+): Promise<ParsedPost[]> {
+  const posts = await ownerState.channelPosts(botShip, 30);
+  const allParsed = (posts ?? []).map((post) => {
+    const p = post as {
+      authorId?: string;
+      sentAt?: number;
+      sequenceNum?: number | null;
+      textContent?: string | null;
+      content?: PostContent;
+    };
+    const text = p.textContent ?? (p.content ? getTextContent(p.content) : null);
+    return {
+      authorId: p.authorId,
+      sentAt: p.sentAt ?? 0,
+      sequenceNum: getPostSequence(p),
+      text: (text ?? "").trim(),
+    };
+  });
+  return allParsed
+    .filter((p) => p.authorId === botShip)
+    .filter((p) => p.sequenceNum > sinceSequence);
+}
+
+describe("re-engagement nudges", () => {
   let botState: StateClient;
   let ownerState: StateClient;
   let botShip: string;
@@ -30,16 +67,9 @@ describe("heartbeat engagement recovery", () => {
     botShip = config.bot.shipName.startsWith("~") ? config.bot.shipName : `~${config.bot.shipName}`;
   });
 
-  test("sends stage 1 nudge when owner idle > 7 days", async () => {
-    // Snapshot existing DMs so we only check for new messages
-    const baselineSequence = await getLatestSequenceForAuthor(ownerState, botShip, botShip, 30);
-
-    // Seed settings for heartbeat: idle date and clear nudge stage.
-    // ownerShip is migrated from file config to settings store on startup
-    // (migrateConfigToSettings in monitor/index.ts), so we don't need to seed it.
-    const eightDaysAgo = Date.now() - EIGHT_DAYS_MS;
-    const eightDaysAgoDate = new Date(eightDaysAgo).toISOString().split("T")[0];
-
+  async function seedOwnerIdle(daysMs: number): Promise<void> {
+    const offsetMs = Date.now() - daysMs;
+    const offsetDate = new Date(offsetMs).toISOString().split("T")[0];
     await Promise.all([
       botState.poke({
         app: "settings",
@@ -49,7 +79,7 @@ describe("heartbeat engagement recovery", () => {
             desk: "moltbot",
             "bucket-key": "tlon",
             "entry-key": "lastOwnerMessageAt",
-            value: eightDaysAgo,
+            value: offsetMs,
           },
         },
       }),
@@ -61,11 +91,11 @@ describe("heartbeat engagement recovery", () => {
             desk: "moltbot",
             "bucket-key": "tlon",
             "entry-key": "lastOwnerMessageDate",
-            value: eightDaysAgoDate,
+            value: offsetDate,
           },
         },
       }),
-      // Clear any previous nudge stage so the heartbeat doesn't skip
+      // Clear any previous nudge stage so the scheduler doesn't skip.
       botState.poke({
         app: "settings",
         mark: "settings-event",
@@ -78,57 +108,87 @@ describe("heartbeat engagement recovery", () => {
         },
       }),
     ]);
+    console.log(`Seeded lastOwnerMessageDate=${offsetDate} (${Math.round(daysMs / (24 * 60 * 60 * 1000))} days ago)`);
+  }
 
-    console.log(`Seeded lastOwnerMessageDate=${eightDaysAgoDate} (8 days ago)`);
-    console.log(`Waiting for heartbeat cycle to send stage 1 nudge...`);
+  async function readLastNudgeStage(): Promise<number | null> {
+    const raw = await botState.scry<{
+      all?: { moltbot?: { tlon?: { lastNudgeStage?: number | string } } };
+    }>("settings", "/settings/all.json");
+    const value = raw?.all?.moltbot?.tlon?.lastNudgeStage;
+    if (typeof value === "number") {
+      return value;
+    }
+    if (typeof value === "string" && /^\d+$/.test(value)) {
+      return Number(value);
+    }
+    return null;
+  }
 
-    // Wait for the heartbeat to fire and send the stage 1 message.
-    // With "every": "1m", this should happen within ~90 seconds.
+  test("sends stage 1 nudge when owner idle > 7 days, and owner reply prevents duplicates", async () => {
+    const baselineSequence = await getLatestSequenceForAuthor(ownerState, botShip, botShip, 30);
+
+    await seedOwnerIdle(EIGHT_DAYS_MS);
+    console.log(`Waiting for scheduler tick to send stage 1 nudge...`);
+
+    // Phase 1: wait for stage-1 nudge to land.
     let pollCount = 0;
     const nudgePost = await waitFor(
       async () => {
         pollCount++;
-        const posts = await ownerState.channelPosts(botShip, 30);
-        const allParsed = (posts ?? []).map((post) => {
-          const p = post as {
-            authorId?: string;
-            sentAt?: number;
-            sequenceNum?: number | null;
-            textContent?: string | null;
-            content?: PostContent;
-          };
-          const text = p.textContent ?? (p.content ? getTextContent(p.content) : null);
-          return {
-            authorId: p.authorId,
-            sentAt: p.sentAt ?? 0,
-            sequenceNum: getPostSequence(p),
-            text: (text ?? "").trim(),
-          };
-        });
-
-        const newBotPosts = allParsed
-          .filter((p) => p.authorId === botShip)
-          .filter((p) => p.sequenceNum > baselineSequence);
-
-        // Log diagnostics every 6th poll (~30s)
+        const newBotPosts = await readBotPostsSince(ownerState, botShip, baselineSequence);
         if (pollCount % 6 === 1) {
-          console.log(
-            `[poll ${pollCount}] total=${allParsed.length} newBot=${newBotPosts.length} baselineSequence=${baselineSequence}`,
-          );
-          for (const p of newBotPosts) {
-            console.log(`  [new] sequence=${p.sequenceNum} sentAt=${p.sentAt} text=${JSON.stringify(p.text.slice(0, 120))}`);
-          }
+          console.log(`[poll ${pollCount}] newBot=${newBotPosts.length} baseline=${baselineSequence}`);
         }
-
         const match = newBotPosts.filter((p) => p.text.includes(STAGE_1_MARKER));
         return match.length > 0 ? match[0] : null;
       },
-      300_000, // 5 minutes max (heartbeat fires every 1m but can be slow)
-      5_000, // poll every 5s
+      300_000,
+      5_000,
     );
 
     expect(nudgePost).not.toBeNull();
-    console.log(`Got heartbeat nudge: ${nudgePost!.text.slice(0, 80)}...`);
+    console.log(`Got stage-1 nudge: ${nudgePost!.text.slice(0, 80)}...`);
     expect(nudgePost!.text).toContain(STAGE_1_MARKER);
-  }, 360_000);
+
+    // After the nudge fires, lastNudgeStage should be 1 on the bot ship.
+    const afterNudgeStage = await readLastNudgeStage();
+    console.log(`lastNudgeStage after nudge: ${afterNudgeStage}`);
+    expect(afterNudgeStage).toBe(1);
+
+    // Phase 2: owner replies. The plugin's owner-reply handler should clear
+    // `lastNudgeStage` so the next inactivity cycle can re-send stage 1.
+    const { markdownToStory } = await import("../../src/urbit/story.js");
+    const replyText = `heartbeat-reply-${Date.now()}`;
+    await ownerState.sendPost({ channelId: botShip, content: markdownToStory(replyText) });
+    console.log(`Owner replied: ${replyText}`);
+
+    // Wait for the plugin to observe the reply and drain the owner-reply
+    // persistence queue (put-entries, then del-entry for lastNudgeStage).
+    const clearedStage = await waitFor(
+      async () => {
+        const stage = await readLastNudgeStage();
+        return stage == null ? true : undefined;
+      },
+      60_000,
+      2_000,
+    );
+    expect(clearedStage).toBe(true);
+    console.log(`lastNudgeStage cleared after owner reply`);
+
+    // Phase 3: across the next ~75 seconds (more than one scheduler tick
+    // if the interval is 1m), no additional nudge DM should be delivered.
+    // The owner is now "active" from the plugin's perspective, so the
+    // scheduler's daysIdle check short-circuits before any send.
+    const postNudgeSequence = nudgePost!.sequenceNum;
+    const startWait = Date.now();
+    const duplicateWindow = 75_000;
+    while (Date.now() - startWait < duplicateWindow) {
+      const newBotPosts = await readBotPostsSince(ownerState, botShip, postNudgeSequence);
+      const duplicates = newBotPosts.filter((p) => p.text.includes(STAGE_1_MARKER));
+      expect(duplicates.length).toBe(0);
+      await new Promise((r) => setTimeout(r, 5_000));
+    }
+    console.log(`Confirmed no duplicate nudge across a ${duplicateWindow / 1000}s window.`);
+  }, 480_000);
 });

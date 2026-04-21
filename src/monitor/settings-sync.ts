@@ -1,8 +1,9 @@
 /**
  * Pure helper for settings mirror synchronization.
  *
- * The single source of truth for ownerShip, pendingNudge, and lastNudgeStage
- * transition detection. Called from the settings onChange handler.
+ * Detects ownerShip and pendingNudge transitions from the settings mirror.
+ * The scheduler no longer routes through this helper for lastNudgeStage —
+ * the authoritative stage lives in a fresh scry plus a local shadow.
  */
 
 import type { PendingNudge } from "../pending-nudge.js";
@@ -14,8 +15,6 @@ export type SettingsMirrorSyncResult = {
   effectiveOwnerShip: string | null;
   pendingNudgeChanged: boolean;
   pendingNudge: PendingNudge | null;
-  lastNudgeStageChanged: boolean;
-  lastNudgeStage: TlonSettingsStore["lastNudgeStage"];
 };
 
 export function resolveSettingsMirrorSync(params: {
@@ -37,16 +36,10 @@ export function resolveSettingsMirrorSync(params: {
   const pendingNudgeChanged = prevSettings.pendingNudge !== newSettings.pendingNudge;
   const pendingNudge: PendingNudge | null = newSettings.pendingNudge ?? null;
 
-  // lastNudgeStage: value equality on primitive
-  const lastNudgeStageChanged = prevSettings.lastNudgeStage !== newSettings.lastNudgeStage;
-  const lastNudgeStage = newSettings.lastNudgeStage;
-
   return {
     ownerShipChanged,
     effectiveOwnerShip,
     pendingNudgeChanged,
     pendingNudge,
-    lastNudgeStageChanged,
-    lastNudgeStage,
   };
 }

@@ -67,6 +67,12 @@ export type TlonSettingsStore = {
   pendingNudge?: PendingNudge;
   /** Last nudge stage written by heartbeat flow (1, 2, or 3) */
   lastNudgeStage?: PendingNudge["stage"];
+  /** Active-hours window start ("HH:MM") for the nudge scheduler */
+  nudgeActiveHoursStart?: string;
+  /** Active-hours window end ("HH:MM") for the nudge scheduler */
+  nudgeActiveHoursEnd?: string;
+  /** Timezone for the nudge active-hours window: "user", "local", or an IANA TZ id */
+  nudgeActiveHoursTimezone?: string;
 };
 
 export type TlonSettingsState = {
@@ -140,15 +146,16 @@ function parsePendingNudge(value: unknown): PendingNudge | undefined {
     return undefined;
   }
 
-  return {
+  const base: PendingNudge = {
     sentAt: obj.sentAt,
     stage: obj.stage,
     ownerShip: obj.ownerShip,
     accountId: obj.accountId,
-    sessionKey: typeof obj.sessionKey === "string" ? obj.sessionKey : null,
-    provider: typeof obj.provider === "string" ? obj.provider : null,
-    model: typeof obj.model === "string" ? obj.model : null,
   };
+  if (typeof obj.content === "string") {
+    base.content = obj.content;
+  }
+  return base;
 }
 
 /**
@@ -209,6 +216,16 @@ export function parseSettingsResponse(raw: unknown): TlonSettingsStore {
       typeof settings.lastOwnerMessageDate === "string" ? settings.lastOwnerMessageDate : undefined,
     pendingNudge: parsePendingNudge(settings.pendingNudge),
     lastNudgeStage: parseLastNudgeStage(settings.lastNudgeStage),
+    nudgeActiveHoursStart:
+      typeof settings.nudgeActiveHoursStart === "string"
+        ? settings.nudgeActiveHoursStart
+        : undefined,
+    nudgeActiveHoursEnd:
+      typeof settings.nudgeActiveHoursEnd === "string" ? settings.nudgeActiveHoursEnd : undefined,
+    nudgeActiveHoursTimezone:
+      typeof settings.nudgeActiveHoursTimezone === "string"
+        ? settings.nudgeActiveHoursTimezone
+        : undefined,
   };
 }
 
@@ -370,6 +387,15 @@ export function applySettingsUpdate(
       break;
     case "lastNudgeStage":
       next.lastNudgeStage = parseLastNudgeStage(value);
+      break;
+    case "nudgeActiveHoursStart":
+      next.nudgeActiveHoursStart = typeof value === "string" ? value : undefined;
+      break;
+    case "nudgeActiveHoursEnd":
+      next.nudgeActiveHoursEnd = typeof value === "string" ? value : undefined;
+      break;
+    case "nudgeActiveHoursTimezone":
+      next.nudgeActiveHoursTimezone = typeof value === "string" ? value : undefined;
       break;
   }
 

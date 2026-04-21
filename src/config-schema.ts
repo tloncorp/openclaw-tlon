@@ -20,6 +20,31 @@ export const TlonTelemetrySchema = z.object({
   host: z.string().min(1).optional(),
 });
 
+/**
+ * Explicit opt-in for the plugin-driven owner re-engagement nudge scheduler.
+ *
+ * Default-off. The scheduler is hosted-only and requires `ownerShip` to
+ * target delivery, but `ownerShip` alone must not enable nudges (it also
+ * gates unrelated approval/admin DM flows). This flag is the authoritative
+ * enablement signal — see `tlonbot/entrypoint/tlawn.py` for the hosted
+ * generator that turns it on.
+ */
+export const TlonReengagementSchema = z.object({
+  enabled: z.boolean().optional(),
+});
+
+/**
+ * Static file-config override for the plugin scheduler's active-hours
+ * window. Takes precedence over `agents.defaults.heartbeat.activeHours`
+ * but defers to `%settings` keys (`nudgeActiveHoursStart/End/Timezone`)
+ * when those are present.
+ */
+export const TlonNudgeActiveHoursSchema = z.object({
+  start: z.string().min(1).optional(),
+  end: z.string().min(1).optional(),
+  timezone: z.string().min(1).optional(),
+});
+
 export const TlonAccountSchema = z.object({
   name: z.string().optional(),
   enabled: z.boolean().optional(),
@@ -67,6 +92,12 @@ export const TlonConfigSchema = z.object({
   // Rate limiting for bot-to-bot responses
   maxConsecutiveBotResponses: z.number().int().min(0).optional(), // Max consecutive responses to another bot (default: 3)
   telemetry: TlonTelemetrySchema.optional(),
+  // Opt-in hosted-only re-engagement nudges; absent/false keeps the
+  // scheduler off even when ownerShip is configured.
+  reengagement: TlonReengagementSchema.optional(),
+  // Optional static file-config override for the plugin scheduler's
+  // active hours. See TlonNudgeActiveHoursSchema for precedence.
+  nudgeActiveHours: TlonNudgeActiveHoursSchema.optional(),
 });
 
 export const tlonChannelConfigSchema = buildChannelConfigSchema(TlonConfigSchema);

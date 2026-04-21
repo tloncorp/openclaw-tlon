@@ -1,6 +1,6 @@
 import type { Story } from "@tloncorp/api";
-import { createTypingCallbacks } from "openclaw/plugin-sdk/channel-runtime";
 import type { RuntimeEnv, ReplyPayload, OpenClawConfig } from "openclaw/plugin-sdk/tlon";
+import { createTypingCallbacks } from "openclaw/plugin-sdk/channel-runtime";
 
 // Local structural types — @tloncorp/api defines these internally but
 // does not export them from its public entrypoint.
@@ -52,20 +52,13 @@ type WritResponse = { whom: string; id: string; response: WritResponseDelta };
 import { configureGatewayStatus, gatewayStart } from "@tloncorp/api";
 import { format } from "node:util";
 import type { Foreigns, DmInvite } from "../urbit/foreigns.js";
-import { setEffectiveOwnerShip } from "../effective-owner.js";
+import { getEffectiveOwnerShip, setEffectiveOwnerShip } from "../effective-owner.js";
 import {
   getGatewayStatusManager,
   computeLeaseUntil,
   ACTIVE_WINDOW_SECS,
   OFFLINE_REPLY_COOLDOWN_SECS,
 } from "../gateway-status.js";
-import {
-  clearCandidateSend,
-  clearConfirmedNudgeCallback,
-  confirmNudgeCandidate,
-  registerConfirmedNudgeCallback,
-  type ConfirmedNudge,
-} from "../nudge-candidate.js";
 import {
   registerPersistCallback,
   syncPendingNudgeFromStore,
@@ -103,8 +96,8 @@ import {
   normalizeNotificationId,
 } from "./approval.js";
 import { setBridge, removeBridge, type ApprovalCommandBridge } from "./command-bridge.js";
-import { fetchAllChannels, fetchInitData } from "./discovery.js";
 import { createComputingPresenceTracker } from "./computing-presence.js";
+import { fetchAllChannels, fetchInitData } from "./discovery.js";
 import {
   cacheMessage,
   lookupCachedMessage,
@@ -118,6 +111,16 @@ import {
   formatBlobAnnotations,
   downloadBlobAttachments,
 } from "./media.js";
+import { createNudgeRunner, shouldStartNudgeRunner } from "./nudge-runner.js";
+import {
+  clearShadowsForAccount,
+  getLastNudgeStageShadow,
+  getLastOwnerActivity,
+  ownerActivityFromSettings,
+  setLastNudgeStageShadow,
+  setLastOwnerActivity,
+} from "./nudge-state.js";
+import { createOwnerReplyPersistenceQueue } from "./owner-reply-persistence.js";
 import { createPendingNudgePersistenceQueue } from "./pending-nudge-persistence.js";
 import { createProcessedMessageTracker } from "./processed-messages.js";
 import { resolveSettingsMirrorSync } from "./settings-sync.js";
@@ -201,7 +204,7 @@ function resolveChannelAuthorization(
 
 export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<void> {
   const core = getTlonRuntime();
-  const cfg = core.config.loadConfig() as OpenClawConfig;
+  const cfg = core.config.loadConfig();
   if (cfg.channels?.tlon?.enabled === false) {
     return;
   }
@@ -363,14 +366,16 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
   // Sanitize nickname to prevent format injection
   function sanitizeNickname(nickname: string): string {
     return nickname
-      .replace(/[\[\]()]/g, "") // Remove format-breaking chars
+      .replace(/[[\]()]/g, "") // Remove format-breaking chars
       .slice(0, 50); // Reasonable length limit
   }
 
   // Format a ship with nickname if available
   function formatShipWithNickname(ship: string): string {
     const nickname = nicknameCache.get(ship);
-    if (!nickname) {return ship;}
+    if (!nickname) {
+      return ship;
+    }
     const sanitized = sanitizeNickname(nickname);
     return sanitized ? `${ship} (${sanitized})` : ship;
   }
@@ -507,24 +512,30 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     }
   }
 
-  // Clear stale candidate state before settings load.
-  // Candidate-send state is per-account and only valid for the currently running
-  // monitor instance. If this account restarts in the same process, a later
-  // lastNudgeStage update must not confirm a send from the previous instance.
-  clearCandidateSend(account.accountId);
-
   // Clear stale in-memory pending-nudge state before settings load.
   // If load fails during a same-process restart, we should not keep attributing
   // owner replies against a previous monitor run's record.
   syncPendingNudgeFromStore(account.accountId, null);
+
+  // Drop stale per-process shadows from any prior run in the same process.
+  // Mirrors the same-process-restart reasoning as the pending-nudge sync above.
+  clearShadowsForAccount(account.accountId);
 
   // Load settings from settings store (hot-reloadable config)
   try {
     const loadResult = await settingsManager.load();
     currentSettings = loadResult.settings;
 
-    // Migrate file config to settings store if not already present
-    await migrateConfigToSettings();
+    // Only seed file config into %settings when the startup snapshot is fresh.
+    // On a transient startup scry failure, `load()` preserves the last known
+    // snapshot (or `{}` on first load). Running migration against a stale
+    // snapshot would treat every persisted override as absent and clobber it
+    // with file-backed values once the settings agent recovers.
+    if (loadResult.fresh) {
+      await migrateConfigToSettings();
+    } else {
+      runtime.log?.("[tlon] Skipping config->settings migration on stale startup snapshot");
+    }
 
     // Apply settings overrides
     // Note: groupChannels from settings store are merged AFTER discovery runs (below)
@@ -580,6 +591,12 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       pendingNudgeRehydrated = true;
     }
 
+    // Seed nudge shadows from the loaded settings snapshot. Missing fields
+    // seed the shadow as absent / 0 — the tick short-circuits on null
+    // activity, which is correct for a cold startup with an empty store.
+    setLastOwnerActivity(account.accountId, ownerActivityFromSettings(currentSettings));
+    setLastNudgeStageShadow(account.accountId, currentSettings.lastNudgeStage ?? 0);
+
     if (currentSettings.pendingApprovals?.length) {
       pendingApprovals = currentSettings.pendingApprovals;
       runtime.log?.(`[tlon] Loaded ${pendingApprovals.length} pending approval(s) from settings`);
@@ -630,34 +647,11 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     pendingNudgePersistence.enqueue(nudge);
   });
 
-  const handleConfirmedHeartbeatNudge = (confirmed: ConfirmedNudge) => {
-    telemetry?.captureHeartbeatNudge({
-      ownerShip: confirmed.ownerShip,
-      botShip: account.ship ?? "",
-      nudgeStage: confirmed.nudgeStage,
-      nudgeTarget: confirmed.ownerShip,
-      channel: "tlon",
-      success: true,
-      provider: confirmed.provider,
-      model: confirmed.model,
-      sessionKey: confirmed.sessionKey,
-      accountId: confirmed.accountId,
-    });
-    setLocalPendingNudge(account.accountId, {
-      sentAt: confirmed.sentAt,
-      stage: confirmed.nudgeStage,
-      ownerShip: confirmed.ownerShip,
-      accountId: confirmed.accountId,
-      sessionKey: confirmed.sessionKey,
-      provider: confirmed.provider,
-      model: confirmed.model,
-    });
-    runtime.log?.(
-      `[tlon] Heartbeat nudge confirmed: stage ${confirmed.nudgeStage} to ${confirmed.ownerShip}`,
-    );
-  };
+  const ownerReplyPersistence = createOwnerReplyPersistenceQueue(api, {
+    error: (msg) => runtime.error?.(msg),
+  });
 
-  registerConfirmedNudgeCallback(account.accountId, handleConfirmedHeartbeatNudge);
+  let nudgeRunner: ReturnType<typeof createNudgeRunner> | null = null;
 
   // Clear expired pending nudge on startup (after persist callback is registered so del-entry fires).
   const rehydratedNudge = getPendingNudge(account.accountId);
@@ -692,7 +686,9 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
               ]
             : []),
         ]);
-        if (raced !== "started" || gsManager.stopped) {return;}
+        if (raced !== "started" || gsManager.stopped) {
+          return;
+        }
 
         await configureGatewayStatus({
           owner: capturedOwnerShip,
@@ -1337,45 +1333,42 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       messageText = stripBotMention(messageText, botShipName);
     }
 
-    // Track owner interaction timestamp for heartbeat engagement recovery.
-    // Store both epoch ms (for code) and ISO date (for LLM — models can't reliably convert epoch).
+    // Track owner interaction timestamp for the nudge scheduler.
+    // The shadows update synchronously; the durable %settings writes happen
+    // in the background via an ordered queue so the owner-DM hot path never
+    // waits on an Urbit RTT.
     if (isOwner(senderShip)) {
-      const isoDate = new Date(timestamp).toISOString().split("T")[0]; // YYYY-MM-DD
-      Promise.all([
-        api.poke({
-          app: "settings",
-          mark: "settings-event",
-          json: {
-            "put-entry": {
-              desk: "moltbot",
-              "bucket-key": "tlon",
-              "entry-key": "lastOwnerMessageAt",
-              value: timestamp,
-            },
-          },
-        }),
-        api.poke({
-          app: "settings",
-          mark: "settings-event",
-          json: {
-            "put-entry": {
-              desk: "moltbot",
-              "bucket-key": "tlon",
-              "entry-key": "lastOwnerMessageDate",
-              value: isoDate,
-            },
-          },
-        }),
-      ])
-        .then(() => {
-          runtime.log?.(`[tlon] Updated lastOwnerMessageAt: ${timestamp} (${isoDate})`);
-        })
-        .catch((err) => {
-          runtime.error?.(`[tlon] Failed to update lastOwnerMessageAt: ${String(err)}`);
-        });
+      const isoDate = new Date(timestamp).toISOString().split("T")[0] ?? ""; // YYYY-MM-DD
 
-      // Check for pending nudge re-engagement
+      // (1a) Synchronous shadow: owner activity. Updated FIRST so any tick
+      //      that observes both shadows sees "activity-first" ordering.
+      setLastOwnerActivity(account.accountId, { at: timestamp, date: isoDate });
+
+      // Check for pending nudge re-engagement. Stage is cleared on ANY owner
+      // reply when the stage shadow is non-zero (or pendingNudge is present)
+      // so the next inactivity cycle can send the same stage again. Gating on
+      // `pendingNudge` alone would miss the in-flight-tick race: the scheduler
+      // pokes `lastNudgeStage` and sets the shadow before `sendDm()`, but
+      // only writes `pendingNudge` after the send resolves — so a reply that
+      // lands in that window would otherwise leave the stage stuck.
       const pending = getPendingNudge(account.accountId);
+      const shadowStage = getLastNudgeStageShadow(account.accountId) ?? 0;
+      const willClearStage = shadowStage > 0 || Boolean(pending);
+
+      // (1b) Synchronous shadow: stage cleared (only when we'd clear).
+      if (willClearStage) {
+        setLastNudgeStageShadow(account.accountId, 0);
+      }
+
+      // (2) Enqueue durable writes. The queue awaits the put-entries before
+      //     issuing the del-entry on the wire, closing the crash-consistency
+      //     gap. The handler does NOT await the queue.
+      ownerReplyPersistence.enqueue({
+        at: timestamp,
+        date: isoDate,
+        clearStage: willClearStage,
+      });
+
       if (pending) {
         if (isNudgeEligible(pending, timestamp)) {
           const reengagedAt = timestamp;
@@ -1388,55 +1381,33 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
             reengagementDelayMs: reengagedAt - pending.sentAt,
             channel: "tlon",
             accountId: pending.accountId,
-            provider: pending.provider,
-            model: pending.model,
-            sessionKey: pending.sessionKey,
           });
-          clearLocalPendingNudge(account.accountId);
-          // Reset lastNudgeStage so the next inactivity cycle can send a
-          // same-stage nudge and its telemetry won't be suppressed.
-          api
-            .poke({
-              app: "settings",
-              mark: "settings-event",
-              json: {
-                "del-entry": {
-                  desk: "moltbot",
-                  "bucket-key": "tlon",
-                  "entry-key": "lastNudgeStage",
-                },
-              },
-            })
-            .catch((err: unknown) => {
-              runtime.error?.(`[tlon] Failed to clear lastNudgeStage: ${String(err)}`);
-            });
           runtime.log?.(
             `[tlon] Heartbeat nudge re-engagement: stage ${pending.stage}, delay ${reengagedAt - pending.sentAt}ms`,
           );
         } else {
-          // Attribution window expired — clear without emitting telemetry,
-          // but still reset lastNudgeStage so the next inactivity cycle can
-          // send a same-stage nudge (owner did reply, just outside the 72h window).
-          clearLocalPendingNudge(account.accountId);
-          api
-            .poke({
-              app: "settings",
-              mark: "settings-event",
-              json: {
-                "del-entry": {
-                  desk: "moltbot",
-                  "bucket-key": "tlon",
-                  "entry-key": "lastNudgeStage",
-                },
-              },
-            })
-            .catch((err: unknown) => {
-              runtime.error?.(`[tlon] Failed to clear lastNudgeStage: ${String(err)}`);
-            });
           runtime.log?.(
             `[tlon] Pending nudge expired (stage ${pending.stage}, sent ${pending.sentAt})`,
           );
         }
+        clearLocalPendingNudge(account.accountId);
+      }
+
+      // Inject reply context for the agent when the reply appears to be a
+      // response to a recent, eligible nudge.
+      //
+      // Restricted to DMs (`!isGroup`). The nudge itself was sent as a DM,
+      // so prefacing a channel/group reply with DM-only context — including
+      // the verbatim nudge `content` — would leak that context into an
+      // unrelated public conversation.
+      if (pending && isNudgeEligible(pending, timestamp) && !isGroup) {
+        const sentIso = new Date(pending.sentAt).toISOString();
+        const contentBlock = pending.content ? `Message content:\n\n${pending.content}\n\n` : "";
+        messageText =
+          `[Context: You recently sent ${pending.ownerShip} a stage-${pending.stage} ` +
+          `re-engagement nudge at ${sentIso}. ${contentBlock}` +
+          `The owner's reply below may be responding to that nudge.]\n\n` +
+          messageText;
       }
     }
 
@@ -1766,7 +1737,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       route.agentId,
     ).responsePrefix;
     const humanDelay = core.channel.reply.resolveHumanDelayConfig(cfg, route.agentId);
-    const presenceConversationId = isGroup ? groupChannel ?? null : senderShip;
+    const presenceConversationId = isGroup ? (groupChannel ?? null) : senderShip;
     const presenceRunId = String(messageId);
 
     const typingCallbacks = presenceConversationId
@@ -1786,14 +1757,14 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
           onStartError: (err: unknown) => {
             runtime.error?.(
               `[tlon] Failed to start computing presence for ${presenceConversationId}: ${
-                err instanceof Error ? err.stack ?? err.message : String(err)
+                err instanceof Error ? (err.stack ?? err.message) : String(err)
               }`,
             );
           },
           onStopError: (err: unknown) => {
             runtime.error?.(
               `[tlon] Failed to stop computing presence for ${presenceConversationId}: ${
-                err instanceof Error ? err.stack ?? err.message : String(err)
+                err instanceof Error ? (err.stack ?? err.message) : String(err)
               }`,
             );
           },
@@ -1802,7 +1773,9 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       : undefined;
 
     const replyOptions: NonNullable<
-      Parameters<typeof core.channel.reply.dispatchReplyWithBufferedBlockDispatcher>[0]["replyOptions"]
+      Parameters<
+        typeof core.channel.reply.dispatchReplyWithBufferedBlockDispatcher
+      >[0]["replyOptions"]
     > = {
       onModelSelected: ({ provider, model, thinkLevel }) => {
         selectedProvider = provider;
@@ -1991,7 +1964,9 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
           effectiveReacts as Record<string, string>,
         )) {
           const ship = normalizeShip(reactShip);
-          if (!ship || ship === botShipName) {continue;}
+          if (!ship || ship === botShipName) {
+            continue;
+          }
           try {
             const route = core.channel.routing.resolveAgentRoute({
               cfg,
@@ -2606,6 +2581,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     const applySettingsSnapshot = (
       newSettings: TlonSettingsStore,
       source: "subscription" | "refresh",
+      opts: { fresh?: boolean } = {},
     ) => {
       const prevSettings = currentSettings;
 
@@ -2620,7 +2596,9 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         syncPendingNudgeFromStore(account.accountId, newSettings.pendingNudge);
         pendingNudgeRehydrated = true;
         effectivePendingNudge = newSettings.pendingNudge;
-        runtime.log?.("[tlon] Settings refresh: recovered persisted pendingNudge after startup failure");
+        runtime.log?.(
+          "[tlon] Settings refresh: recovered persisted pendingNudge after startup failure",
+        );
       } else {
         effectivePendingNudge = undefined;
       }
@@ -2701,7 +2679,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         runtime.log?.(`[tlon] Settings: autoDiscoverChannels = ${effectiveAutoDiscoverChannels}`);
       }
 
-      // ownerShip and lastNudgeStage are applied on both live subscription and refresh.
+      // ownerShip is applied on both live subscription and refresh.
       // pendingNudge is only rehydrated from the store during startup load. Once the
       // monitor is running, the in-memory pending state is authoritative so refreshes
       // cannot clobber live state or resurrect stale store echoes.
@@ -2717,10 +2695,49 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         setEffectiveOwnerShip(account.accountId, effectiveOwnerShip);
       }
 
-      if (sync.lastNudgeStageChanged && sync.lastNudgeStage != null) {
-        // Two-signal confirmation can complete in either order:
-        // lastNudgeStage update first, or candidate send first.
-        confirmNudgeCandidate(account.accountId, sync.lastNudgeStage);
+      // Reconcile the scheduler's owner-activity shadow with live settings
+      // changes. Subscription events are authoritative (real-time ship echo
+      // of a poke, admin override, test harness seeding). Refresh updates
+      // are trusted only when `load()` returned `{ fresh: true }` — on
+      // `fresh: false` the manager preserves the last-known snapshot, which
+      // may not yet reflect a locally observed owner reply the ship hasn't
+      // echoed back, so clobbering the shadow from that path would regress
+      // the fix that motivated the shadow in the first place.
+      //
+      // Gating on a prev/new diff means a subscription event for some
+      // unrelated key (e.g. channelRules) cannot reset the shadow via the
+      // snapshot's unchanged owner-activity fields.
+      const shadowReconcileTrusted = source === "subscription" || opts.fresh === true;
+      const ownerActivityChanged =
+        prevSettings.lastOwnerMessageAt !== newSettings.lastOwnerMessageAt ||
+        prevSettings.lastOwnerMessageDate !== newSettings.lastOwnerMessageDate;
+      if (shadowReconcileTrusted && ownerActivityChanged) {
+        setLastOwnerActivity(account.accountId, ownerActivityFromSettings(newSettings));
+        runtime.log?.(
+          `[tlon] nudge: reconciled lastOwnerActivity shadow from ${source} (at=${newSettings.lastOwnerMessageAt ?? "null"})`,
+        );
+      }
+
+      // Reconcile the scheduler's stage shadow with live `lastNudgeStage`
+      // changes for the same trust-and-diff reasons as the activity branch
+      // above. Without this, an external `%settings` clear (or admin
+      // lower) cannot move the in-memory guard down — the runner's
+      // `resolveAuthoritativeStage()` returns `max(shadow, scry)`, so
+      // a stuck-high shadow suppresses later same-stage nudges.
+      //
+      // Trust gate: subscription events are real-time and only fire when
+      // storage actually transitioned, so they cannot represent a stale
+      // post-poke read. Refresh is trusted only when `load()` returned
+      // `{ fresh: true }`, matching the activity-shadow rule. The
+      // local-shadow-vs-stale-scry safety still rests on the runner's
+      // `max(shadow, scry)` guard, which is unchanged.
+      const stageChanged = prevSettings.lastNudgeStage !== newSettings.lastNudgeStage;
+      if (shadowReconcileTrusted && stageChanged) {
+        const nextStage = (newSettings.lastNudgeStage ?? 0) as 0 | 1 | 2 | 3;
+        setLastNudgeStageShadow(account.accountId, nextStage);
+        runtime.log?.(
+          `[tlon] nudge: reconciled lastNudgeStageShadow from ${source} (stage=${nextStage})`,
+        );
       }
 
       // Update pending approvals
@@ -3089,20 +3106,57 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     // Periodically re-scry settings as a fallback for stale subscriptions.
     // The settings subscription can silently die (SSE quit without reconnect),
     // leaving both authorization state and heartbeat telemetry mirrors stale.
-    const settingsRefreshInterval = setInterval(
-      async () => {
-        if (opts.abortSignal?.aborted) {
-          return;
-        }
-        try {
-          const refreshResult = await settingsManager.load();
-          applySettingsSnapshot(refreshResult.settings, "refresh");
-        } catch (err) {
-          runtime.error?.(`[tlon] Settings refresh failed: ${String(err)}`);
-        }
-      },
-      SETTINGS_REFRESH_INTERVAL_MS,
-    );
+    const settingsRefreshInterval = setInterval(async () => {
+      if (opts.abortSignal?.aborted) {
+        return;
+      }
+      try {
+        const refreshResult = await settingsManager.load();
+        applySettingsSnapshot(refreshResult.settings, "refresh", { fresh: refreshResult.fresh });
+      } catch (err) {
+        runtime.error?.(`[tlon] Settings refresh failed: ${String(err)}`);
+      }
+    }, SETTINGS_REFRESH_INTERVAL_MS);
+
+    // Plugin-owned re-engagement nudge scheduler. Owns tick lifecycle and
+    // reentrancy; runs independently of LLM heartbeat.
+    //
+    // Gating is computed by the pure `shouldStartNudgeRunner` helper; see
+    // that function for the two invariants (explicit opt-in flag + exactly
+    // one configured Tlon account).
+    //
+    // `TLON_NUDGE_TICK_INTERVAL_MS` exists so the integration harness can
+    // drive ticks on a short cadence without rebuilding the plugin; in
+    // production the default 15-minute interval applies.
+    const nudgeStartDecision = shouldStartNudgeRunner(cfg);
+    if (!nudgeStartDecision.start) {
+      runtime.log?.(`[tlon] nudge: scheduler disabled — ${nudgeStartDecision.detail}`);
+    } else {
+      const intervalEnv = process.env.TLON_NUDGE_TICK_INTERVAL_MS;
+      const intervalMsOverride = intervalEnv ? Number(intervalEnv) : NaN;
+      nudgeRunner = createNudgeRunner({
+        accountId: account.accountId,
+        botShip: botShipName,
+        api,
+        cfg,
+        getSettings: () => currentSettings,
+        getEffectiveOwnerShip,
+        getLastOwnerActivity,
+        getLastNudgeStageShadow,
+        setLastNudgeStageShadow,
+        setLocalPendingNudge,
+        sendDm,
+        getBotProfile,
+        telemetry,
+        runtime,
+        abortSignal: opts.abortSignal,
+        ownerReplyPersistence,
+        ...(Number.isFinite(intervalMsOverride) && intervalMsOverride > 0
+          ? { intervalMs: intervalMsOverride }
+          : {}),
+      });
+      nudgeRunner.start();
+    }
 
     if (opts.abortSignal) {
       const signal = opts.abortSignal;
@@ -3112,6 +3166,11 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
           () => {
             clearInterval(pollInterval);
             clearInterval(settingsRefreshInterval);
+            // Kick off scheduler shutdown; don't block the event-handler
+            // callback. The `finally` block awaits the same stop promise
+            // before draining the persistence queues and closing the
+            // api, so any in-flight tick is guaranteed to settle first.
+            void nudgeRunner?.stop();
             gsManager?.stopHeartbeat();
             resolve(null);
           },
@@ -3123,8 +3182,15 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     }
   } finally {
     removeBridge(accountKey, commandBridge);
-    clearConfirmedNudgeCallback(account.accountId);
+    // Await the scheduler drain before flushing persistence queues.
+    // `stop()` waits for any in-flight tick to finish so its final
+    // `setLocalPendingNudge` / `enqueueStageClear` / etc. writes land
+    // inside the queues we flush below, rather than leaking into a
+    // half-closed api after cleanup.
+    await nudgeRunner?.stop();
+    await ownerReplyPersistence.flush();
     await pendingNudgePersistence.flush();
+    clearShadowsForAccount(account.accountId);
     await telemetry?.close();
     try {
       await api?.close();
