@@ -9,9 +9,6 @@ function makeNudge(overrides?: Partial<PendingNudge>): PendingNudge {
     stage: 1,
     ownerShip: "~sampel-palnet",
     accountId: "default",
-    sessionKey: "sess-1",
-    provider: null,
-    model: null,
     ...overrides,
   };
 }
@@ -115,47 +112,6 @@ describe("resolveSettingsMirrorSync", () => {
     });
   });
 
-  describe("lastNudgeStage transitions", () => {
-    it("detects lastNudgeStage set from undefined", () => {
-      const result = resolveSettingsMirrorSync({
-        prevSettings: {},
-        newSettings: { lastNudgeStage: 1 },
-        fileConfigOwnerShip: null,
-      });
-      expect(result.lastNudgeStageChanged).toBe(true);
-      expect(result.lastNudgeStage).toBe(1);
-    });
-
-    it("detects lastNudgeStage changed (1 to 2)", () => {
-      const result = resolveSettingsMirrorSync({
-        prevSettings: { lastNudgeStage: 1 },
-        newSettings: { lastNudgeStage: 2 },
-        fileConfigOwnerShip: null,
-      });
-      expect(result.lastNudgeStageChanged).toBe(true);
-      expect(result.lastNudgeStage).toBe(2);
-    });
-
-    it("unchanged lastNudgeStage returns false", () => {
-      const result = resolveSettingsMirrorSync({
-        prevSettings: { lastNudgeStage: 2 },
-        newSettings: { lastNudgeStage: 2 },
-        fileConfigOwnerShip: null,
-      });
-      expect(result.lastNudgeStageChanged).toBe(false);
-    });
-
-    it("detects lastNudgeStage deleted", () => {
-      const result = resolveSettingsMirrorSync({
-        prevSettings: { lastNudgeStage: 2 },
-        newSettings: {},
-        fileConfigOwnerShip: null,
-      });
-      expect(result.lastNudgeStageChanged).toBe(true);
-      expect(result.lastNudgeStage).toBeUndefined();
-    });
-  });
-
   describe("edge cases", () => {
     it("first onChange after startup with no new fields", () => {
       const result = resolveSettingsMirrorSync({
@@ -164,7 +120,6 @@ describe("resolveSettingsMirrorSync", () => {
         fileConfigOwnerShip: null,
       });
       expect(result.pendingNudgeChanged).toBe(false);
-      expect(result.lastNudgeStageChanged).toBe(false);
       expect(result.ownerShipChanged).toBe(false);
     });
   });

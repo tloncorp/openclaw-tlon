@@ -181,3 +181,19 @@ export function listTlonAccountIds(cfg: OpenClawConfig): string[] {
   const accounts = base.accounts ?? {};
   return [...(base.ship ? ["default"] : []), ...Object.keys(accounts)];
 }
+
+/**
+ * Like `listTlonAccountIds`, but only includes accounts that are both
+ * `enabled !== false` and fully `configured` (ship + url + code present).
+ *
+ * Use this when the question is "how many accounts will actually run a
+ * monitor in this process". Disabled or stub accounts cannot race
+ * shared-process state and should not, for example, disable the nudge
+ * scheduler's single-runnable-account guard.
+ */
+export function listRunnableTlonAccountIds(cfg: OpenClawConfig): string[] {
+  return listTlonAccountIds(cfg).filter((id) => {
+    const account = resolveTlonAccount(cfg, id);
+    return account.enabled && account.configured;
+  });
+}

@@ -6,9 +6,7 @@ import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineChannelPluginEntry } from "openclaw/plugin-sdk/core";
 import { tlonPlugin } from "./src/channel.js";
-import { getEffectiveOwnerShip } from "./src/effective-owner.js";
 import { createGatewayStatusManager, setGatewayStatusManager } from "./src/gateway-status.js";
-import { createHeartbeatTelemetryHandlers } from "./src/heartbeat-telemetry.js";
 import { resolveBridgeForCommand } from "./src/monitor/command-auth.js";
 import { setTlonRuntime } from "./src/runtime.js";
 import { getSessionRole } from "./src/session-roles.js";
@@ -127,7 +125,9 @@ function shellSplit(str: string): string[] {
     }
     cur += ch;
   }
-  if (cur) {args.push(cur);}
+  if (cur) {
+    args.push(cur);
+  }
   return args;
 }
 
@@ -403,26 +403,6 @@ export default defineChannelPluginEntry({
       });
     });
 
-    // ── Heartbeat telemetry hooks ──────────────────────────────────────
-    const heartbeatHandlers = createHeartbeatTelemetryHandlers({
-      config: api.config,
-      getEffectiveOwnerShip,
-      logger: {
-        info: (m) => api.logger.info(m),
-        warn: (m) => api.logger.warn(m),
-      },
-    });
-
-    api.on("before_agent_start", heartbeatHandlers.onBeforeAgentStart);
-    api.on("llm_input", heartbeatHandlers.onLlmInput);
-    api.registerHook("message:sent", heartbeatHandlers.onMessageSent);
-    api.on("agent_end", heartbeatHandlers.onAgentEnd);
-
-    // Unconditional cleanup — not nested inside gateway-status branch
-    api.on("gateway_stop", () => {
-      heartbeatHandlers.close();
-    });
-
     // ── Slash commands for approval & admin ────────────────────────────
     api.registerCommand({
       name: "allow",
@@ -430,7 +410,9 @@ export default defineChannelPluginEntry({
       acceptsArgs: true,
       handler: async (ctx) => {
         const result = resolveBridgeForCommand(ctx);
-        if ("error" in result) {return { text: result.error };}
+        if ("error" in result) {
+          return { text: result.error };
+        }
         return {
           text: await result.bridge.handleAction("approve", ctx.args?.trim() || undefined),
         };
@@ -443,7 +425,9 @@ export default defineChannelPluginEntry({
       acceptsArgs: true,
       handler: async (ctx) => {
         const result = resolveBridgeForCommand(ctx);
-        if ("error" in result) {return { text: result.error };}
+        if ("error" in result) {
+          return { text: result.error };
+        }
         return {
           text: await result.bridge.handleAction("deny", ctx.args?.trim() || undefined),
         };
@@ -456,7 +440,9 @@ export default defineChannelPluginEntry({
       acceptsArgs: true,
       handler: async (ctx) => {
         const result = resolveBridgeForCommand(ctx);
-        if ("error" in result) {return { text: result.error };}
+        if ("error" in result) {
+          return { text: result.error };
+        }
         return {
           text: await result.bridge.handleAction("block", ctx.args?.trim() || undefined),
         };
@@ -468,7 +454,9 @@ export default defineChannelPluginEntry({
       description: "List pending approval requests",
       handler: async (ctx) => {
         const result = resolveBridgeForCommand(ctx);
-        if ("error" in result) {return { text: result.error };}
+        if ("error" in result) {
+          return { text: result.error };
+        }
         return { text: await result.bridge.getPendingList() };
       },
     });
@@ -478,7 +466,9 @@ export default defineChannelPluginEntry({
       description: "List banned ships",
       handler: async (ctx) => {
         const result = resolveBridgeForCommand(ctx);
-        if ("error" in result) {return { text: result.error };}
+        if ("error" in result) {
+          return { text: result.error };
+        }
         return { text: await result.bridge.getBlockedList() };
       },
     });
@@ -489,7 +479,9 @@ export default defineChannelPluginEntry({
       acceptsArgs: true,
       handler: async (ctx) => {
         const result = resolveBridgeForCommand(ctx);
-        if ("error" in result) {return { text: result.error };}
+        if ("error" in result) {
+          return { text: result.error };
+        }
         const ship = ctx.args?.trim();
         if (!ship) {
           return { text: "Usage: /unban ~ship-name" };

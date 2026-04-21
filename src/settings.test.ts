@@ -61,6 +61,82 @@ describe("Settings: parseSettingsResponse", () => {
       parseSettingsResponse({ tlon: { lastNudgeStage: "not-a-stage" } }).lastNudgeStage,
     ).toBeUndefined();
   });
+
+  describe("parsePendingNudge", () => {
+    it("parses the new shape without LLM fields", () => {
+      const json = JSON.stringify({
+        sentAt: 123,
+        stage: 2,
+        ownerShip: "~zod",
+        accountId: "default",
+        content: "hey",
+      });
+      const result = parseSettingsResponse({ tlon: { pendingNudge: json } });
+      expect(result.pendingNudge).toEqual({
+        sentAt: 123,
+        stage: 2,
+        ownerShip: "~zod",
+        accountId: "default",
+        content: "hey",
+      });
+    });
+
+    it("tolerates legacy records with sessionKey/provider/model", () => {
+      const json = JSON.stringify({
+        sentAt: 123,
+        stage: 1,
+        ownerShip: "~zod",
+        accountId: "default",
+        sessionKey: "old-sess",
+        provider: "anthropic",
+        model: "claude-3",
+      });
+      const result = parseSettingsResponse({ tlon: { pendingNudge: json } });
+      expect(result.pendingNudge).toEqual({
+        sentAt: 123,
+        stage: 1,
+        ownerShip: "~zod",
+        accountId: "default",
+      });
+      expect(result.pendingNudge).not.toHaveProperty("sessionKey");
+      expect(result.pendingNudge).not.toHaveProperty("provider");
+      expect(result.pendingNudge).not.toHaveProperty("model");
+    });
+
+    it("tolerates missing content field", () => {
+      const json = JSON.stringify({
+        sentAt: 123,
+        stage: 1,
+        ownerShip: "~zod",
+        accountId: "default",
+      });
+      const result = parseSettingsResponse({ tlon: { pendingNudge: json } });
+      expect(result.pendingNudge?.content).toBeUndefined();
+    });
+  });
+
+  describe("nudgeActiveHours*", () => {
+    it("parses all three keys as strings", () => {
+      const result = parseSettingsResponse({
+        tlon: {
+          nudgeActiveHoursStart: "09:00",
+          nudgeActiveHoursEnd: "21:00",
+          nudgeActiveHoursTimezone: "America/New_York",
+        },
+      });
+      expect(result.nudgeActiveHoursStart).toBe("09:00");
+      expect(result.nudgeActiveHoursEnd).toBe("21:00");
+      expect(result.nudgeActiveHoursTimezone).toBe("America/New_York");
+    });
+
+    it("ignores non-string values", () => {
+      const result = parseSettingsResponse({
+        tlon: { nudgeActiveHoursStart: 900, nudgeActiveHoursEnd: null },
+      });
+      expect(result.nudgeActiveHoursStart).toBeUndefined();
+      expect(result.nudgeActiveHoursEnd).toBeUndefined();
+    });
+  });
 });
 
 describe("Settings: applySettingsUpdate", () => {
@@ -101,6 +177,25 @@ describe("Settings: applySettingsUpdate", () => {
     expect(applySettingsUpdate({}, "lastNudgeStage", 1).lastNudgeStage).toBe(1);
     expect(applySettingsUpdate({}, "lastNudgeStage", "2").lastNudgeStage).toBe(2);
     expect(applySettingsUpdate({}, "lastNudgeStage", 4).lastNudgeStage).toBeUndefined();
+  });
+
+  it("updates nudgeActiveHours* keys with string values", () => {
+    expect(applySettingsUpdate({}, "nudgeActiveHoursStart", "09:00").nudgeActiveHoursStart).toBe(
+      "09:00",
+    );
+    expect(applySettingsUpdate({}, "nudgeActiveHoursEnd", "21:00").nudgeActiveHoursEnd).toBe(
+      "21:00",
+    );
+    expect(
+      applySettingsUpdate({}, "nudgeActiveHoursTimezone", "UTC").nudgeActiveHoursTimezone,
+    ).toBe("UTC");
+  });
+
+  it("clears nudgeActiveHours* keys when value is not a string", () => {
+    const base = { nudgeActiveHoursStart: "09:00" };
+    expect(
+      applySettingsUpdate(base, "nudgeActiveHoursStart", 42).nudgeActiveHoursStart,
+    ).toBeUndefined();
   });
 });
 

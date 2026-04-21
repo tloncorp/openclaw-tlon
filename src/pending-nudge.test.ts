@@ -17,9 +17,7 @@ function makePendingNudge(overrides: Partial<PendingNudge> = {}): PendingNudge {
     stage: 1,
     ownerShip: "~sampel-palnet",
     accountId: "default",
-    sessionKey: "sess-1",
-    provider: "anthropic",
-    model: "claude-3",
+    content: "test content",
     ...overrides,
   };
 }
@@ -180,6 +178,24 @@ describe("pending-nudge", () => {
       const nudge = makePendingNudge({ sentAt: 100 });
       expect(isNudgeEligible(nudge, 200, 150)).toBe(true);
       expect(isNudgeEligible(nudge, 300, 150)).toBe(false);
+    });
+  });
+
+  describe("content field", () => {
+    it("tolerates pending nudge without content", () => {
+      const nudge: PendingNudge = {
+        sentAt: 1,
+        stage: 1,
+        ownerShip: "~zod",
+        accountId: "default",
+      };
+      setPendingNudge("default", nudge);
+      expect(getPendingNudge("default")?.content).toBeUndefined();
+    });
+
+    it("preserves content through set/get", () => {
+      setPendingNudge("default", makePendingNudge({ content: "Hey friend!" }));
+      expect(getPendingNudge("default")?.content).toBe("Hey friend!");
     });
   });
 });
