@@ -10,7 +10,7 @@ export type NudgeStage = 1 | 2 | 3;
 export const NUDGE_MESSAGES: Record<NudgeStage, string> = {
   1:
     "Hey! Quick ideas for your week:\n" +
-    '• "Make me a group about cooking" — I\'ll set it up, then give you a link invite your friends\n' +
+    '• "Make me a group about cooking" — I\'ll set it up, then give you a link to invite your friends\n' +
     '• "Tell me the weather every morning at 8am"\n' +
     '• "Send me a daily digest with breaking news about AI"\n\n' +
     "Just reply with any of these or ask me anything 🌱",
