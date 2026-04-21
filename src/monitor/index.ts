@@ -2722,15 +2722,16 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       // changes for the same trust-and-diff reasons as the activity branch
       // above. Without this, an external `%settings` clear (or admin
       // lower) cannot move the in-memory guard down — the runner's
-      // `resolveAuthoritativeStage()` returns `max(shadow, scry)`, so
-      // a stuck-high shadow suppresses later same-stage nudges.
+      // `resolveAuthoritativeStage()` currently uses the shadow as the
+      // authoritative stage, so a stuck-high shadow suppresses later
+      // same-stage nudges.
       //
       // Trust gate: subscription events are real-time and only fire when
       // storage actually transitioned, so they cannot represent a stale
       // post-poke read. Refresh is trusted only when `load()` returned
-      // `{ fresh: true }`, matching the activity-shadow rule. The
-      // local-shadow-vs-stale-scry safety still rests on the runner's
-      // `max(shadow, scry)` guard, which is unchanged.
+      // `{ fresh: true }`, matching the activity-shadow rule. Scry is
+      // still useful for drift logging, but it is not part of the
+      // runner's stage guard today.
       const stageChanged = prevSettings.lastNudgeStage !== newSettings.lastNudgeStage;
       if (shadowReconcileTrusted && stageChanged) {
         const nextStage = (newSettings.lastNudgeStage ?? 0) as 0 | 1 | 2 | 3;
