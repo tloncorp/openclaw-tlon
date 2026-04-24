@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       '@tloncorp/api':
-        specifier: 0.0.6
-        version: 0.0.6
+        specifier: presence
+        version: 0.0.7
       '@tloncorp/tlon-skill':
         specifier: ^0.3.4
         version: 0.3.4
@@ -1219,8 +1219,8 @@ packages:
   '@telegraf/types@7.1.0':
     resolution: {integrity: sha512-kGevOIbpMcIlCDeorKGpwZmdH7kHbqlk/Yj6dEpJMKEQw5lk0KVQY0OLXaCswy8GqlIVLd5625OB+rAntP9xVw==}
 
-  '@tloncorp/api@0.0.6':
-    resolution: {integrity: sha512-5Oghwam7Mpt7v+H2gjHix3AyMfp8squIM7kbdxIcIdWXaaDAJAUKowI1v4PDjHYHrNmzCLR+RfW5hDy063IRsg==}
+  '@tloncorp/api@0.0.7':
+    resolution: {integrity: sha512-B3GeHxexU1eqO5qRM+6ojPR9ytCCGUKPSkiwVe/+2sN6gaDJGX+tvk3q+3ZImqscahJpVuq57SfVJkDAz6v9JQ==}
 
   '@tloncorp/tlon-skill-darwin-arm64@0.3.4':
     resolution: {integrity: sha512-K/QQZKpJ0Qqko/7F6sJleh+xspVntOMCXLCZqcq1OFwHXGBG/v82fl7WETvVwknCiShb0pGutkWtRfbXqZmbPw==}
@@ -4531,7 +4531,7 @@ snapshots:
   '@telegraf/types@7.1.0':
     optional: true
 
-  '@tloncorp/api@0.0.6':
+  '@tloncorp/api@0.0.7':
     dependencies:
       '@aws-sdk/client-s3': 3.1027.0
       '@aws-sdk/s3-request-presigner': 3.1027.0

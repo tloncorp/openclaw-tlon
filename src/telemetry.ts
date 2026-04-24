@@ -25,6 +25,27 @@ export type ToolUsageSummary = {
   errorCount: number;
 };
 
+export type TlonHeartbeatNudgeEvent = {
+  ownerShip: string;
+  botShip: string;
+  nudgeStage: 1 | 2 | 3;
+  nudgeTarget: string;
+  channel: string;
+  success: boolean;
+  accountId: string | null;
+};
+
+export type TlonHeartbeatReengagementEvent = {
+  ownerShip: string;
+  botShip: string;
+  nudgeStage: 1 | 2 | 3;
+  nudgeSentAt: number;
+  reengagedAt: number;
+  reengagementDelayMs: number;
+  channel: string;
+  accountId: string | null;
+};
+
 export type TlonReplyOutcome = "responded" | "no_reply" | "error";
 
 export type TlonReplyOutcomeEvent = {
@@ -80,10 +101,14 @@ export interface TlonReplyTelemetrySession {
 
 export interface TlonTelemetryClient {
   startReply(params: TlonReplyTelemetryStart): TlonReplyTelemetrySession;
+  captureHeartbeatNudge(event: TlonHeartbeatNudgeEvent): void;
+  captureHeartbeatReengagement(event: TlonHeartbeatReengagementEvent): void;
   close(): Promise<void>;
 }
 
 const TLON_TELEMETRY_EVENT_NAME = "TlonBot Reply Handled";
+const TLON_HEARTBEAT_NUDGE_EVENT = "TlonBot Heartbeat Nudge Sent";
+const TLON_HEARTBEAT_REENGAGED_EVENT = "TlonBot Heartbeat Nudge Reengaged";
 const TLON_TELEMETRY_LOG_SOURCE = "openclawPlugin";
 const TOOL_TRACE_TTL_MS = 60 * 60 * 1000;
 const MAX_TOOL_CALLS_PER_SESSION = 200;
@@ -224,30 +249,13 @@ class PostHogTlonTelemetry implements TlonTelemetryClient {
   }
 
   private captureReplyOutcome(event: TlonReplyOutcomeEvent): void {
-    if (!event.ownerShip) {
-      if (!this.missingOwnerWarningLogged) {
-        this.missingOwnerWarningLogged = true;
-        this.runtime?.log?.(
-          "[tlon] Telemetry is enabled but ownerShip is not configured; skipping telemetry events",
-        );
-      }
+    const ownerShip = event.ownerShip ?? "";
+    if (!this.ensureIdentified(ownerShip, event.botShip)) {
       return;
     }
 
-    if (!this.identifiedOwners.has(event.ownerShip)) {
-      this.identifiedOwners.add(event.ownerShip);
-      this.client.identify({
-        distinctId: event.ownerShip,
-        properties: {
-          logSource: TLON_TELEMETRY_LOG_SOURCE,
-          tlonOwnerShip: event.ownerShip,
-          tlonBotShip: event.botShip,
-        },
-      });
-    }
-
     this.client.capture({
-      distinctId: event.ownerShip,
+      distinctId: ownerShip,
       event: TLON_TELEMETRY_EVENT_NAME,
       properties: {
         logSource: TLON_TELEMETRY_LOG_SOURCE,
@@ -283,6 +291,75 @@ class PostHogTlonTelemetry implements TlonTelemetryClient {
     });
   }
 
+  private ensureIdentified(ownerShip: string, botShip: string): boolean {
+    if (!ownerShip) {
+      if (!this.missingOwnerWarningLogged) {
+        this.missingOwnerWarningLogged = true;
+        this.runtime?.log?.(
+          "[tlon] Telemetry is enabled but ownerShip is not configured; skipping telemetry events",
+        );
+      }
+      return false;
+    }
+
+    if (!this.identifiedOwners.has(ownerShip)) {
+      this.identifiedOwners.add(ownerShip);
+      this.client.identify({
+        distinctId: ownerShip,
+        properties: {
+          logSource: TLON_TELEMETRY_LOG_SOURCE,
+          tlonOwnerShip: ownerShip,
+          tlonBotShip: botShip,
+        },
+      });
+    }
+    return true;
+  }
+
+  captureHeartbeatNudge(event: TlonHeartbeatNudgeEvent): void {
+    if (!this.ensureIdentified(event.ownerShip, event.botShip)) {
+      return;
+    }
+
+    this.client.capture({
+      distinctId: event.ownerShip,
+      event: TLON_HEARTBEAT_NUDGE_EVENT,
+      properties: {
+        logSource: TLON_TELEMETRY_LOG_SOURCE,
+        botShip: event.botShip,
+        ownerShip: event.ownerShip,
+        trigger: "heartbeat",
+        nudgeStage: event.nudgeStage,
+        nudgeTarget: event.nudgeTarget,
+        channel: event.channel,
+        success: event.success,
+        accountId: event.accountId,
+      },
+    });
+  }
+
+  captureHeartbeatReengagement(event: TlonHeartbeatReengagementEvent): void {
+    if (!this.ensureIdentified(event.ownerShip, event.botShip)) {
+      return;
+    }
+
+    this.client.capture({
+      distinctId: event.ownerShip,
+      event: TLON_HEARTBEAT_REENGAGED_EVENT,
+      properties: {
+        logSource: TLON_TELEMETRY_LOG_SOURCE,
+        botShip: event.botShip,
+        ownerShip: event.ownerShip,
+        nudgeStage: event.nudgeStage,
+        nudgeSentAt: event.nudgeSentAt,
+        reengagedAt: event.reengagedAt,
+        reengagementDelayMs: event.reengagementDelayMs,
+        channel: event.channel,
+        accountId: event.accountId,
+      },
+    });
+  }
+
   async close(): Promise<void> {
     try {
       await this.client.flush();
@@ -291,7 +368,7 @@ class PostHogTlonTelemetry implements TlonTelemetryClient {
     }
 
     try {
-      this.client.shutdown();
+      void this.client.shutdown();
     } catch (error) {
       this.runtime?.error?.(`[tlon] Telemetry shutdown failed: ${String(error)}`);
     }

@@ -52,4 +52,57 @@ describe("Tlon config schema", () => {
     expect(parsed.telemetry?.enabled).toBe(true);
     expect(parsed.accounts?.hosted?.telemetry?.apiKey).toBe("phc_account");
   });
+
+  it("accepts an opt-in reengagement.enabled flag", () => {
+    const parsed = TlonConfigSchema.parse({
+      ship: "~zod",
+      url: "https://example.com",
+      code: "code-123",
+      reengagement: { enabled: true },
+    });
+    expect(parsed.reengagement?.enabled).toBe(true);
+  });
+
+  it("accepts an absent reengagement block and leaves the flag undefined", () => {
+    const parsed = TlonConfigSchema.parse({
+      ship: "~zod",
+      url: "https://example.com",
+      code: "code-123",
+    });
+    expect(parsed.reengagement).toBeUndefined();
+  });
+
+  it("accepts reengagement.enabled = false explicitly", () => {
+    const parsed = TlonConfigSchema.parse({
+      ship: "~zod",
+      url: "https://example.com",
+      code: "code-123",
+      reengagement: { enabled: false },
+    });
+    expect(parsed.reengagement?.enabled).toBe(false);
+  });
+
+  it("accepts a channels.tlon.nudgeActiveHours block with 24-hour bounds", () => {
+    const parsed = TlonConfigSchema.parse({
+      ship: "~zod",
+      url: "https://example.com",
+      code: "code-123",
+      nudgeActiveHours: { start: "00:00", end: "24:00", timezone: "UTC" },
+    });
+    expect(parsed.nudgeActiveHours).toEqual({
+      start: "00:00",
+      end: "24:00",
+      timezone: "UTC",
+    });
+  });
+
+  it("accepts a partial nudgeActiveHours block with no timezone", () => {
+    const parsed = TlonConfigSchema.parse({
+      ship: "~zod",
+      url: "https://example.com",
+      code: "code-123",
+      nudgeActiveHours: { start: "09:00", end: "17:00" },
+    });
+    expect(parsed.nudgeActiveHours).toEqual({ start: "09:00", end: "17:00" });
+  });
 });
