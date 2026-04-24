@@ -34,6 +34,11 @@ export {
   type TestFixtures,
 } from "./fixtures.js";
 
-export { getContainerLogsSince, toolWasInvoked } from "./docker-logs.js";
+export {
+  getContainerLogsSince,
+  startLiveToolTrace,
+  toolWasInvoked,
+  type LiveToolTraceHandle,
+} from "./docker-logs.js";
 
 export { scoreResponse, type VerbosityMetrics } from "./verbosity.js";

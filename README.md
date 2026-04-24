@@ -177,23 +177,32 @@ docker compose --env-file .env -f dev/docker-compose.yml up --build
 parent/
 ├── tlonbot/            # Bot prompts + image-search extension (optional)
 ├── tlon-apps/          # Source repo for dev-only local @tloncorp/api overrides
+│                       # (or another checkout such as "homestead")
 └── openclaw-tlon/      # This repo
 ```
 
-`@tloncorp/api` and `@tloncorp/tlon-skill` are installed via npm for normal installs. During Docker dev, the entrypoint will also link a local `@tloncorp/api` override from `../tlon-apps/packages/api` when that sibling repo has been built.
+`@tloncorp/api` and `@tloncorp/tlon-skill` are installed via npm for normal installs. During Docker dev, the entrypoint will also link a local `@tloncorp/api` override from `${TLON_APPS_DIR:-../tlon-apps}/packages/api` when that checkout has been built.
 
 The dev override uses the real `tlon-apps/packages/api` package, similar to the old `api-beta` workflow. You still rebuild `tlon-apps` separately so its `dist/` stays current, and the container startup will link that local package instead of using the published npm copy.
 
-If you want to modify `@tloncorp/api` locally while working in this repo, first link the sibling package into `openclaw-tlon` so your editor and local TypeScript resolve against `../tlon-apps/packages/api`:
+If your local checkout is named `homestead` instead of `tlon-apps`, set:
+
+```bash
+export TLON_APPS_DIR=/absolute/path/to/homestead
+```
+
+`pnpm dev`, `pnpm dev:api:link`, and the Docker dev override will all use that path.
+
+If you want to modify `@tloncorp/api` locally while working in this repo, first link the local package into `openclaw-tlon` so your editor and local TypeScript resolve against `${TLON_APPS_DIR:-../tlon-apps}/packages/api`:
 
 ```bash
 pnpm dev:api:link
 ```
 
-That makes `openclaw-tlon` resolve `@tloncorp/api` to `../tlon-apps/packages/api` on your machine. After changing the API surface, rebuild it in `tlon-apps`:
+That makes `openclaw-tlon` resolve `@tloncorp/api` to `${TLON_APPS_DIR:-../tlon-apps}/packages/api` on your machine. After changing the API surface, rebuild it there:
 
 ```bash
-pnpm --dir ../tlon-apps --filter @tloncorp/api build
+pnpm --dir "${TLON_APPS_DIR:-../tlon-apps}" --filter @tloncorp/api build
 ```
 
 To switch back to the published npm package on your host:
@@ -204,9 +213,9 @@ pnpm dev:api:unlink
 
 ### Making Changes
 
-1. Edit code in this repo or `../tlon-apps/packages/api`
-2. If you changed `tlon-apps`, rebuild the API package there first:
-   `pnpm --dir ../tlon-apps --filter @tloncorp/api build`
+1. Edit code in this repo or `${TLON_APPS_DIR:-../tlon-apps}/packages/api`
+2. If you changed the API package, rebuild it first:
+   `pnpm --dir "${TLON_APPS_DIR:-../tlon-apps}" --filter @tloncorp/api build`
 3. Restart container: `docker compose --env-file .env -f dev/docker-compose.yml up --build`
 4. For faster iteration, run OpenClaw directly on host with npm link
 

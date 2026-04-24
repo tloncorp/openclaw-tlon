@@ -1,11 +1,8 @@
-import {
-  createActionGate,
-  jsonResult,
-  readReactionParams,
-  readStringParam,
-  type ChannelMessageActionAdapter,
-  type ChannelMessageActionName,
-} from "openclaw/plugin-sdk";
+import { readStringParam } from "openclaw/plugin-sdk/param-readers";
+import type {
+  ChannelMessageActionAdapter,
+  ChannelMessageActionName,
+} from "openclaw/plugin-sdk/channel-contract";
 import { resolveTlonAccount } from "./types.js";
 import { normalizeShip, parseTlonTarget } from "./targets.js";
 import { withAuthenticatedTlonApi } from "./urbit/api-client.js";
@@ -19,13 +16,47 @@ import {
 } from "./urbit/send.js";
 import { markdownToStory } from "./urbit/story.js";
 
+// Inline helpers previously imported from SDK (removed in new SDK)
+
+function createActionGate(
+  actions: Record<string, boolean | undefined> | undefined,
+): (key: string) => boolean {
+  return (key: string) => {
+    if (!actions) return true;
+    return actions[key] !== false;
+  };
+}
+
+function jsonResult(data: Record<string, unknown>) {
+  return {
+    content: [{ type: "text" as const, text: JSON.stringify(data) }],
+    details: data,
+  };
+}
+
+function readReactionParams(
+  params: Record<string, unknown>,
+  opts?: { removeErrorMessage?: string },
+): { emoji: string; remove: boolean; isEmpty: boolean } {
+  const raw = readStringParam(params, "emoji") ?? "";
+  const remove = params.remove === true || params.remove === "true";
+
+  if (remove && !raw) {
+    if (opts?.removeErrorMessage) {
+      throw new Error(opts.removeErrorMessage);
+    }
+  }
+
+  return { emoji: raw, remove, isEmpty: !raw && !remove };
+}
+
 const SUPPORTED_ACTIONS = new Set<ChannelMessageActionName>(["react", "delete", "reply"]);
 
 export const tlonMessageActions: ChannelMessageActionAdapter = {
-  listActions: ({ cfg }) => {
+  describeMessageTool: ({ cfg }) => {
     const account = resolveTlonAccount(cfg);
     if (!account.configured || !account.enabled) {
-      return [];
+      return null;
     }
     const gate = createActionGate(
       (cfg.channels?.tlon as { actions?: Record<string, boolean | undefined> })?.actions,
@@ -33,7 +64,8 @@ export const tlonMessageActions: ChannelMessageActionAdapter = {
     const actions: ChannelMessageActionName[] = [];
     if (gate("reactions")) actions.push("react");
     if (gate("delete")) actions.push("delete");
-    return actions;
+    if (gate("reply")) actions.push("reply");
+    return actions.length > 0 ? { actions } : null;
   },
 
   supportsAction: ({ action }) => SUPPORTED_ACTIONS.has(action),
@@ -110,7 +142,6 @@ async function handleReact({
     throw new Error(`Invalid Tlon target: ${to}`);
   }
 
-  // For reply/thread reactions: explicit parentId, or infer from thread context
   const parentId =
     readStringParam(params, "parentId") ??
     (toolContext as { currentThreadTs?: string })?.currentThreadTs ??
@@ -125,8 +156,6 @@ async function handleReact({
     return jsonResult({ ok: true, added: emoji });
   }
 
-  // Channel reaction (chat, heap, or diary)
-  // Extract nest prefix from the nest string (e.g., "heap" from "heap/~host/channel")
   const nestPrefix = parsed.nest.split("/")[0];
   if (remove) {
     await removeChannelReaction({
@@ -232,7 +261,6 @@ async function handleReply({
     );
   }
 
-  // Channel reply (chat, heap, or diary)
   await sendChannelPost({
     fromShip,
     nest: parsed.nest,

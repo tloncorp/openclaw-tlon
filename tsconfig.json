@@ -15,6 +15,6 @@
     "resolveJsonModule": true,
     "types": ["node"]
   },
-  "include": ["index.ts", "src/**/*.ts"],
+  "include": ["index.ts", "setup-entry.ts", "setup-api.ts", "src/**/*.ts"],
   "exclude": ["node_modules", "dist", "dev", "test", "**/*.test.ts"]
 }
