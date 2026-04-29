@@ -1936,7 +1936,10 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
 
       // Auto-watch channels from firehose: if we receive events for a channel,
       // the bot is a member of the group — add it to watchedChannels automatically.
-      if (!watchedChannels.has(nest) && (nest.startsWith("chat/") || nest.startsWith("heap/"))) {
+      if (
+        !watchedChannels.has(nest) &&
+        (nest.startsWith("chat/") || nest.startsWith("heap/") || nest.startsWith("diary/"))
+      ) {
         watchedChannels.add(nest);
         runtime.log?.(`[tlon] Auto-watching channel from firehose: ${nest}`);
       }
@@ -2808,8 +2811,12 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
               if (event.channels && typeof event.channels === "object") {
                 const channels = event.channels as Record<string, any>;
                 for (const [channelNest, _channelData] of Object.entries(channels)) {
-                  // Only monitor chat and heap channels
-                  if (!channelNest.startsWith("chat/") && !channelNest.startsWith("heap/")) {
+                  // Only monitor chat, heap, and diary channels
+                  if (
+                    !channelNest.startsWith("chat/") &&
+                    !channelNest.startsWith("heap/") &&
+                    !channelNest.startsWith("diary/")
+                  ) {
                     continue;
                   }
 
@@ -2856,7 +2863,11 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
                 const join = event.join as { group?: string; channels?: string[] };
                 if (join.channels) {
                   for (const channelNest of join.channels) {
-                    if (!channelNest.startsWith("chat/") && !channelNest.startsWith("heap/")) {
+                    if (
+                      !channelNest.startsWith("chat/") &&
+                      !channelNest.startsWith("heap/") &&
+                      !channelNest.startsWith("diary/")
+                    ) {
                       continue;
                     }
                     if (!watchedChannels.has(channelNest)) {
