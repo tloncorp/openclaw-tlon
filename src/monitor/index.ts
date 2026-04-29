@@ -1466,8 +1466,11 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
           runtime,
         );
         if (threadContextHistory.length > 0) {
-          const threadContext = threadContextHistory
-            .slice(-20) // Last 20 thread messages for context
+          const contextMessages =
+            threadContextHistory.length <= 20
+              ? threadContextHistory
+              : [threadContextHistory[0], ...threadContextHistory.slice(-(20 - 1))];
+          const threadContext = contextMessages
             .map(
               (msg) => `${formatShipWithNickname(msg.author)}: ${sanitizeMessageText(msg.content)}`,
             )
