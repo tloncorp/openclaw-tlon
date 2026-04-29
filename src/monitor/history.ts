@@ -213,7 +213,7 @@ export async function fetchParentPostHistoryEntry(
   runtime?: RuntimeEnv,
 ): Promise<TlonHistoryEntry | null> {
   try {
-    const scryPath = `/channels/v4/${channelNest}/posts/post/id/${formatUd(parentId)}.json`;
+    const scryPath = `/channels/v5/${channelNest}/posts/post/${formatUd(parentId)}`;
     runtime?.log?.(`[tlon] Fetching parent post: ${scryPath}`);
     const data: any = await api.scry(scryPath);
 
@@ -227,7 +227,7 @@ export async function fetchParentPostHistoryEntry(
     }
 
     return {
-      author: essay?.author || "unknown",
+      author: typeof essay?.author === "string" ? essay.author : "unknown",
       content,
       timestamp: essay?.sent || Date.now(),
       id: seal?.id || parentId,
