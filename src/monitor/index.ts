@@ -100,6 +100,7 @@ import { createComputingPresenceTracker } from "./computing-presence.js";
 import { fetchAllChannels, fetchInitData } from "./discovery.js";
 import {
   cacheMessage,
+  buildThreadContextMessage,
   lookupCachedMessage,
   getChannelHistory,
   fetchChannelHistory,
@@ -1466,23 +1467,16 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
           runtime,
         );
         if (threadContextHistory.length > 0) {
-          const contextMessages =
-            threadContextHistory.length <= 20
-              ? threadContextHistory
-              : [threadContextHistory[0], ...threadContextHistory.slice(-(20 - 1))];
-          const threadContext = contextMessages
-            .map(
-              (msg) => `${formatShipWithNickname(msg.author)}: ${sanitizeMessageText(msg.content)}`,
-            )
-            .join("\n");
-
-          // Prepend thread context to the message
-          // Include note about ongoing conversation for agent judgment
-          const contextNote = `[Thread conversation - ${contextMessages.length} messages including the parent post. You are participating in this thread. Only respond if relevant or helpful - you don't need to reply to every message.]`;
-          messageText = `${contextNote}\n\n[Previous messages]\n${threadContext}\n\n[Current message]\n${messageText}`;
-          runtime?.log?.(
-            `[tlon] Added thread context (${contextMessages.length} messages, parent included) to message`,
-          );
+          const threadContextMessage = buildThreadContextMessage(threadContextHistory, messageText, {
+            formatAuthor: formatShipWithNickname,
+            sanitizeContent: sanitizeMessageText,
+          });
+          if (threadContextMessage) {
+            messageText = threadContextMessage.messageText;
+            runtime?.log?.(
+              `[tlon] Added thread context (${threadContextMessage.contextMessages.length} messages, parent included) to message`,
+            );
+          }
         }
       } catch (error: any) {
         runtime?.log?.(`[tlon] Could not fetch thread context: ${error?.message ?? String(error)}`);

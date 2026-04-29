@@ -27,6 +27,8 @@ export type TlonHistoryEntry = {
   id?: string;
 };
 
+export const MAX_THREAD_CONTEXT_MESSAGES = 20;
+
 function normalizeMessageId(id: string | number | undefined | null): string {
   return String(id ?? "").replace(/\./g, "");
 }
@@ -216,7 +218,7 @@ export async function fetchParentPostHistoryEntry(
     const data: any = await api.scry(scryPath);
 
     const post = data?.post ?? data;
-    const essay = post?.essay || post?.["r-post"]?.set?.essay;
+    const essay = post?.essay || post?.memo || post?.["r-post"]?.set?.essay;
     const seal = post?.seal || post?.["r-post"]?.set?.seal;
     const content = extractMessageText(essay?.content || []);
     if (!content) {
@@ -234,6 +236,45 @@ export async function fetchParentPostHistoryEntry(
     runtime?.log?.(`[tlon] Error fetching parent post: ${error?.message ?? String(error)}`);
     return null;
   }
+}
+
+export function retainThreadContextMessages(
+  threadContextHistory: TlonHistoryEntry[],
+  maxMessages = MAX_THREAD_CONTEXT_MESSAGES,
+): TlonHistoryEntry[] {
+  if (threadContextHistory.length <= maxMessages) {
+    return threadContextHistory;
+  }
+  return [threadContextHistory[0], ...threadContextHistory.slice(-(maxMessages - 1))];
+}
+
+export function buildThreadContextMessage(
+  threadContextHistory: TlonHistoryEntry[],
+  currentMessageText: string,
+  opts: {
+    formatAuthor: (author: string) => string;
+    sanitizeContent: (content: string) => string;
+    maxMessages?: number;
+  },
+): { messageText: string; contextMessages: TlonHistoryEntry[] } | null {
+  if (threadContextHistory.length === 0) {
+    return null;
+  }
+
+  const contextMessages = retainThreadContextMessages(
+    threadContextHistory,
+    opts.maxMessages ?? MAX_THREAD_CONTEXT_MESSAGES,
+  );
+  const threadContext = contextMessages
+    .map((msg) => `${opts.formatAuthor(msg.author)}: ${opts.sanitizeContent(msg.content)}`)
+    .join("\n");
+  const contextNote = `[Thread conversation - ${contextMessages.length} messages including the parent post. You are participating in this thread. Only respond if relevant or helpful - you don't need to reply to every message.]`;
+  return {
+    messageText:
+      `${contextNote}\n\n[Previous messages]\n${threadContext}\n\n` +
+      `[Current message]\n${currentMessageText}`,
+    contextMessages,
+  };
 }
 
 /**
