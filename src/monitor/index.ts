@@ -1478,10 +1478,10 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
 
           // Prepend thread context to the message
           // Include note about ongoing conversation for agent judgment
-          const contextNote = `[Thread conversation - ${threadContextHistory.length} messages including the parent post. You are participating in this thread. Only respond if relevant or helpful - you don't need to reply to every message.]`;
+          const contextNote = `[Thread conversation - ${contextMessages.length} messages including the parent post. You are participating in this thread. Only respond if relevant or helpful - you don't need to reply to every message.]`;
           messageText = `${contextNote}\n\n[Previous messages]\n${threadContext}\n\n[Current message]\n${messageText}`;
           runtime?.log?.(
-            `[tlon] Added thread context (${threadContextHistory.length} messages, parent included) to message`,
+            `[tlon] Added thread context (${contextMessages.length} messages, parent included) to message`,
           );
         }
       } catch (error: any) {
