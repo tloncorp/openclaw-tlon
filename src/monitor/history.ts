@@ -213,7 +213,8 @@ export async function fetchParentPostHistoryEntry(
   runtime?: RuntimeEnv,
 ): Promise<TlonHistoryEntry | null> {
   try {
-    const scryPath = `/channels/v5/${channelNest}/posts/post/${formatUd(parentId)}/channel-post-5`;
+    // Mirrors resolveCiteContent: channels +on-peek matches `[%post time=@ ~]`, mark goes in `.json` extension.
+    const scryPath = `/channels/v4/${channelNest}/posts/post/${formatUd(parentId)}.json`;
     runtime?.log?.(`[tlon] Fetching parent post: ${scryPath}`);
     const data: any = await api.scry(scryPath);
 

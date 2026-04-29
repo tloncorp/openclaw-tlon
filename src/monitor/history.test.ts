@@ -45,6 +45,64 @@ describe("fetchParentPostHistoryEntry", () => {
       id: "170.141.184.507.939.843.704.966.283.402.546.249.728",
     });
   });
+
+  it("scries the channels-app post path with @ud-formatted id and .json mark", async () => {
+    const calls: string[] = [];
+    const api = {
+      scry: async (path: string) => {
+        calls.push(path);
+        return {
+          essay: {
+            author: "~nec",
+            sent: 42,
+            content: [{ inline: ["hi"] }],
+          },
+          seal: { id: "170.141.184.507.939.843.704.966.283.402.546.249.728" },
+        };
+      },
+    };
+
+    await fetchParentPostHistoryEntry(
+      api,
+      "diary/~dirmec-dolbes-finned-palmer/tf4e505c",
+      "170141184507939843704966283402546249728",
+    );
+
+    expect(calls).toEqual([
+      "/channels/v4/diary/~dirmec-dolbes-finned-palmer/tf4e505c/posts/post/170.141.184.507.939.843.704.966.283.402.546.249.728.json",
+    ]);
+  });
+
+  it("parses the channel-post JSON shape (essay + seal at root)", async () => {
+    const api = {
+      scry: async () => ({
+        seal: {
+          id: "170.141.184.507.939.843.704.966.283.402.546.249.728",
+          seq: 1,
+        },
+        revision: "0",
+        essay: {
+          author: "~nec",
+          sent: 999,
+          content: [{ inline: ["Heartbeat"] }],
+        },
+        type: "post",
+      }),
+    };
+
+    const entry = await fetchParentPostHistoryEntry(
+      api,
+      "diary/~ship/plans",
+      "170141184507939843704966283402546249728",
+    );
+
+    expect(entry).toEqual({
+      author: "~nec",
+      content: "Heartbeat",
+      timestamp: 999,
+      id: "170.141.184.507.939.843.704.966.283.402.546.249.728",
+    });
+  });
 });
 
 describe("retainThreadContextMessages", () => {
