@@ -1,4 +1,5 @@
 import type { RuntimeEnv } from "openclaw/plugin-sdk/tlon";
+import { scry } from "@tloncorp/api";
 import { extractMessageText } from "./utils.js";
 
 /**
@@ -213,9 +214,9 @@ export async function fetchParentPostHistoryEntry(
   runtime?: RuntimeEnv,
 ): Promise<TlonHistoryEntry | null> {
   try {
-    const scryPath = `/channels/v5/${channelNest}/posts/post/${formatUd(parentId)}`;
+    const scryPath = `/v5/${channelNest}/posts/post/${formatUd(parentId)}`;
     runtime?.log?.(`[tlon] Fetching parent post: ${scryPath}`);
-    const data: any = await api.scry(scryPath);
+    const data: any = await scry({ app: "channels", path: scryPath });
 
     const post = data?.post ?? data;
     const essay = post?.essay || post?.memo || post?.["r-post"]?.set?.essay;
