@@ -103,7 +103,7 @@ import {
   lookupCachedMessage,
   getChannelHistory,
   fetchChannelHistory,
-  fetchThreadHistory,
+  fetchThreadContextHistory,
 } from "./history.js";
 import {
   downloadMessageImages,
@@ -1458,9 +1458,15 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     // Fetch thread context when entering a thread for the first time
     if (isThreadReply && parentId && groupChannel) {
       try {
-        const threadHistory = await fetchThreadHistory(api, groupChannel, parentId, 20, runtime);
-        if (threadHistory.length > 0) {
-          const threadContext = threadHistory
+        const threadContextHistory = await fetchThreadContextHistory(
+          api,
+          groupChannel,
+          parentId,
+          20,
+          runtime,
+        );
+        if (threadContextHistory.length > 0) {
+          const threadContext = threadContextHistory
             .slice(-20) // Last 20 thread messages for context
             .map(
               (msg) => `${formatShipWithNickname(msg.author)}: ${sanitizeMessageText(msg.content)}`,
@@ -1469,10 +1475,10 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
 
           // Prepend thread context to the message
           // Include note about ongoing conversation for agent judgment
-          const contextNote = `[Thread conversation - ${threadHistory.length} previous replies. You are participating in this thread. Only respond if relevant or helpful - you don't need to reply to every message.]`;
+          const contextNote = `[Thread conversation - ${threadContextHistory.length} messages including the parent post. You are participating in this thread. Only respond if relevant or helpful - you don't need to reply to every message.]`;
           messageText = `${contextNote}\n\n[Previous messages]\n${threadContext}\n\n[Current message]\n${messageText}`;
           runtime?.log?.(
-            `[tlon] Added thread context (${threadHistory.length} replies) to message`,
+            `[tlon] Added thread context (${threadContextHistory.length} messages, parent included) to message`,
           );
         }
       } catch (error: any) {

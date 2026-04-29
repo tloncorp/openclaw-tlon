@@ -27,14 +27,18 @@ export type TlonHistoryEntry = {
   id?: string;
 };
 
+function normalizeMessageId(id: string | number | undefined | null): string {
+  return String(id ?? "").replace(/\./g, "");
+}
+
 const messageCache = new Map<string, TlonHistoryEntry[]>();
 const MAX_CACHED_MESSAGES = 100;
 
 export function lookupCachedMessage(channelNest: string, messageId: string): TlonHistoryEntry | undefined {
   const cache = messageCache.get(channelNest);
   if (!cache) return undefined;
-  const normalizedId = String(messageId).replace(/\./g, "");
-  return cache.find((m) => m.id && String(m.id).replace(/\./g, "") === normalizedId);
+  const normalizedId = normalizeMessageId(messageId);
+  return cache.find((m) => m.id && normalizeMessageId(m.id) === normalizedId);
 }
 
 export function cacheMessage(channelNest: string, message: TlonHistoryEntry) {
@@ -195,4 +199,70 @@ export async function fetchThreadHistory(
     }
     return [];
   }
+}
+
+/**
+ * Fetch the parent post body for a thread.
+ */
+export async function fetchParentPostHistoryEntry(
+  api: { scry: (path: string) => Promise<unknown> },
+  channelNest: string,
+  parentId: string,
+  runtime?: RuntimeEnv,
+): Promise<TlonHistoryEntry | null> {
+  try {
+    const scryPath = `/channels/v4/${channelNest}/posts/post/id/${formatUd(parentId)}.json`;
+    runtime?.log?.(`[tlon] Fetching parent post: ${scryPath}`);
+    const data: any = await api.scry(scryPath);
+
+    const post = data?.post ?? data;
+    const essay = post?.essay || post?.["r-post"]?.set?.essay;
+    const seal = post?.seal || post?.["r-post"]?.set?.seal;
+    const content = extractMessageText(essay?.content || []);
+    if (!content) {
+      runtime?.log?.(`[tlon] Parent post has no text content: ${parentId}`);
+      return null;
+    }
+
+    return {
+      author: essay?.author || "unknown",
+      content,
+      timestamp: essay?.sent || Date.now(),
+      id: seal?.id || parentId,
+    };
+  } catch (error: any) {
+    runtime?.log?.(`[tlon] Error fetching parent post: ${error?.message ?? String(error)}`);
+    return null;
+  }
+}
+
+/**
+ * Assemble complete thread context with parent post first, then replies.
+ */
+export async function fetchThreadContextHistory(
+  api: { scry: (path: string) => Promise<unknown> },
+  channelNest: string,
+  parentId: string,
+  count = 50,
+  runtime?: RuntimeEnv,
+): Promise<TlonHistoryEntry[]> {
+  const [parentPost, replies] = await Promise.all([
+    fetchParentPostHistoryEntry(api, channelNest, parentId, runtime),
+    fetchThreadHistory(api, channelNest, parentId, count, runtime),
+  ]);
+
+  const ordered = [parentPost, ...replies].filter((entry): entry is TlonHistoryEntry => Boolean(entry));
+  const seen = new Set<string>();
+  const deduped: TlonHistoryEntry[] = [];
+
+  for (const entry of ordered) {
+    const key = normalizeMessageId(entry.id ?? `${entry.author}:${entry.timestamp}:${entry.content}`);
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    deduped.push(entry);
+  }
+
+  return deduped;
 }
