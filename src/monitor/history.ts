@@ -256,7 +256,9 @@ export async function fetchThreadContextHistory(
   const deduped: TlonHistoryEntry[] = [];
 
   for (const entry of ordered) {
-    const key = normalizeMessageId(entry.id ?? `${entry.author}:${entry.timestamp}:${entry.content}`);
+    const key = entry.id
+      ? normalizeMessageId(entry.id)
+      : `${entry.author}:${entry.timestamp}:${entry.content}`;
     if (seen.has(key)) {
       continue;
     }
