@@ -105,6 +105,20 @@ describe("handleOwnerListenCommand: per-channel", () => {
     const text = await handleOwnerListenCommand(stub.bridge, "", "tlon:~zod");
     expect(text).toContain("Usage: /owner-listen");
   });
+
+  it("passes the user-typed nest through to the bridge for canonicalization", async () => {
+    // Bridge is responsible for normalizing the nest before storage so a missing
+    // "~" or odd casing still matches incoming runtime nest events. The handler
+    // itself is not in that path — it just hands the value off.
+    const stub = makeStub({ ownedNests: new Set(["chat/zod/general"]) });
+    const text = await handleOwnerListenCommand(
+      stub.bridge,
+      "off chat/zod/general",
+      "tlon:~zod",
+    );
+    expect(text).toBe("Owner-listen is now off for chat/zod/general.");
+    expect(stub.setDisabledCalls).toEqual([{ nest: "chat/zod/general", disabled: true }]);
+  });
 });
 
 describe("handleOwnerListenCommand: global kill switch", () => {

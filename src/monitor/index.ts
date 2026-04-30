@@ -79,7 +79,7 @@ import {
 import { getTlonRuntime } from "../runtime.js";
 import { setSessionRole } from "../session-roles.js";
 import { createSettingsManager, type TlonSettingsStore } from "../settings.js";
-import { normalizeShip, parseChannelNest } from "../targets.js";
+import { canonicalizeNest, normalizeShip, parseChannelNest } from "../targets.js";
 import { createTlonTelemetry } from "../telemetry.js";
 import { resolveTlonAccount } from "../types.js";
 import { configureTlonApiWithPoke } from "../urbit/api-client.js";
@@ -331,8 +331,18 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     : null;
   setEffectiveOwnerShip(account.accountId, effectiveOwnerShip);
   let effectiveOwnerListenEnabled: boolean = account.ownerListenEnabled ?? true;
+  // Canonicalize on every read so an entry stored from a slightly-off user
+  // input (e.g. missing "~" or wrong case) still matches incoming nest events.
+  const canonicalizeNestList = (list: readonly string[]): string[] => {
+    const out = new Set<string>();
+    for (const raw of list) {
+      const canonical = canonicalizeNest(raw);
+      if (canonical) out.add(canonical);
+    }
+    return [...out];
+  };
   let effectiveOwnerListenDisabled: Set<string> = new Set(
-    account.ownerListenDisabledChannels ?? [],
+    canonicalizeNestList(account.ownerListenDisabledChannels ?? []),
   );
   let pendingApprovals: PendingApproval[] = [];
   let currentSettings: TlonSettingsStore = {};
@@ -609,7 +619,9 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       );
     }
     if (currentSettings.ownerListenDisabledChannels !== undefined) {
-      effectiveOwnerListenDisabled = new Set(currentSettings.ownerListenDisabledChannels);
+      effectiveOwnerListenDisabled = new Set(
+        canonicalizeNestList(currentSettings.ownerListenDisabledChannels),
+      );
       runtime.log?.(
         `[tlon] Loaded ${effectiveOwnerListenDisabled.size} owner-listen-disabled channel(s) from settings`,
       );
@@ -1333,13 +1345,22 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       return enabled;
     },
     isOwnerListenDisabled(nest: string) {
-      return effectiveOwnerListenDisabled.has(nest);
+      const canonical = canonicalizeNest(nest);
+      if (!canonical) {
+        return false;
+      }
+      return effectiveOwnerListenDisabled.has(canonical);
     },
     async setOwnerListenDisabled(nest: string, disabled: boolean) {
+      const canonical = canonicalizeNest(nest);
+      if (!canonical) {
+        runtime.error?.(`[tlon] setOwnerListenDisabled: cannot parse nest ${nest}`);
+        return !disabled;
+      }
       if (disabled) {
-        effectiveOwnerListenDisabled.add(nest);
+        effectiveOwnerListenDisabled.add(canonical);
       } else {
-        effectiveOwnerListenDisabled.delete(nest);
+        effectiveOwnerListenDisabled.delete(canonical);
       }
       const list = [...effectiveOwnerListenDisabled];
       try {
@@ -2811,7 +2832,9 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       }
 
       if (newSettings.ownerListenDisabledChannels !== undefined) {
-        effectiveOwnerListenDisabled = new Set(newSettings.ownerListenDisabledChannels);
+        effectiveOwnerListenDisabled = new Set(
+          canonicalizeNestList(newSettings.ownerListenDisabledChannels),
+        );
         runtime.log?.(
           `[tlon] Settings: ownerListenDisabledChannels updated (${effectiveOwnerListenDisabled.size} channel(s) disabled)`,
         );

@@ -35,6 +35,20 @@ export function parseChannelNest(raw: string): { hostShip: string; channelName: 
   return { hostShip: result.hostShip, channelName: result.channelName };
 }
 
+/**
+ * Return the canonical form of a channel nest, or null if it doesn't parse.
+ * Lowercases the nest prefix, normalizes the host ship to "~ship" form, and
+ * preserves channel-name case. Use this whenever a nest is about to be stored
+ * or compared against runtime nest values, which always arrive canonical.
+ */
+export function canonicalizeNest(raw: string): string | null {
+  const parsed = parseNest(raw);
+  if (!parsed) {
+    return null;
+  }
+  return `${parsed.nestPrefix}/${parsed.hostShip}/${parsed.channelName}`;
+}
+
 export function parseTlonTarget(raw?: string | null): TlonTarget | null {
   const trimmed = raw?.trim();
   if (!trimmed) {
