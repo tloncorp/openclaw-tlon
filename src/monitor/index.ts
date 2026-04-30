@@ -67,6 +67,7 @@ import {
   ACTIVE_WINDOW_SECS,
   OFFLINE_REPLY_COOLDOWN_SECS,
 } from "../gateway-status.js";
+import { handleOwnerListenCommand } from "../owner-listen-command.js";
 import {
   registerPersistCallback,
   syncPendingNudgeFromStore,
@@ -137,6 +138,7 @@ import {
   extractCites,
   formatModelName,
   isBotMentioned,
+  isOwnerListenSlashCommand,
   stripBotMention,
   isDmAllowed,
   isSummarizationRequest,
@@ -2213,6 +2215,33 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         ? response?.post?.["r-post"]?.reply?.["r-reply"]?.set?.seal
         : response?.post?.["r-post"]?.set?.seal;
       const parentId = seal?.["parent-id"] || seal?.parent || null;
+      const parsedDispatchNest = parseChannelNest(nest);
+
+      // Control-plane escape hatch: owner-listen may be disabled, but the owner
+      // still needs a no-mention way to turn it back on from the same owned
+      // channel. Handle the exact slash command before the normal engagement
+      // gate, without waking the agent/model for ordinary chatter.
+      if (
+        isOwnerListenSlashCommand(rawText) &&
+        isOwner(senderShip) &&
+        parsedDispatchNest &&
+        (parsedDispatchNest.hostShip === effectiveOwnerShip ||
+          parsedDispatchNest.hostShip === botShipName)
+      ) {
+        const args = rawText
+          .trim()
+          .replace(/^\/owner-listen(?:\s+|$)/i, "")
+          .trim();
+        const replyText = await handleOwnerListenCommand(commandBridge, args, `tlon:group:${nest}`);
+        await sendChannelPost({
+          botProfile: getBotProfile(),
+          fromShip: botShipName,
+          nest,
+          story: markdownToStory(replyText),
+          replyToId: parentId ?? undefined,
+        });
+        return;
+      }
 
       // Check if we should respond:
       // 1. Direct mention always triggers response
@@ -2225,7 +2254,6 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         isThreadReply && parentId && participatedThreads.has(String(parentId)),
       );
       const isOwnerBlob = hasBlob && isOwner(senderShip);
-      const parsedDispatchNest = parseChannelNest(nest);
       const engageDecision = shouldEngageInGroup({
         mentioned,
         inParticipatedThread,

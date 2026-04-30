@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { nestFromCtxFrom, shouldEngageInGroup } from "./utils.js";
+import { isOwnerListenSlashCommand, nestFromCtxFrom, shouldEngageInGroup } from "./utils.js";
 
 const OWNER = "~zod";
 const BOT = "~bus";
@@ -96,6 +96,20 @@ describe("shouldEngageInGroup", () => {
       engage: false,
       reason: "skip",
     });
+  });
+});
+
+describe("isOwnerListenSlashCommand", () => {
+  it("matches exact /owner-listen commands with optional args", () => {
+    expect(isOwnerListenSlashCommand("/owner-listen")).toBe(true);
+    expect(isOwnerListenSlashCommand(" /owner-listen on")).toBe(true);
+    expect(isOwnerListenSlashCommand("/OWNER-LISTEN all off")).toBe(true);
+  });
+
+  it("does not match mentions or similarly-prefixed commands", () => {
+    expect(isOwnerListenSlashCommand("~bus /owner-listen on")).toBe(false);
+    expect(isOwnerListenSlashCommand("/owner-listening on")).toBe(false);
+    expect(isOwnerListenSlashCommand("hello /owner-listen on")).toBe(false);
   });
 });
 

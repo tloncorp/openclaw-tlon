@@ -183,6 +183,11 @@ export function nestFromCtxFrom(from: string | undefined | null): string | null 
   return m ? m[1] : null;
 }
 
+/** True for the exact /owner-listen slash command, with optional args. */
+export function isOwnerListenSlashCommand(messageText: string): boolean {
+  return /^\/owner-listen(?:\s|$)/i.test(messageText.trim());
+}
+
 /**
  * Strip bot ship mention from message text for command detection.
  * "~bot-ship /status" → "/status"
