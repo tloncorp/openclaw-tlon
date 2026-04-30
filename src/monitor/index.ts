@@ -1316,7 +1316,13 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
 
     // ── Owner-listen controls ────────────────────────────────────────────
     isOwnedChannel(nest: string) {
-      const parsed = parseChannelNest(nest);
+      // Canonicalize first so case variants in user input (e.g.
+      // `chat/~ZOD/general`) match the lowercase owner/bot ship strings.
+      const canonical = canonicalizeNest(nest);
+      if (!canonical) {
+        return false;
+      }
+      const parsed = parseChannelNest(canonical);
       if (!parsed) {
         return false;
       }
