@@ -18,6 +18,12 @@ describe("canonicalizeNest", () => {
     expect(canonicalizeNest("Heap/~zod/links")).toBe("heap/~zod/links");
   });
 
+  it("lowercases the host ship (Urbit @p is always lowercase)", () => {
+    expect(canonicalizeNest("chat/~ZOD/general")).toBe("chat/~zod/general");
+    expect(canonicalizeNest("chat/ZOD/general")).toBe("chat/~zod/general");
+    expect(canonicalizeNest("chat/~Sampel-Palnet/foo")).toBe("chat/~sampel-palnet/foo");
+  });
+
   it("preserves channel-name case", () => {
     expect(canonicalizeNest("chat/~zod/General")).toBe("chat/~zod/General");
     expect(canonicalizeNest("chat/~zod/q6QH2RoI")).toBe("chat/~zod/q6QH2RoI");
