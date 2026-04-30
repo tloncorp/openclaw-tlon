@@ -88,6 +88,15 @@ export async function handleOwnerListenCommand(
     return "Usage: /owner-listen [on|off|status|list] [<channel-nest>] | /owner-listen all [on|off]";
   }
 
-  const listening = await bridge.setOwnerListenDisabled(targetNest, action === "off");
-  return `Owner-listen is now ${listening ? "on" : "off"} for ${targetNest}.`;
+  await bridge.setOwnerListenDisabled(targetNest, action === "off");
+  const channelOff = bridge.isOwnerListenDisabled(targetNest);
+  const global = bridge.getOwnerListenGlobal();
+  const effective = global && !channelOff;
+
+  if (action === "on" && !global) {
+    return `Owner-listen for ${targetNest}: off (global is off; channel mute cleared). Run /owner-listen all on to enable it.`;
+  }
+
+  const detail = !global ? "global is off" : channelOff ? "channel is muted" : "active";
+  return `Owner-listen for ${targetNest}: ${effective ? "on" : "off"} (${detail}).`;
 }

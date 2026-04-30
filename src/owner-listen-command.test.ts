@@ -65,7 +65,7 @@ describe("handleOwnerListenCommand: per-channel", () => {
   it("off in owned channel calls setOwnerListenDisabled(nest, true)", async () => {
     const stub = makeStub();
     const text = await handleOwnerListenCommand(stub.bridge, "off", `tlon:group:${OWNED_NEST}`);
-    expect(text).toBe(`Owner-listen is now off for ${OWNED_NEST}.`);
+    expect(text).toBe(`Owner-listen for ${OWNED_NEST}: off (channel is muted).`);
     expect(stub.setDisabledCalls).toEqual([{ nest: OWNED_NEST, disabled: true }]);
   });
 
@@ -76,8 +76,18 @@ describe("handleOwnerListenCommand: per-channel", () => {
       `on ${OWNED_NEST}`,
       "tlon:~zod", // ctx is a DM; explicit nest is the target
     );
-    expect(text).toBe(`Owner-listen is now on for ${OWNED_NEST}.`);
+    expect(text).toBe(`Owner-listen for ${OWNED_NEST}: on (active).`);
     expect(stub.setDisabledCalls).toEqual([{ nest: OWNED_NEST, disabled: false }]);
+  });
+
+  it("on clears channel mute but reports global-off effective state", async () => {
+    const stub = makeStub({ global: false, disabled: new Set([OWNED_NEST]) });
+    const text = await handleOwnerListenCommand(stub.bridge, `on ${OWNED_NEST}`, "tlon:~zod");
+    expect(text).toBe(
+      `Owner-listen for ${OWNED_NEST}: off (global is off; channel mute cleared). Run /owner-listen all on to enable it.`,
+    );
+    expect(stub.setDisabledCalls).toEqual([{ nest: OWNED_NEST, disabled: false }]);
+    expect(stub.disabled.has(OWNED_NEST)).toBe(false);
   });
 
   it("status reports muted when channel is in disabled set", async () => {
@@ -111,12 +121,8 @@ describe("handleOwnerListenCommand: per-channel", () => {
     // "~" or odd casing still matches incoming runtime nest events. The handler
     // itself is not in that path — it just hands the value off.
     const stub = makeStub({ ownedNests: new Set(["chat/zod/general"]) });
-    const text = await handleOwnerListenCommand(
-      stub.bridge,
-      "off chat/zod/general",
-      "tlon:~zod",
-    );
-    expect(text).toBe("Owner-listen is now off for chat/zod/general.");
+    const text = await handleOwnerListenCommand(stub.bridge, "off chat/zod/general", "tlon:~zod");
+    expect(text).toBe("Owner-listen for chat/zod/general: off (channel is muted).");
     expect(stub.setDisabledCalls).toEqual([{ nest: "chat/zod/general", disabled: true }]);
   });
 });
@@ -148,22 +154,14 @@ describe("handleOwnerListenCommand: global kill switch", () => {
 
   it("/owner-listen on all (swapped order) calls setOwnerListenGlobal(true)", async () => {
     const stub = makeStub({ global: false });
-    const text = await handleOwnerListenCommand(
-      stub.bridge,
-      "on all",
-      `tlon:group:${OWNED_NEST}`,
-    );
+    const text = await handleOwnerListenCommand(stub.bridge, "on all", `tlon:group:${OWNED_NEST}`);
     expect(text).toBe("Global owner-listen is now on.");
     expect(stub.setGlobalCalls).toEqual([true]);
   });
 
   it("/owner-listen off all (swapped order) calls setOwnerListenGlobal(false)", async () => {
     const stub = makeStub();
-    const text = await handleOwnerListenCommand(
-      stub.bridge,
-      "off all",
-      `tlon:group:${OWNED_NEST}`,
-    );
+    const text = await handleOwnerListenCommand(stub.bridge, "off all", `tlon:group:${OWNED_NEST}`);
     expect(text).toBe("Global owner-listen is now off.");
     expect(stub.setGlobalCalls).toEqual([false]);
   });
