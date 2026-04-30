@@ -114,4 +114,11 @@ export const TlonConfigSchema = z.object({
   ownerListenDisabledChannels: z.array(ChannelNestSchema).optional(),
 });
 
-export const tlonChannelConfigSchema = buildChannelConfigSchema(TlonConfigSchema);
+// Cast bridges a type-only mismatch: this repo's zod and openclaw's bundled
+// zod can resolve to different minors (e.g. under pnpm 9, which doesn't dedup
+// across openclaw's nested postinstall). The two copies are runtime-compatible
+// — only zod's literal `version.minor` narrowing differs. Cast to the
+// function's declared parameter type so we adopt whichever zod openclaw uses.
+export const tlonChannelConfigSchema = buildChannelConfigSchema(
+  TlonConfigSchema as unknown as Parameters<typeof buildChannelConfigSchema>[0],
+);
