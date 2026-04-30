@@ -132,6 +132,28 @@ describe("handleOwnerListenCommand: global kill switch", () => {
     expect(stub.setGlobalCalls).toEqual([true]);
   });
 
+  it("/owner-listen on all (swapped order) calls setOwnerListenGlobal(true)", async () => {
+    const stub = makeStub({ global: false });
+    const text = await handleOwnerListenCommand(
+      stub.bridge,
+      "on all",
+      `tlon:group:${OWNED_NEST}`,
+    );
+    expect(text).toBe("Global owner-listen is now on.");
+    expect(stub.setGlobalCalls).toEqual([true]);
+  });
+
+  it("/owner-listen off all (swapped order) calls setOwnerListenGlobal(false)", async () => {
+    const stub = makeStub();
+    const text = await handleOwnerListenCommand(
+      stub.bridge,
+      "off all",
+      `tlon:group:${OWNED_NEST}`,
+    );
+    expect(text).toBe("Global owner-listen is now off.");
+    expect(stub.setGlobalCalls).toEqual([false]);
+  });
+
   it("/owner-listen all garbage returns usage", async () => {
     const stub = makeStub();
     const text = await handleOwnerListenCommand(

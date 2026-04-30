@@ -21,11 +21,16 @@ export async function handleOwnerListenCommand(
   ctxFrom: string | undefined,
 ): Promise<string> {
   const args = (rawArgs ?? "").trim().split(/\s+/).filter(Boolean);
-  const first = (args[0] ?? "").toLowerCase();
+  const argsLower = args.map((a) => a.toLowerCase());
+  const first = argsLower[0] ?? "";
 
-  // Global kill switch
-  if (first === "all") {
-    const sub = (args[1] ?? "").toLowerCase();
+  // Global kill switch — accept either order:
+  //   /owner-listen all                  → status
+  //   /owner-listen all on  | all off    → flip
+  //   /owner-listen on all  | off all    → flip (swapped)
+  const allIdx = argsLower.indexOf("all");
+  if (allIdx !== -1) {
+    const sub = argsLower.find((a, i) => i !== allIdx) ?? "";
     if (sub === "") {
       const cur = bridge.getOwnerListenGlobal();
       const disabledCount = bridge.listOwnerListenDisabled().length;
