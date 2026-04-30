@@ -31,6 +31,10 @@ export type TlonResolvedAccount = {
   /** Max consecutive responses to another bot before stopping (default: 3) */
   maxConsecutiveBotResponses: number | null;
   telemetry: TlonTelemetryConfig;
+  /** Global owner-listen toggle (default true). */
+  ownerListenEnabled: boolean | null;
+  /** Channels opted out of owner-listen even when the global toggle is on. */
+  ownerListenDisabledChannels: string[];
 };
 
 type TlonTelemetryInput = {
@@ -73,6 +77,8 @@ export function resolveTlonAccount(
         reactionLevel?: string;
         maxConsecutiveBotResponses?: number;
         telemetry?: TlonTelemetryInput;
+        ownerListenEnabled?: boolean;
+        ownerListenDisabledChannels?: string[];
         accounts?: Record<string, Record<string, unknown>>;
       }
     | undefined;
@@ -103,6 +109,8 @@ export function resolveTlonAccount(
         apiKey: null,
         host: null,
       },
+      ownerListenEnabled: null,
+      ownerListenDisabledChannels: [],
     };
   }
 
@@ -145,6 +153,13 @@ export function resolveTlonAccount(
   const defaultAuthorizedShips = ((account as Record<string, unknown>)?.defaultAuthorizedShips ??
     (base as Record<string, unknown>)?.defaultAuthorizedShips ??
     []) as string[];
+  const ownerListenEnabled = ((account as Record<string, unknown>)?.ownerListenEnabled ??
+    (base as Record<string, unknown>)?.ownerListenEnabled ??
+    null) as boolean | null;
+  const ownerListenDisabledChannels = ((account as Record<string, unknown>)
+    ?.ownerListenDisabledChannels ??
+    (base as Record<string, unknown>)?.ownerListenDisabledChannels ??
+    []) as string[];
   const configured = Boolean(ship && url && code);
 
   return {
@@ -168,6 +183,8 @@ export function resolveTlonAccount(
     reactionLevel,
     maxConsecutiveBotResponses,
     telemetry,
+    ownerListenEnabled,
+    ownerListenDisabledChannels,
   };
 }
 

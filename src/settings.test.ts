@@ -197,6 +197,37 @@ describe("Settings: applySettingsUpdate", () => {
       applySettingsUpdate(base, "nudgeActiveHoursStart", 42).nudgeActiveHoursStart,
     ).toBeUndefined();
   });
+
+  it("updates ownerListenEnabled with boolean and clears on non-boolean", () => {
+    expect(applySettingsUpdate({}, "ownerListenEnabled", true).ownerListenEnabled).toBe(true);
+    expect(applySettingsUpdate({}, "ownerListenEnabled", false).ownerListenEnabled).toBe(false);
+    expect(
+      applySettingsUpdate({ ownerListenEnabled: true }, "ownerListenEnabled", "yes")
+        .ownerListenEnabled,
+    ).toBeUndefined();
+    expect(
+      applySettingsUpdate({ ownerListenEnabled: true }, "ownerListenEnabled", null)
+        .ownerListenEnabled,
+    ).toBeUndefined();
+  });
+
+  it("updates ownerListenDisabledChannels with array and filters non-strings", () => {
+    expect(
+      applySettingsUpdate({}, "ownerListenDisabledChannels", ["chat/~zod/foo", "chat/~bus/bar"])
+        .ownerListenDisabledChannels,
+    ).toEqual(["chat/~zod/foo", "chat/~bus/bar"]);
+    expect(
+      applySettingsUpdate({}, "ownerListenDisabledChannels", ["chat/~zod/foo", 42, null])
+        .ownerListenDisabledChannels,
+    ).toEqual(["chat/~zod/foo"]);
+    expect(
+      applySettingsUpdate(
+        { ownerListenDisabledChannels: ["chat/~zod/foo"] },
+        "ownerListenDisabledChannels",
+        "not-an-array",
+      ).ownerListenDisabledChannels,
+    ).toBeUndefined();
+  });
 });
 
 describe("Settings: createSettingsManager.load", () => {

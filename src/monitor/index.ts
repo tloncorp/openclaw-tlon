@@ -29,9 +29,17 @@ type ChannelResponse = {
   };
 };
 type WritResponseDelta =
-  | { add?: { essay?: Essay }; reply?: never; "add-react"?: never; "del-react"?: never }
   | {
-      reply?: { id?: string; delta?: { add?: { "reply-essay"?: Essay; id?: string } } };
+      add?: { essay?: Essay };
+      reply?: never;
+      "add-react"?: never;
+      "del-react"?: never;
+    }
+  | {
+      reply?: {
+        id?: string;
+        delta?: { add?: { "reply-essay"?: Essay; id?: string } };
+      };
       add?: never;
       "add-react"?: never;
       "del-react"?: never;
@@ -133,6 +141,7 @@ import {
   isDmAllowed,
   isSummarizationRequest,
   sanitizeMessageText,
+  shouldEngageInGroup,
   type ParsedCite,
 } from "./utils.js";
 
@@ -321,6 +330,10 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     ? normalizeShip(account.ownerShip)
     : null;
   setEffectiveOwnerShip(account.accountId, effectiveOwnerShip);
+  let effectiveOwnerListenEnabled: boolean = account.ownerListenEnabled ?? true;
+  let effectiveOwnerListenDisabled: Set<string> = new Set(
+    account.ownerListenDisabledChannels ?? [],
+  );
   let pendingApprovals: PendingApproval[] = [];
   let currentSettings: TlonSettingsStore = {};
   // Tracks whether pendingNudge has been successfully rehydrated from the settings
@@ -384,7 +397,10 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
   try {
     const selfProfile = await api.scry("/contacts/v1/self.json");
     if (selfProfile && typeof selfProfile === "object") {
-      const profile = selfProfile as { nickname?: { value?: string }; avatar?: { value?: string } };
+      const profile = selfProfile as {
+        nickname?: { value?: string };
+        avatar?: { value?: string };
+      };
       botNickname = profile.nickname?.value || null;
       botAvatar = profile.avatar?.value || null;
       if (botNickname) {
@@ -435,7 +451,11 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
 
   // Migrate file config to settings store (seed on first run)
   async function migrateConfigToSettings() {
-    const migrations: Array<{ key: string; fileValue: unknown; settingsValue: unknown }> = [
+    const migrations: Array<{
+      key: string;
+      fileValue: unknown;
+      settingsValue: unknown;
+    }> = [
       {
         key: "dmAllowlist",
         fileValue: account.dmAllowlist,
@@ -582,6 +602,18 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       setEffectiveOwnerShip(account.accountId, effectiveOwnerShip);
       runtime.log?.(`[tlon] Using ownerShip from settings store: ${effectiveOwnerShip}`);
     }
+    if (currentSettings.ownerListenEnabled !== undefined) {
+      effectiveOwnerListenEnabled = currentSettings.ownerListenEnabled;
+      runtime.log?.(
+        `[tlon] Using ownerListenEnabled from settings store: ${effectiveOwnerListenEnabled}`,
+      );
+    }
+    if (currentSettings.ownerListenDisabledChannels !== undefined) {
+      effectiveOwnerListenDisabled = new Set(currentSettings.ownerListenDisabledChannels);
+      runtime.log?.(
+        `[tlon] Loaded ${effectiveOwnerListenDisabled.size} owner-listen-disabled channel(s) from settings`,
+      );
+    }
 
     // Rehydrate pending nudge from settings store only if the scry returned real data.
     // On fallback (scry failure), leave pendingNudgeRehydrated false so the refresh
@@ -681,7 +713,9 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
           ...(signal
             ? [
                 new Promise<"aborted">((r) =>
-                  signal.addEventListener("abort", () => r("aborted"), { once: true }),
+                  signal.addEventListener("abort", () => r("aborted"), {
+                    once: true,
+                  }),
                 ),
               ]
             : []),
@@ -881,7 +915,10 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
   async function addToChannelAllowlist(ship: string, channelNest: string): Promise<void> {
     const normalizedShip = normalizeShip(ship);
     const channelRules = currentSettings.channelRules ?? {};
-    const rule = channelRules[channelNest] ?? { mode: "restricted", allowedShips: [] };
+    const rule = channelRules[channelNest] ?? {
+      mode: "restricted",
+      allowedShips: [],
+    };
     const allowedShips = [...(rule.allowedShips ?? [])]; // Clone to avoid mutation
 
     if (!allowedShips.includes(normalizedShip)) {
@@ -1261,6 +1298,71 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       }
       const success = await unblockShip(ship);
       return success ? `Unblocked ${ship}.` : `Failed to unblock ${ship}.`;
+    },
+
+    // ── Owner-listen controls ────────────────────────────────────────────
+    isOwnedChannel(nest: string) {
+      const parsed = parseChannelNest(nest);
+      if (!parsed) {
+        return false;
+      }
+      return parsed.hostShip === effectiveOwnerShip || parsed.hostShip === botShipName;
+    },
+    getOwnerListenGlobal() {
+      return effectiveOwnerListenEnabled;
+    },
+    async setOwnerListenGlobal(enabled: boolean) {
+      effectiveOwnerListenEnabled = enabled;
+      try {
+        await api.poke({
+          app: "settings",
+          mark: "settings-event",
+          json: {
+            "put-entry": {
+              desk: "moltbot",
+              "bucket-key": "tlon",
+              "entry-key": "ownerListenEnabled",
+              value: enabled,
+            },
+          },
+        });
+        runtime.log?.(`[tlon] ownerListenEnabled → ${enabled}`);
+      } catch (err) {
+        runtime.error?.(`[tlon] Failed to persist ownerListenEnabled: ${String(err)}`);
+      }
+      return enabled;
+    },
+    isOwnerListenDisabled(nest: string) {
+      return effectiveOwnerListenDisabled.has(nest);
+    },
+    async setOwnerListenDisabled(nest: string, disabled: boolean) {
+      if (disabled) {
+        effectiveOwnerListenDisabled.add(nest);
+      } else {
+        effectiveOwnerListenDisabled.delete(nest);
+      }
+      const list = [...effectiveOwnerListenDisabled];
+      try {
+        await api.poke({
+          app: "settings",
+          mark: "settings-event",
+          json: {
+            "put-entry": {
+              desk: "moltbot",
+              "bucket-key": "tlon",
+              "entry-key": "ownerListenDisabledChannels",
+              value: list,
+            },
+          },
+        });
+        runtime.log?.(`[tlon] ownerListenDisabledChannels → [${list.join(", ")}]`);
+      } catch (err) {
+        runtime.error?.(`[tlon] Failed to persist ownerListenDisabledChannels: ${String(err)}`);
+      }
+      return !disabled;
+    },
+    listOwnerListenDisabled() {
+      return [...effectiveOwnerListenDisabled];
     },
   };
   setBridge(accountKey, commandBridge);
@@ -1711,7 +1813,10 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       OriginatingChannel: "tlon",
       OriginatingTo: `tlon:${isGroup ? groupChannel : senderShip}`,
       // Include thread context for automatic reply routing
-      ...(parentId && { MessageThreadId: String(parentId), ReplyToId: String(parentId) }),
+      ...(parentId && {
+        MessageThreadId: String(parentId),
+        ReplyToId: String(parentId),
+      }),
     });
 
     const dispatchStartTime = Date.now();
@@ -2091,17 +2196,35 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       // Check if we should respond:
       // 1. Direct mention always triggers response
       // 2. Thread replies where we've participated - respond if relevant (let agent decide)
+      // 3. Owner blob-only message (image/file with no text from owner)
+      // 4. Owner-listen: owner posts in an owner/bot-hosted channel and the
+      //    channel is not in the per-channel disabled list
       const mentioned = isBotMentioned(messageText, botShipName, botNickname ?? undefined);
-      const inParticipatedThread =
-        isThreadReply && parentId && participatedThreads.has(String(parentId));
-
+      const inParticipatedThread = Boolean(
+        isThreadReply && parentId && participatedThreads.has(String(parentId)),
+      );
       const isOwnerBlob = hasBlob && isOwner(senderShip);
-      if (!mentioned && !inParticipatedThread && !isOwnerBlob) {
+      const parsedDispatchNest = parseChannelNest(nest);
+      const engageDecision = shouldEngageInGroup({
+        mentioned,
+        inParticipatedThread,
+        isOwnerBlob,
+        senderShip,
+        ownerShip: effectiveOwnerShip,
+        botShipName,
+        channelNest: nest,
+        groupHost: parsedDispatchNest?.hostShip ?? null,
+        ownerListenEnabled: effectiveOwnerListenEnabled,
+        ownerListenDisabledChannels: effectiveOwnerListenDisabled,
+      });
+      if (!engageDecision.engage) {
         return;
       }
 
       // Log why we're responding
-      if (isOwnerBlob && !mentioned && !inParticipatedThread) {
+      if (engageDecision.reason === "owner-owned") {
+        runtime.log?.(`[tlon] Owner ${senderShip} heard without mention in owned channel ${nest}`);
+      } else if (isOwnerBlob && !mentioned && !inParticipatedThread) {
         runtime.log?.(`[tlon] Responding to owner blob-only message in ${nest}`);
       } else if (inParticipatedThread && !mentioned) {
         runtime.log?.(`[tlon] Responding to thread we participated in (no mention): ${parentId}`);
@@ -2682,6 +2805,18 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         runtime.log?.(`[tlon] Settings: autoDiscoverChannels = ${effectiveAutoDiscoverChannels}`);
       }
 
+      if (newSettings.ownerListenEnabled !== undefined) {
+        effectiveOwnerListenEnabled = newSettings.ownerListenEnabled;
+        runtime.log?.(`[tlon] Settings: ownerListenEnabled = ${effectiveOwnerListenEnabled}`);
+      }
+
+      if (newSettings.ownerListenDisabledChannels !== undefined) {
+        effectiveOwnerListenDisabled = new Set(newSettings.ownerListenDisabledChannels);
+        runtime.log?.(
+          `[tlon] Settings: ownerListenDisabledChannels updated (${effectiveOwnerListenDisabled.size} channel(s) disabled)`,
+        );
+      }
+
       // ownerShip is applied on both live subscription and refresh.
       // pendingNudge is only rehydrated from the store during startup load. Once the
       // monitor is running, the in-memory pending state is authoritative so refreshes
@@ -2737,7 +2872,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       // runner's stage guard today.
       const stageChanged = prevSettings.lastNudgeStage !== newSettings.lastNudgeStage;
       if (shadowReconcileTrusted && stageChanged) {
-        const nextStage = (newSettings.lastNudgeStage ?? 0) as 0 | 1 | 2 | 3;
+        const nextStage = newSettings.lastNudgeStage ?? 0;
         setLastNudgeStageShadow(account.accountId, nextStage);
         runtime.log?.(
           `[tlon] nudge: reconciled lastNudgeStageShadow from ${source} (stage=${nextStage})`,
@@ -2860,7 +2995,10 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
 
               // Also check for the "join" event structure
               if (event.join && typeof event.join === "object") {
-                const join = event.join as { group?: string; channels?: string[] };
+                const join = event.join as {
+                  group?: string;
+                  channels?: string[];
+                };
                 if (join.channels) {
                   for (const channelNest of join.channels) {
                     if (
@@ -3124,7 +3262,9 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       }
       try {
         const refreshResult = await settingsManager.load();
-        applySettingsSnapshot(refreshResult.settings, "refresh", { fresh: refreshResult.fresh });
+        applySettingsSnapshot(refreshResult.settings, "refresh", {
+          fresh: refreshResult.fresh,
+        });
       } catch (err) {
         runtime.error?.(`[tlon] Settings refresh failed: ${String(err)}`);
       }

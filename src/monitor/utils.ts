@@ -50,7 +50,11 @@ export function extractCites(content: unknown): ParsedCite[] {
       } else if (cite.group && typeof cite.group === "string") {
         cites.push({ type: "group", group: cite.group });
       } else if (cite.desk && typeof cite.desk === "object") {
-        cites.push({ type: "desk", flag: cite.desk.flag, where: cite.desk.where });
+        cites.push({
+          type: "desk",
+          flag: cite.desk.flag,
+          where: cite.desk.where,
+        });
       } else if (cite.bait && typeof cite.bait === "object") {
         cites.push({
           type: "bait",
@@ -120,12 +124,73 @@ export function isBotMentioned(
   return false;
 }
 
+export type EngageReason = "mention" | "thread" | "owner-blob" | "owner-owned" | "skip";
+
+/**
+ * Decide whether to engage on a group-channel message.
+ *
+ * - Mentions and participated threads always engage (legacy behavior).
+ * - Owner blob-only messages engage when the caller asserts `isOwnerBlob`
+ *   (preserves existing behavior — caller still computes that flag).
+ * - Otherwise: engage when the sender is the owner AND the channel host is
+ *   the owner or the bot itself AND the global owner-listen toggle is on AND
+ *   the channel is not in the per-channel disabled list.
+ */
+export function shouldEngageInGroup(opts: {
+  mentioned: boolean;
+  inParticipatedThread: boolean;
+  isOwnerBlob: boolean;
+  senderShip: string;
+  ownerShip: string | null;
+  botShipName: string;
+  channelNest: string;
+  groupHost: string | null;
+  ownerListenEnabled: boolean;
+  ownerListenDisabledChannels: ReadonlySet<string>;
+}): { engage: boolean; reason: EngageReason } {
+  if (opts.mentioned) {
+    return { engage: true, reason: "mention" };
+  }
+  if (opts.inParticipatedThread) {
+    return { engage: true, reason: "thread" };
+  }
+  if (opts.isOwnerBlob) {
+    return { engage: true, reason: "owner-blob" };
+  }
+
+  if (!opts.ownerListenEnabled) {
+    return { engage: false, reason: "skip" };
+  }
+
+  const isOwner = opts.ownerShip !== null && opts.senderShip === opts.ownerShip;
+  const isOwned =
+    opts.groupHost !== null &&
+    (opts.groupHost === opts.ownerShip || opts.groupHost === opts.botShipName);
+  const disabled = opts.ownerListenDisabledChannels.has(opts.channelNest);
+
+  if (isOwner && isOwned && !disabled) {
+    return { engage: true, reason: "owner-owned" };
+  }
+  return { engage: false, reason: "skip" };
+}
+
+/** Parse "tlon:group:<nest>" → "<nest>", else null. */
+export function nestFromCtxFrom(from: string | undefined | null): string | null {
+  if (!from) {
+    return null;
+  }
+  const m = /^tlon:group:(.+)$/.exec(from);
+  return m ? m[1] : null;
+}
+
 /**
  * Strip bot ship mention from message text for command detection.
  * "~bot-ship /status" → "/status"
  */
 export function stripBotMention(messageText: string, botShipName: string): string {
-  if (!messageText || !botShipName) return messageText;
+  if (!messageText || !botShipName) {
+    return messageText;
+  }
   return messageText.replace(normalizeShip(botShipName), "").trim();
 }
 
@@ -349,7 +414,9 @@ export function formatChangesDate(daysAgo = 5): string {
  * Strips block directives entirely as they have no legitimate user purpose.
  */
 export function sanitizeMessageText(text: string): string {
-  if (!text) return text;
+  if (!text) {
+    return text;
+  }
 
   // Strip [BLOCK_USER: ~ship | reason] directives entirely
   let sanitized = text.replace(/\[BLOCK_USER:\s*~[\w-]+\s*\|\s*.+?\]/gi, "");
