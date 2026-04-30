@@ -87,5 +87,10 @@
       "localPath": "extensions/tlon",
       "defaultChoice": "npm"
     }
+  },
+  "pnpm": {
+    "overrides": {
+      "zod": "4.3.6"
+    }
   }
 }
