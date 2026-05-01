@@ -35,6 +35,24 @@ export function parseChannelNest(raw: string): { hostShip: string; channelName: 
   return { hostShip: result.hostShip, channelName: result.channelName };
 }
 
+/**
+ * Return the canonical form of a channel nest, or null if it doesn't parse.
+ * Lowercases the nest prefix and host ship, normalizes the host to "~ship"
+ * form, and preserves channel-name case. Use this whenever a nest is about to
+ * be stored or compared against runtime nest values, which always arrive
+ * canonical (lowercase prefix and host).
+ */
+export function canonicalizeNest(raw: string): string | null {
+  const parsed = parseNest(raw);
+  if (!parsed) {
+    return null;
+  }
+  // Urbit @p ship names are inherently lowercase; lowercase the host so a
+  // stored override matches incoming events even if the user typed `~ZOD`.
+  // Channel names remain case-sensitive.
+  return `${parsed.nestPrefix}/${parsed.hostShip.toLowerCase()}/${parsed.channelName}`;
+}
+
 export function parseTlonTarget(raw?: string | null): TlonTarget | null {
   const trimmed = raw?.trim();
   if (!trimmed) {

@@ -1,10 +1,6 @@
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import { resolveBridgeForCommand, checkOwner } from "./command-auth.js";
-import {
-  setBridge,
-  removeBridge,
-  type ApprovalCommandBridge,
-} from "./command-bridge.js";
+import { setBridge, removeBridge, type ApprovalCommandBridge } from "./command-bridge.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -17,6 +13,12 @@ function makeBridge(ownerShip: string | null): ApprovalCommandBridge {
     getPendingList: async () => "none",
     getBlockedList: async () => "none",
     handleUnblock: async () => "ok",
+    isOwnedChannel: () => false,
+    getOwnerListenGlobal: () => true,
+    setOwnerListenGlobal: async (enabled: boolean) => enabled,
+    isOwnerListenDisabled: () => false,
+    setOwnerListenDisabled: async (_nest: string, disabled: boolean) => !disabled,
+    listOwnerListenDisabled: () => [],
   };
 }
 
@@ -27,7 +29,10 @@ function makeBridge(ownerShip: string | null): ApprovalCommandBridge {
 // Track bridges we register so afterEach can clean them up
 const registered: Array<{ accountId: string | undefined; bridge: ApprovalCommandBridge }> = [];
 
-function registerBridge(accountId: string | undefined, ownerShip: string | null): ApprovalCommandBridge {
+function registerBridge(
+  accountId: string | undefined,
+  ownerShip: string | null,
+): ApprovalCommandBridge {
   const bridge = makeBridge(ownerShip);
   setBridge(accountId, bridge);
   registered.push({ accountId, bridge });
