@@ -27,6 +27,7 @@
   },
   "scripts": {
     "build": "tsc",
+    "postbuild": "node scripts/generate-channel-configs.mjs",
     "clean": "rm -rf dist",
     "dev": "./dev/run.sh",
     "dev:api:link": "./dev/link-local-api.sh",
