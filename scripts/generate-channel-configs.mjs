@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import fs from "node:fs/promises";
+import * as fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -20,7 +20,7 @@ const { tlonChannelConfigSchema } = await import(pathToFileURL(compiledSchemaPat
 
 if (!tlonChannelConfigSchema?.schema) {
   console.error(
-    "generate-channel-configs: dist/config-schema.js does not export `tlonChannelConfigSchema` with a `schema` property.",
+    `generate-channel-configs: ${compiledSchemaPath} does not export \`tlonChannelConfigSchema\` with a \`schema\` property.`,
   );
   process.exit(1);
 }
