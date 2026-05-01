@@ -27,6 +27,7 @@
   },
   "scripts": {
     "build": "tsc",
+    "postbuild": "node scripts/generate-channel-configs.mjs",
     "clean": "rm -rf dist",
     "dev": "./dev/run.sh",
     "dev:api:link": "./dev/link-local-api.sh",
@@ -50,7 +51,7 @@
     "@tloncorp/tlon-skill": "^0.3.4",
     "@urbit/aura": "^3.0.0",
     "posthog-node": "^5.28.9",
-    "zod": "^4.3.6"
+    "zod": "^4.4.1"
   },
   "devDependencies": {
     "@types/node": "^25.4.0",
@@ -61,7 +62,7 @@
     "oxlint-tsgolint": "^0.16.0",
     "typescript": "^5.7.0",
     "vitest": "^4.0.0",
-    "zod": "^4.3.6"
+    "zod": "^4.4.1"
   },
   "peerDependencies": {
     "openclaw": ">=2026.3.22"
