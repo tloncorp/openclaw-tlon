@@ -76,14 +76,14 @@ describe("Security: DM Allowlist", () => {
       expect(isDmAllowed("~sampel-palned", allowlist)).toBe(false);
     });
 
-    // NOTE: Ship names in Urbit are always lowercase by convention.
-    // This test documents current behavior - strict equality after normalization.
-    // If case-insensitivity is desired, normalizeShip should lowercase.
-    it("uses strict equality after normalization (case-sensitive)", () => {
+    // Urbit @p phonemes are inherently lowercase — `normalizeShip` lowercases
+    // its input so case variants in user-supplied ship names still match.
+    it("matches case-insensitively after normalization", () => {
       const allowlist = ["~zod"];
       expect(isDmAllowed("~zod", allowlist)).toBe(true);
-      // Different case would NOT match with current implementation
-      expect(isDmAllowed("~Zod", ["~Zod"])).toBe(true); // exact match works
+      expect(isDmAllowed("~Zod", allowlist)).toBe(true);
+      expect(isDmAllowed("~ZOD", allowlist)).toBe(true);
+      expect(isDmAllowed("~zod", ["~ZOD"])).toBe(true);
     });
 
     it("does not allow partial matches", () => {
@@ -237,6 +237,13 @@ describe("Security: Ship Normalization", () => {
     it("handles empty string", () => {
       expect(normalizeShip("")).toBe("");
       expect(normalizeShip("   ")).toBe("");
+    });
+
+    it("lowercases ship names (Urbit @p is inherently lowercase)", () => {
+      expect(normalizeShip("ZOD")).toBe("~zod");
+      expect(normalizeShip("~ZOD")).toBe("~zod");
+      expect(normalizeShip("Sampel-Palnet")).toBe("~sampel-palnet");
+      expect(normalizeShip("~Sampel-Palnet")).toBe("~sampel-palnet");
     });
   });
 });
