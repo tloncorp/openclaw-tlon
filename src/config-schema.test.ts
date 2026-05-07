@@ -105,4 +105,26 @@ describe("Tlon config schema", () => {
     });
     expect(parsed.nudgeActiveHours).toEqual({ start: "09:00", end: "17:00" });
   });
+
+  it("accepts ownerListenEnabled and ownerListenDisabledChannels", () => {
+    const parsed = TlonConfigSchema.parse({
+      ship: "~zod",
+      url: "https://example.com",
+      code: "code-123",
+      ownerListenEnabled: false,
+      ownerListenDisabledChannels: ["chat/~zod/foo", "diary/~bus/bar"],
+    });
+    expect(parsed.ownerListenEnabled).toBe(false);
+    expect(parsed.ownerListenDisabledChannels).toEqual(["chat/~zod/foo", "diary/~bus/bar"]);
+  });
+
+  it("treats owner-listen fields as optional", () => {
+    const parsed = TlonConfigSchema.parse({
+      ship: "~zod",
+      url: "https://example.com",
+      code: "code-123",
+    });
+    expect(parsed.ownerListenEnabled).toBeUndefined();
+    expect(parsed.ownerListenDisabledChannels).toBeUndefined();
+  });
 });

@@ -8,6 +8,7 @@ import { defineChannelPluginEntry } from "openclaw/plugin-sdk/core";
 import { tlonPlugin } from "./src/channel.js";
 import { createGatewayStatusManager, setGatewayStatusManager } from "./src/gateway-status.js";
 import { resolveBridgeForCommand } from "./src/monitor/command-auth.js";
+import { handleOwnerListenCommand } from "./src/owner-listen-command.js";
 import { setTlonRuntime } from "./src/runtime.js";
 import { getSessionRole } from "./src/session-roles.js";
 import { recordToolCall } from "./src/telemetry.js";
@@ -487,6 +488,23 @@ export default defineChannelPluginEntry({
           return { text: "Usage: /unban ~ship-name" };
         }
         return { text: await result.bridge.handleUnblock(ship) };
+      },
+    });
+
+    api.registerCommand({
+      name: "owner-listen",
+      description:
+        "Control whether the bot listens for the owner without @-mention in owned channels. " +
+        "Usage: /owner-listen [on|off|status|list] [<channel-nest>]; " +
+        "/owner-listen all [on|off] for the global kill switch.",
+      acceptsArgs: true,
+      handler: async (ctx) => {
+        const result = resolveBridgeForCommand(ctx);
+        if ("error" in result) {
+          return { text: result.error };
+        }
+        const text = await handleOwnerListenCommand(result.bridge, ctx.args, ctx.from);
+        return { text };
       },
     });
   },

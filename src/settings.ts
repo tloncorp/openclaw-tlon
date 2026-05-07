@@ -73,6 +73,10 @@ export type TlonSettingsStore = {
   nudgeActiveHoursEnd?: string;
   /** Timezone for the nudge active-hours window: "user", "local", or an IANA TZ id */
   nudgeActiveHoursTimezone?: string;
+  /** Global toggle for the owner-listen path (default true). */
+  ownerListenEnabled?: boolean;
+  /** Channels opted out of owner-listen even when the global toggle is on. */
+  ownerListenDisabledChannels?: string[];
 };
 
 export type TlonSettingsState = {
@@ -226,6 +230,11 @@ export function parseSettingsResponse(raw: unknown): TlonSettingsStore {
       typeof settings.nudgeActiveHoursTimezone === "string"
         ? settings.nudgeActiveHoursTimezone
         : undefined,
+    ownerListenEnabled:
+      typeof settings.ownerListenEnabled === "boolean" ? settings.ownerListenEnabled : undefined,
+    ownerListenDisabledChannels: Array.isArray(settings.ownerListenDisabledChannels)
+      ? settings.ownerListenDisabledChannels.filter((x): x is string => typeof x === "string")
+      : undefined,
   };
 }
 
@@ -396,6 +405,14 @@ export function applySettingsUpdate(
       break;
     case "nudgeActiveHoursTimezone":
       next.nudgeActiveHoursTimezone = typeof value === "string" ? value : undefined;
+      break;
+    case "ownerListenEnabled":
+      next.ownerListenEnabled = typeof value === "boolean" ? value : undefined;
+      break;
+    case "ownerListenDisabledChannels":
+      next.ownerListenDisabledChannels = Array.isArray(value)
+        ? value.filter((x): x is string => typeof x === "string")
+        : undefined;
       break;
   }
 
