@@ -6,3 +6,7 @@ dist/
 .vscode
 WORKLOG.md
 .pnpm-store/
+
+# Publish staging
+.publish/
+*.tgz
