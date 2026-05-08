@@ -12,8 +12,8 @@ importers:
         specifier: presence
         version: 0.0.7
       '@tloncorp/tlon-skill':
-        specifier: ^0.3.4
-        version: 0.3.4
+        specifier: ^0.3.6
+        version: 0.3.6
       '@urbit/aura':
         specifier: ^3.0.0
         version: 3.0.0
@@ -567,20 +567,24 @@ packages:
   '@mariozechner/pi-agent-core@0.64.0':
     resolution: {integrity: sha512-IN/sIxWOD0v1OFVXHB605SGiZhO5XdEWG5dO8EAV08n3jz/p12o4OuYGvhGXmHhU28WXa/FGWC+FO5xiIih8Uw==}
     engines: {node: '>=20.0.0'}
+    deprecated: please use @earendil-works/pi-agent-core instead going forward
 
   '@mariozechner/pi-ai@0.64.0':
     resolution: {integrity: sha512-Z/Jnf+JSVDPLRcxJsa8XhYTJKIqKekNueaCpBLGQHgizL1F9RQ1Rur3rIfZpfXkt2cLu/AIPtOs223ueuoWaWg==}
     engines: {node: '>=20.0.0'}
+    deprecated: please use @earendil-works/pi-ai instead going forward
     hasBin: true
 
   '@mariozechner/pi-coding-agent@0.64.0':
     resolution: {integrity: sha512-Q4tcqSqFGQtOgCtRyIp1D80Nv2if13Q2pfbnrOlaT/mix90mLcZGML9jKVnT1jGSy5GMYudU1HsS7cx53kxb0g==}
     engines: {node: '>=20.6.0'}
+    deprecated: please use @earendil-works/pi-coding-agent instead going forward
     hasBin: true
 
   '@mariozechner/pi-tui@0.64.0':
     resolution: {integrity: sha512-W1qLry9MAuN/V3YJmMv/BJa0VaYv721NkXPg/DGItdqWxuDc+1VdNbyAnRwxblNkIpXVUWL26x64BlyFXpxmkg==}
     engines: {node: '>=20.0.0'}
+    deprecated: please use @earendil-works/pi-tui instead going forward
 
   '@matrix-org/matrix-sdk-crypto-nodejs@0.4.0':
     resolution: {integrity: sha512-+qqgpn39XFSbsD0dFjssGO9vHEP7sTyfs8yTpt8vuqWpUpF20QMwpCZi0jpYw7GxjErNTsMshopuo8677DfGEA==}
@@ -1222,32 +1226,32 @@ packages:
   '@tloncorp/api@0.0.7':
     resolution: {integrity: sha512-B3GeHxexU1eqO5qRM+6ojPR9ytCCGUKPSkiwVe/+2sN6gaDJGX+tvk3q+3ZImqscahJpVuq57SfVJkDAz6v9JQ==}
 
-  '@tloncorp/tlon-skill-darwin-arm64@0.3.4':
-    resolution: {integrity: sha512-K/QQZKpJ0Qqko/7F6sJleh+xspVntOMCXLCZqcq1OFwHXGBG/v82fl7WETvVwknCiShb0pGutkWtRfbXqZmbPw==}
+  '@tloncorp/tlon-skill-darwin-arm64@0.3.6':
+    resolution: {integrity: sha512-vR6OeFsIGg9K1QVG2ZZaMC+8QuTyoEp0mGwEJPCooMXF2FxAHTzAE99CNgTmNZbCkCDXIsCL9jMJTcfUNr6xyA==}
     cpu: [arm64]
     os: [darwin]
     hasBin: true
 
-  '@tloncorp/tlon-skill-darwin-x64@0.3.4':
-    resolution: {integrity: sha512-HPkHfYbxFwXIQL5mkHhHZ1y5yVFOGPM8TcD8xGgwyly5m+mFwSdBQqg7UnqlLGludUIP4ZfTrKutLLAS1i3f8A==}
+  '@tloncorp/tlon-skill-darwin-x64@0.3.6':
+    resolution: {integrity: sha512-7A1MLaJ09THCLVOWu/mdzWBDi64md6CLnAlKByduBuza3Osz2VwhJvZb6aVZXQamiKt9vB5yjqPIUvS2AZRhsg==}
     cpu: [x64]
     os: [darwin]
     hasBin: true
 
-  '@tloncorp/tlon-skill-linux-arm64@0.3.4':
-    resolution: {integrity: sha512-lemn5dSXIe8nD2FIDz6sKalbrR5B7sbmXjJ3hBZsFm/URxsooi57y3vstlrb9Y7h7+fTh2pnaJqIW6incGodmQ==}
+  '@tloncorp/tlon-skill-linux-arm64@0.3.6':
+    resolution: {integrity: sha512-VaMDV78GakJtUNvDF5ItZ1/ahw86hq6UtfCCeTRZU/Rkapluj2XSFI/t4oVxEMNKi9/urRVO3b6V8IklUnRQBg==}
     cpu: [arm64]
     os: [linux]
     hasBin: true
 
-  '@tloncorp/tlon-skill-linux-x64@0.3.4':
-    resolution: {integrity: sha512-WEtsieek9vwHJF8m1mdn8+QzcjHU0E/SPp9uj+YWzAbjqY8xaf3jD6sOPK6XMBCcJ2spwXJnmMzgW+YJ2b5njw==}
+  '@tloncorp/tlon-skill-linux-x64@0.3.6':
+    resolution: {integrity: sha512-Yp/f6GWuUkNv6k72inX7fY5rf0xxpZpdvmS/U0JWLI5uAk04TiG75ayZIAqJw+Pwp8DRmDGoasH6WfOVjOPHog==}
     cpu: [x64]
     os: [linux]
     hasBin: true
 
-  '@tloncorp/tlon-skill@0.3.4':
-    resolution: {integrity: sha512-7TFRyUZG7CTHFqO9NIJwKWIolxchu4nRIjoVdIv1EAKRVSapPx/pEYcs055tqkPSuTjbNUl8MZbIjsQ+Fjo8pw==}
+  '@tloncorp/tlon-skill@0.3.6':
+    resolution: {integrity: sha512-C9YEc0w+pZ1wHQh3RXMn4jnIIOE+jzw21hDYAtvpW9POmA7u4h6dMfMay52lj8ve19yYn87F8Z+JjSl9QKd0fQ==}
     hasBin: true
 
   '@tokenizer/inflate@0.4.1':
@@ -4552,24 +4556,24 @@ snapshots:
     transitivePeerDependencies:
       - aws-crt
 
-  '@tloncorp/tlon-skill-darwin-arm64@0.3.4':
+  '@tloncorp/tlon-skill-darwin-arm64@0.3.6':
     optional: true
 
-  '@tloncorp/tlon-skill-darwin-x64@0.3.4':
+  '@tloncorp/tlon-skill-darwin-x64@0.3.6':
     optional: true
 
-  '@tloncorp/tlon-skill-linux-arm64@0.3.4':
+  '@tloncorp/tlon-skill-linux-arm64@0.3.6':
     optional: true
 
-  '@tloncorp/tlon-skill-linux-x64@0.3.4':
+  '@tloncorp/tlon-skill-linux-x64@0.3.6':
     optional: true
 
-  '@tloncorp/tlon-skill@0.3.4':
+  '@tloncorp/tlon-skill@0.3.6':
     optionalDependencies:
-      '@tloncorp/tlon-skill-darwin-arm64': 0.3.4
-      '@tloncorp/tlon-skill-darwin-x64': 0.3.4
-      '@tloncorp/tlon-skill-linux-arm64': 0.3.4
-      '@tloncorp/tlon-skill-linux-x64': 0.3.4
+      '@tloncorp/tlon-skill-darwin-arm64': 0.3.6
+      '@tloncorp/tlon-skill-darwin-x64': 0.3.6
+      '@tloncorp/tlon-skill-linux-arm64': 0.3.6
+      '@tloncorp/tlon-skill-linux-x64': 0.3.6
 
   '@tokenizer/inflate@0.4.1':
     dependencies:

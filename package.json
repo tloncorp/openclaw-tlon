@@ -51,7 +51,7 @@
   },
   "dependencies": {
     "@tloncorp/api": "presence",
-    "@tloncorp/tlon-skill": "^0.3.4",
+    "@tloncorp/tlon-skill": "^0.3.6",
     "@urbit/aura": "^3.0.0",
     "posthog-node": "^5.28.9",
     "zod": "^4.4.1"
