@@ -17,6 +17,24 @@ export interface ApprovalCommandBridge {
   handleUnblock(ship: string): Promise<string>;
   /** The owner ship for this account (for auth checks). Should be a getter, not a snapshot. */
   readonly ownerShip: string | null;
+
+  // ── Owner-listen controls (per-channel + global) ─────────────────────────
+  /** True if the channel's host is the owner or the bot itself. */
+  isOwnedChannel(nest: string): boolean;
+  /** Current global owner-listen toggle. */
+  getOwnerListenGlobal(): boolean;
+  /** Flip the global toggle and persist. Returns the new value. */
+  setOwnerListenGlobal(enabled: boolean): Promise<boolean>;
+  /** True if owner-listen is currently disabled for this channel. */
+  isOwnerListenDisabled(nest: string): boolean;
+  /**
+   * Set/clear the per-channel override and persist.
+   * Returns the resulting per-channel listening state
+   * (true = bot listens for owner here, ignoring the global toggle).
+   */
+  setOwnerListenDisabled(nest: string, disabled: boolean): Promise<boolean>;
+  /** List all channels currently in the per-channel disabled list. */
+  listOwnerListenDisabled(): string[];
 }
 
 const bridges = new Map<string, ApprovalCommandBridge>();
