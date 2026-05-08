@@ -70,6 +70,16 @@
   "peerDependencies": {
     "openclaw": ">=2026.3.22"
   },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@matrix-org/matrix-sdk-crypto-nodejs",
+      "@tloncorp/tlon-skill",
+      "koffi",
+      "openclaw",
+      "protobufjs",
+      "sharp"
+    ]
+  },
   "openclaw": {
     "extensions": [
       "./dist/index.js"
