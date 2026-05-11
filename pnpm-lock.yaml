@@ -9,7 +9,7 @@ importers:
   .:
     dependencies:
       '@tloncorp/api':
-        specifier: presence
+        specifier: ^0.0.7
         version: 0.0.7
       '@tloncorp/tlon-skill':
         specifier: ^0.3.6
