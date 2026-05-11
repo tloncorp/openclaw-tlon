@@ -1,6 +1,5 @@
 import { gatewayStop } from "@tloncorp/api";
 import { spawn } from "node:child_process";
-import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -20,26 +19,13 @@ import {
   shouldLogAfterToolTrace,
 } from "./src/tool-trace.js";
 import { resolveTlonAccount, listTlonAccountIds } from "./src/types.js";
+import { PLUGIN_COMMIT, PLUGIN_VERSION } from "./src/version.generated.js";
 
 export { tlonPlugin } from "./src/channel.js";
 export { setTlonRuntime } from "./src/runtime.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
-
-function readPluginVersion(): string {
-  try {
-    const { version } = require("./package.json") as { version: string };
-    return version;
-  } catch {
-    try {
-      const raw = readFileSync(new URL("./package.json", import.meta.url), "utf-8");
-      return (JSON.parse(raw) as { version: string }).version;
-    } catch {
-      return "unknown";
-    }
-  }
-}
 
 // Whitelist of allowed tlon subcommands
 const ALLOWED_TLON_COMMANDS = new Set([
@@ -182,16 +168,6 @@ export default defineChannelPluginEntry({
   plugin: tlonPlugin,
   setRuntime: setTlonRuntime,
   registerFull(api) {
-    // Import version info lazily
-    const PLUGIN_VERSION = readPluginVersion();
-    let PLUGIN_COMMIT = "unknown";
-    try {
-      PLUGIN_COMMIT = (require("./src/version.generated.js") as { PLUGIN_COMMIT: string })
-        .PLUGIN_COMMIT;
-    } catch {
-      // version.generated.js may not exist in all environments
-    }
-
     // ── Gateway-status liveness integration ───────────────────
     //
     // v1 requires exactly one Tlon account. With multiple accounts, multiple
