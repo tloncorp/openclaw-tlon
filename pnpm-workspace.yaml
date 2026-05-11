@@ -1,6 +1,7 @@
 packages: []
 
 onlyBuiltDependencies:
+  -  '@google/genai'
   - '@matrix-org/matrix-sdk-crypto-nodejs'
   - '@tloncorp/api'
   - '@tloncorp/tlon-skill'
