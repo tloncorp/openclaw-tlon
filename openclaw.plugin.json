@@ -33,6 +33,15 @@
           "code": {
             "type": "string"
           },
+          "network": {
+            "type": "object",
+            "properties": {
+              "dangerouslyAllowPrivateNetwork": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": false
+          },
           "allowPrivateNetwork": {
             "type": "boolean"
           },
@@ -118,6 +127,15 @@
                 },
                 "code": {
                   "type": "string"
+                },
+                "network": {
+                  "type": "object",
+                  "properties": {
+                    "dangerouslyAllowPrivateNetwork": {
+                      "type": "boolean"
+                    }
+                  },
+                  "additionalProperties": false
                 },
                 "allowPrivateNetwork": {
                   "type": "boolean"

@@ -1,9 +1,9 @@
-import type { ChannelPlugin, ChannelAccountSnapshot, OpenClawConfig } from "openclaw/plugin-sdk/tlon";
-import { DEFAULT_ACCOUNT_ID } from "openclaw/plugin-sdk/tlon";
-import { createChatChannelPlugin } from "openclaw/plugin-sdk/core";
+import type { ChannelPlugin } from "openclaw/plugin-sdk/core";
+import { DEFAULT_ACCOUNT_ID, createChatChannelPlugin } from "openclaw/plugin-sdk/core";
 import { createLazyRuntimeModule } from "openclaw/plugin-sdk/lazy-runtime";
 import { createHybridChannelConfigAdapter } from "openclaw/plugin-sdk/channel-config-helpers";
 import { createRuntimeOutboundDelegates } from "openclaw/plugin-sdk/outbound-runtime";
+import { createLegacyPrivateNetworkDoctorContract } from "openclaw/plugin-sdk/ssrf-runtime";
 import {
   createComputedAccountStatusAdapter,
   createDefaultChannelRuntimeState,
@@ -43,6 +43,10 @@ const tlonSetupWizardProxy = createTlonSetupWizardBase({
       await loadTlonChannelRuntime()
     ).tlonSetupWizard.finalize!(params),
 }) satisfies NonNullable<ChannelPlugin["setupWizard"]>;
+
+const tlonLegacyPrivateNetworkDoctor = createLegacyPrivateNetworkDoctorContract({
+  channelKey: TLON_CHANNEL_ID,
+});
 
 const tlonConfigAdapter = createHybridChannelConfigAdapter({
   sectionKey: TLON_CHANNEL_ID,
@@ -210,6 +214,10 @@ export const tlonPlugin = createChatChannelPlugin({
     gateway: {
       startAccount: async (ctx) =>
         await (await loadTlonChannelRuntime()).startTlonGatewayAccount(ctx),
+    },
+    doctor: {
+      legacyConfigRules: tlonLegacyPrivateNetworkDoctor.legacyConfigRules,
+      normalizeCompatibilityConfig: tlonLegacyPrivateNetworkDoctor.normalizeCompatibilityConfig,
     },
   },
   outbound: {

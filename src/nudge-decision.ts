@@ -5,7 +5,7 @@
  * scheduler uses them to compute whether a tick should send anything.
  */
 
-import type { OpenClawConfig } from "openclaw/plugin-sdk/tlon";
+import type { OpenClawConfig } from "openclaw/plugin-sdk/core";
 import type { NudgeStage } from "./nudge-messages.js";
 import type { TlonSettingsStore } from "./settings.js";
 

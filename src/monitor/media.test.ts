@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("openclaw/plugin-sdk/tlon", () => ({
+vi.mock("openclaw/plugin-sdk/ssrf-runtime", () => ({
   fetchWithSsrFGuard: vi.fn(),
 }));
 
@@ -11,7 +11,7 @@ vi.mock("../urbit/context.js", () => ({
   getDefaultSsrFPolicy: vi.fn(() => ({})),
 }));
 
-import { fetchWithSsrFGuard } from "openclaw/plugin-sdk/tlon";
+import { fetchWithSsrFGuard } from "openclaw/plugin-sdk/ssrf-runtime";
 import {
   MAX_BLOB_DOWNLOAD_BYTES,
   downloadBlobAttachments,

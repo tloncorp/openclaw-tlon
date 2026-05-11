@@ -5,7 +5,8 @@
  * The runner owns the tick body. The scheduler owns the timer lifecycle.
  */
 
-import type { OpenClawConfig, RuntimeEnv } from "openclaw/plugin-sdk/tlon";
+import type { OpenClawConfig } from "openclaw/plugin-sdk/core";
+import type { RuntimeEnv } from "openclaw/plugin-sdk/runtime";
 import type { PendingNudge } from "../pending-nudge.js";
 import type { TlonTelemetryClient } from "../telemetry.js";
 import type { BotProfile } from "../urbit/send.js";

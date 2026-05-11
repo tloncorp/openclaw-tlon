@@ -1,4 +1,4 @@
-import { buildChannelConfigSchema } from "openclaw/plugin-sdk/tlon";
+import { buildChannelConfigSchema } from "openclaw/plugin-sdk/core";
 import { z } from "zod";
 
 const ShipSchema = z.string().min(1);
@@ -18,6 +18,16 @@ export const TlonTelemetrySchema = z.object({
   enabled: z.boolean().optional(),
   apiKey: z.string().min(1).optional(),
   host: z.string().min(1).optional(),
+});
+
+/**
+ * Canonical private-network opt-in. The flat top-level
+ * `allowPrivateNetwork` field below is kept as a deprecated alias; new
+ * configs should use `network.dangerouslyAllowPrivateNetwork`.
+ * `openclaw doctor --fix` migrates the legacy field automatically.
+ */
+export const TlonNetworkSchema = z.object({
+  dangerouslyAllowPrivateNetwork: z.boolean().optional(),
 });
 
 /**
@@ -51,6 +61,8 @@ export const TlonAccountSchema = z.object({
   ship: ShipSchema.optional(),
   url: z.string().optional(),
   code: z.string().optional(),
+  network: TlonNetworkSchema.optional(),
+  /** @deprecated Use `network.dangerouslyAllowPrivateNetwork`. Migrated by `openclaw doctor --fix`. */
   allowPrivateNetwork: z.boolean().optional(),
   groupChannels: z.array(ChannelNestSchema).optional(),
   dmAllowlist: z.array(ShipSchema).optional(),
@@ -81,6 +93,8 @@ export const TlonConfigSchema = z.object({
   ship: ShipSchema.optional(),
   url: z.string().optional(),
   code: z.string().optional(),
+  network: TlonNetworkSchema.optional(),
+  /** @deprecated Use `network.dangerouslyAllowPrivateNetwork`. Migrated by `openclaw doctor --fix`. */
   allowPrivateNetwork: z.boolean().optional(),
   groupChannels: z.array(ChannelNestSchema).optional(),
   dmAllowlist: z.array(ShipSchema).optional(),

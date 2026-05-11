@@ -1,5 +1,6 @@
 import type { Story } from "@tloncorp/api";
-import type { RuntimeEnv, ReplyPayload, OpenClawConfig } from "openclaw/plugin-sdk/tlon";
+import type { ReplyPayload, OpenClawConfig } from "openclaw/plugin-sdk/core";
+import type { RuntimeEnv } from "openclaw/plugin-sdk/runtime";
 import { createTypingCallbacks } from "openclaw/plugin-sdk/channel-runtime";
 
 // Local structural types — @tloncorp/api defines these internally but

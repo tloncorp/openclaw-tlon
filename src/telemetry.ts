@@ -1,4 +1,4 @@
-import type { RuntimeEnv } from "openclaw/plugin-sdk/tlon";
+import type { RuntimeEnv } from "openclaw/plugin-sdk/runtime";
 import { PostHog } from "posthog-node";
 import type { TlonTelemetryConfig } from "./types.js";
 

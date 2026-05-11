@@ -1,4 +1,4 @@
-import type { OpenClawConfig } from "openclaw/plugin-sdk/tlon";
+import type { OpenClawConfig } from "openclaw/plugin-sdk/core";
 
 export type TlonTelemetryConfig = {
   enabled: boolean;
@@ -65,6 +65,8 @@ export function resolveTlonAccount(
         ship?: string;
         url?: string;
         code?: string;
+        network?: { dangerouslyAllowPrivateNetwork?: boolean };
+        /** @deprecated Use `network.dangerouslyAllowPrivateNetwork`. */
         allowPrivateNetwork?: boolean;
         groupChannels?: string[];
         dmAllowlist?: string[];
@@ -120,9 +122,13 @@ export function resolveTlonAccount(
   const ship = (account?.ship ?? base.ship ?? null) as string | null;
   const url = (account?.url ?? base.url ?? null) as string | null;
   const code = (account?.code ?? base.code ?? null) as string | null;
-  const allowPrivateNetwork = (account?.allowPrivateNetwork ?? base.allowPrivateNetwork ?? null) as
-    | boolean
-    | null;
+  const accountNetwork = (account as { network?: { dangerouslyAllowPrivateNetwork?: boolean } })
+    ?.network;
+  const allowPrivateNetwork = (accountNetwork?.dangerouslyAllowPrivateNetwork ??
+    base.network?.dangerouslyAllowPrivateNetwork ??
+    (account as { allowPrivateNetwork?: boolean })?.allowPrivateNetwork ??
+    base.allowPrivateNetwork ??
+    null) as boolean | null;
   const groupChannels = (account?.groupChannels ?? base.groupChannels ?? []) as string[];
   const dmAllowlist = (account?.dmAllowlist ?? base.dmAllowlist ?? []) as string[];
   const groupInviteAllowlist = (account?.groupInviteAllowlist ??
