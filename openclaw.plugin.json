@@ -50,6 +50,13 @@
               "minLength": 1
             }
           },
+          "groupInviteAllowlist": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
           "autoDiscoverChannels": {
             "type": "boolean"
           },
@@ -130,6 +137,13 @@
                   }
                 },
                 "dmAllowlist": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "groupInviteAllowlist": {
                   "type": "array",
                   "items": {
                     "type": "string",
