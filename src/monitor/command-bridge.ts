@@ -6,6 +6,8 @@
  * keyed by accountId; command handlers resolve the correct bridge at runtime.
  */
 
+import { sharedMap } from "../shared-state.js";
+
 export interface ApprovalCommandBridge {
   /** Handle /allow, /reject, /ban. Returns response text. */
   handleAction(action: "approve" | "deny" | "block", id?: string): Promise<string>;
@@ -37,7 +39,7 @@ export interface ApprovalCommandBridge {
   listOwnerListenDisabled(): string[];
 }
 
-const bridges = new Map<string, ApprovalCommandBridge>();
+const bridges = sharedMap<string, ApprovalCommandBridge>("monitor.command-bridge.bridges");
 
 const DEFAULT_KEY = "default";
 

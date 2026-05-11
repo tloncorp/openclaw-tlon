@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { gatewayHeartbeat } from "@tloncorp/api";
+import { sharedSlot } from "./shared-state.js";
 
 // ── Constants (matching design doc recommendations) ─────────
 const HEARTBEAT_INTERVAL_MS = 30_000; // 30s
@@ -98,13 +99,14 @@ export function createGatewayStatusManager(opts: {
   };
 }
 
-// ── Module-level accessor (same pattern as setTlonRuntime) ──
-let _manager: GatewayStatusManager | null = null;
+// Routed through shared-state so the slot survives plugin module isolation —
+// the extension sets, the monitor reads, and they live in separate contexts.
+const managerSlot = sharedSlot<GatewayStatusManager>("gateway-status.manager");
 
 export function setGatewayStatusManager(m: GatewayStatusManager | null): void {
-  _manager = m;
+  managerSlot.set(m);
 }
 
 export function getGatewayStatusManager(): GatewayStatusManager | null {
-  return _manager;
+  return managerSlot.get();
 }
