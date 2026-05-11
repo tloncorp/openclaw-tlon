@@ -1,4 +1,10 @@
 packages: []
 
 onlyBuiltDependencies:
+  - '@matrix-org/matrix-sdk-crypto-nodejs'
   - '@tloncorp/api'
+  - '@tloncorp/tlon-skill'
+  - koffi
+  - openclaw
+  - protobufjs
+  - sharp
