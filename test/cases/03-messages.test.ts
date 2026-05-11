@@ -52,7 +52,7 @@ describe("messages", () => {
     requireFixtureGroup(fixtures);
 
     const token = `it-post-${Date.now().toString(36)}`;
-    const prompt = `Post this exact text into your channel ${fixtures.group.chatChannel}: "${token}" — You MUST respond with exactly 'Done' after posting`;
+    const prompt = `[tlon-test:post-channel-basic] Post this exact text into your channel ${fixtures.group.chatChannel}: "${token}".`;
     
     const response = await fixtures.client.prompt(prompt, { correlate: false });
         
@@ -85,7 +85,7 @@ describe("messages", () => {
   });
 
   test("responds to a simple prompt", async () => {
-    const prompt = "Reply with one short sentence confirming you are online.";
+    const prompt = "[tlon-test:simple-online] Reply with one short sentence confirming you are online.";
     
     const response = await fixtures.client.prompt(prompt);
         

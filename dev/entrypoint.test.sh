@@ -47,11 +47,35 @@ mkdir -p "$CONFIG_DIR"
 
 cat > "$CONFIG_DIR/openclaw.json" << EOF
 {
+  "models": {
+    "providers": {
+      "custom-proxy": {
+        "baseUrl": "${FAKE_MODEL_BASE_URL:-http://fake-model:4000/v1}",
+        "apiKey": "TEST_KEY",
+        "api": "openai-completions",
+        "request": {
+          "allowPrivateNetwork": true
+        },
+        "models": [
+          {
+            "id": "tlon-test-scripted",
+            "name": "Tlon Test Scripted Model",
+            "api": "openai-completions",
+            "reasoning": false,
+            "input": ["text"],
+            "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 },
+            "contextWindow": 128000,
+            "maxTokens": 4096
+          }
+        ]
+      }
+    }
+  },
   "agents": {
     "defaults": {
       "workspace": "/root/.openclaw/workspace",
       "model": {
-        "primary": "${MODEL:-openrouter/minimax/minimax-m2.1}"
+        "primary": "${MODEL:-custom-proxy/tlon-test-scripted}"
       }
     },
     "list": [

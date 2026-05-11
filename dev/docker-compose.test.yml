@@ -1,4 +1,13 @@
 services:
+  fake-model:
+    image: node:22-bookworm-slim
+    working_dir: /workspace/openclaw-tlon
+    command: ["node", "test/support/fake-model/server.mjs"]
+    volumes:
+      - ..:/workspace/openclaw-tlon
+    expose:
+      - "4000"
+
   # Both fakezod ships in one container (they need shared fake ames)
   ships:
     image: ubuntu:22.04
@@ -55,15 +64,16 @@ services:
       - TLON_SHIP=~zod
       - TLON_CODE=lidlut-tabwed-pillex-ridrup
       - TLON_DM_ALLOWLIST=~ten
-      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
       - BRAVE_API_KEY=${BRAVE_API_KEY}
-      - MODEL=${MODEL:-openrouter/minimax/minimax-m2.5}
+      - MODEL=${MODEL:-custom-proxy/tlon-test-scripted}
       - TLONBOT_TOKEN=${TLONBOT_TOKEN}
       - VERBOSE=${VERBOSE:-0}
       - TEST_LIVE_TOOL_TRACE=${TEST_LIVE_TOOL_TRACE:-0}
       - TEST_LIVE_TOOL_TRACE_CONTENTS=${TEST_LIVE_TOOL_TRACE_CONTENTS:-0}
     ports:
       - "${OPENCLAW_GATEWAY_PORT:-18789}:18789"
+    depends_on:
+      - fake-model
     volumes:
       - ..:/workspace/openclaw-tlon
       - openclaw-modules:/workspace/openclaw-tlon/node_modules
