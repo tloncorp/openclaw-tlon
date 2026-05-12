@@ -167,8 +167,7 @@ function truncate(text: string, maxLength: number): string {
 // Approval Request A2UI
 // ============================================================================
 
-export type ApprovalA2UIParams = {
-  surfaceId?: string;
+type ApprovalA2UIParams = {
   type: ApprovalType;
   requestId: string;
   requestingShip: string;
@@ -222,8 +221,7 @@ function approvalAllowNote(params: ApprovalA2UIParams): string {
   }
 }
 
-export function buildApprovalA2UIBlob(params: ApprovalA2UIParams): TlonA2UIBlob {
-  const surfaceId = params.surfaceId ?? `approval-${params.requestId}`;
+function buildApprovalA2UIBlobFromParams(params: ApprovalA2UIParams): TlonA2UIBlob {
   const copy = approvalCopy(params);
   const bodyChildren = copy
     ? ["eyebrow", "title", "copy", "divider", "details", "actions"]
@@ -328,7 +326,7 @@ export function buildApprovalA2UIBlob(params: ApprovalA2UIParams): TlonA2UIBlob 
     { id: "banLabel", component: "Text", text: "Ban" },
   ];
 
-  return makeA2UIBlob(surfaceId, "root", components);
+  return makeA2UIBlob(`approval-${params.requestId}`, "root", components);
 }
 
 function displayChannelForApproval(
@@ -355,12 +353,11 @@ function displayGroupForApproval(
   return displayGroup(flag, ctx, titleOverride);
 }
 
-export function buildApprovalA2UIBlobForPendingApproval(
+export function buildApprovalA2UIBlob(
   approval: PendingApproval,
   ctx?: DisplayContext,
 ): TlonA2UIBlob {
-  return buildApprovalA2UIBlob({
-    surfaceId: `approval-${approval.id}`,
+  return buildApprovalA2UIBlobFromParams({
     type: approval.type,
     requestId: approval.id,
     requestingShip: approval.requestingShip,
@@ -370,21 +367,6 @@ export function buildApprovalA2UIBlobForPendingApproval(
     groupFlag: approval.groupFlag,
     groupTitle: approval.groupTitle,
     groupDisplay: displayGroupForApproval(approval.groupFlag, approval.groupTitle, ctx),
-  });
-}
-
-export function buildDmApprovalA2UIBlob(params: {
-  surfaceId?: string;
-  requestingShip: string;
-  requestId?: string;
-  reason?: string;
-}): TlonA2UIBlob {
-  return buildApprovalA2UIBlob({
-    surfaceId: params.surfaceId,
-    type: "dm",
-    requestId: params.requestId ?? "d0000",
-    requestingShip: params.requestingShip,
-    messagePreview: params.reason,
   });
 }
 

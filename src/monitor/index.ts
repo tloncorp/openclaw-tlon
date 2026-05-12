@@ -92,7 +92,7 @@ import { UrbitSSEClient } from "../urbit/sse-client.js";
 import { markdownToStory } from "../urbit/story.js";
 import {
   APPROVAL_REQUEST_NOTIFICATION_TEXT,
-  buildApprovalA2UIBlobForPendingApproval,
+  buildApprovalA2UIBlob,
   type PendingApproval,
   type DisplayContext,
   createPendingApproval,
@@ -469,7 +469,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     ctx: DisplayContext,
   ): string | undefined {
     try {
-      return serializeBlobField(buildApprovalA2UIBlobForPendingApproval(approval, ctx));
+      return serializeBlobField(buildApprovalA2UIBlob(approval, ctx));
     } catch (err) {
       runtime.error?.(`[tlon] Failed to build approval A2UI blob: ${String(err)}`);
       return undefined;

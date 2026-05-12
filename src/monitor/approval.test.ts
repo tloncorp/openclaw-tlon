@@ -5,8 +5,6 @@ import {
   type DisplayContext,
   type PendingApproval,
   buildApprovalA2UIBlob,
-  buildApprovalA2UIBlobForPendingApproval,
-  buildDmApprovalA2UIBlob,
   generateApprovalId,
   createPendingApproval,
   findPendingApproval,
@@ -159,23 +157,27 @@ describe("buildApprovalA2UIBlob", () => {
   it("builds approval cards with slash command actions", () => {
     for (const approval of [
       buildApprovalA2UIBlob({
+        id: "da1b2",
         type: "dm",
-        requestId: "da1b2",
         requestingShip: "~sampel-palnet",
+        timestamp: 1,
         messagePreview: "Hello, I would like to chat with your bot.",
       }),
       buildApprovalA2UIBlob({
+        id: "c3d4e",
         type: "channel",
-        requestId: "c3d4e",
         requestingShip: "~littel-wolfur",
-        channelDisplay: "Design (chat/~zod/design)",
+        channelNest: "chat/~zod/design",
+        timestamp: 1,
         messagePreview: "@bot can you review this build before I merge?",
       }),
       buildApprovalA2UIBlob({
+        id: "g5f6a",
         type: "group",
-        requestId: "g5f6a",
         requestingShip: "~robin-dasler",
-        groupDisplay: "Garden Club (~robin-dasler/garden-club)",
+        groupFlag: "~robin-dasler/garden-club",
+        groupTitle: "Garden Club",
+        timestamp: 1,
       }),
     ]) {
       expect(validateA2UIBlobEntry(approval)).toBe(true);
@@ -187,18 +189,8 @@ describe("buildApprovalA2UIBlob", () => {
     }
   });
 
-  it("builds dm approval cards with default request ids", () => {
-    const approval = buildDmApprovalA2UIBlob({
-      requestingShip: "~zod",
-      reason: "hello",
-    });
-
-    expect(validateA2UIBlobEntry(approval)).toBe(true);
-    expect(JSON.stringify(approval)).toContain("/allow d0000");
-  });
-
-  it("builds pending approval cards with display context", () => {
-    const approval = buildApprovalA2UIBlobForPendingApproval(
+  it("uses display context for channel and group labels", () => {
+    const approval = buildApprovalA2UIBlob(
       {
         id: "cc3d4",
         type: "channel",
