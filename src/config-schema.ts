@@ -66,6 +66,7 @@ export const TlonAccountSchema = z.object({
   allowPrivateNetwork: z.boolean().optional(),
   groupChannels: z.array(ChannelNestSchema).optional(),
   dmAllowlist: z.array(ShipSchema).optional(),
+  groupInviteAllowlist: z.array(ShipSchema).optional(),
   autoDiscoverChannels: z.boolean().optional(),
   showModelSignature: z.boolean().optional(),
   // Auto-accept settings
@@ -98,6 +99,7 @@ export const TlonConfigSchema = z.object({
   allowPrivateNetwork: z.boolean().optional(),
   groupChannels: z.array(ChannelNestSchema).optional(),
   dmAllowlist: z.array(ShipSchema).optional(),
+  groupInviteAllowlist: z.array(ShipSchema).optional(),
   autoDiscoverChannels: z.boolean().optional(),
   showModelSignature: z.boolean().optional(),
   authorization: TlonAuthorizationSchema.optional(),

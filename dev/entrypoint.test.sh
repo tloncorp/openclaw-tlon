@@ -26,7 +26,7 @@ pnpm build
 # Expose tlon CLI to PATH
 TLON_BIN_DIR="/workspace/openclaw-tlon/node_modules/.bin"
 if [ -f "$TLON_BIN_DIR/tlon" ]; then
-  export PATH="$TLON_BIN_DIR:$PATH"
+  export PATH="$PATH:$TLON_BIN_DIR"
   echo "==> tlon CLI available at $TLON_BIN_DIR/tlon"
 fi
 
@@ -293,6 +293,9 @@ if [ "${VERBOSE:-0}" = "1" ]; then
   ls -la /root/.openclaw/
   ls -la /root/.openclaw/agents/test/ 2>/dev/null || true
 fi
+
+cd ~/.openclaw
+cat openclaw.json
 
 echo "==> Starting OpenClaw gateway..."
 exec openclaw gateway --port 18789 --bind lan --verbose

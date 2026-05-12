@@ -90,6 +90,12 @@ if [ -f "$CONFIG_PATH" ]; then
     | .plugins.allow = (.plugins.allow // []) + ["@tloncorp/openclaw"]
     | .plugins.allow |= unique
   ' "$CONFIG_PATH" > "$CONFIG_PATH.tmp" && mv "$CONFIG_PATH.tmp" "$CONFIG_PATH"
+
+  # Dev-only: bypass browser device pairing so the Control UI is reachable
+  # with just the gateway token. Do NOT set this in production configs.
+  echo "==> Disabling device pairing for Control UI (dev-only)..."
+  jq '.gateway.controlUi.dangerouslyDisableDeviceAuth = true' \
+    "$CONFIG_PATH" > "$CONFIG_PATH.tmp" && mv "$CONFIG_PATH.tmp" "$CONFIG_PATH"
 fi
 
 # Upsert a marked block into a file (preserves content outside the markers)
