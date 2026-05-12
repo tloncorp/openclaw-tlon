@@ -17,14 +17,16 @@ echo "==> Installing plugin dependencies..."
 
 # Install openclaw-tlon plugin dependencies (includes @tloncorp/api and @tloncorp/tlon-skill from npm)
 cd /workspace/openclaw-tlon
-pnpm install
+# Docker starts this entrypoint without a TTY. When the mounted node_modules
+# volume needs to be recreated, pnpm requires CI mode to skip the prompt.
+CI=true pnpm install
 pnpm build
 ./dev/build-local-api-override.sh
 
 # Expose tlon CLI to PATH
 TLON_BIN_DIR="/workspace/openclaw-tlon/node_modules/.bin"
 if [ -f "$TLON_BIN_DIR/tlon" ]; then
-  export PATH="$TLON_BIN_DIR:$PATH"
+  export PATH="$PATH:$TLON_BIN_DIR"
   echo "==> tlon CLI available at $TLON_BIN_DIR/tlon"
 fi
 

@@ -181,9 +181,9 @@ parent/
 └── openclaw-tlon/      # This repo
 ```
 
-`@tloncorp/api` and `@tloncorp/tlon-skill` are installed via npm for normal installs. During Docker dev, the entrypoint will also link a local `@tloncorp/api` override from `${TLON_APPS_DIR:-../tlon-apps}/packages/api` when that checkout has been built.
+`@tloncorp/api` and `@tloncorp/tlon-skill` are installed via npm for normal installs. During Docker dev, the entrypoint will also overlay a local `@tloncorp/api` build from `${TLON_APPS_DIR:-../tlon-apps}/packages/api/dist` when that checkout has been built.
 
-The dev override uses the real `tlon-apps/packages/api` package, similar to the old `api-beta` workflow. You still rebuild `tlon-apps` separately so its `dist/` stays current, and the container startup will link that local package instead of using the published npm copy.
+The dev override uses the built `tlon-apps/packages/api` output, similar to the old `api-beta` workflow. You still rebuild `tlon-apps` separately so its `dist/` stays current, and the container startup will overlay that built output onto the installed package.
 
 If your local checkout is named `homestead` instead of `tlon-apps`, set:
 
