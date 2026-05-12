@@ -23,6 +23,7 @@ import { PLUGIN_COMMIT, PLUGIN_VERSION } from "./src/version.generated.js";
 
 export { tlonPlugin } from "./src/channel.js";
 export { setTlonRuntime } from "./src/runtime.js";
+export * from "./src/urbit/blob.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);

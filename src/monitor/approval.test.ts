@@ -1,11 +1,15 @@
 import { describe, expect, it } from "vitest";
+import { validateA2UIBlobEntry } from "@tloncorp/api";
 import {
+  APPROVAL_REQUEST_NOTIFICATION_TEXT,
   type DisplayContext,
   type PendingApproval,
+  buildApprovalA2UIBlob,
+  buildApprovalA2UIBlobForPendingApproval,
+  buildDmApprovalA2UIBlob,
   generateApprovalId,
   createPendingApproval,
   findPendingApproval,
-  formatApprovalRequest,
   formatApprovalConfirmation,
   formatBlockedList,
   formatPendingList,
@@ -151,65 +155,63 @@ const ctx: DisplayContext = {
   groupNames: new Map([["~host/cool-group", "Cool Group"]]),
 };
 
-describe("formatApprovalRequest", () => {
-  it("DM request shows ship, reaction hints, and slash command hints", () => {
-    const approval = createPendingApproval({
-      type: "dm",
-      requestingShip: "~sampel-palnet",
-      messagePreview: "Hello there",
-    });
-    const text = formatApprovalRequest(approval, ctx);
-    expect(text).toContain("~sampel-palnet");
-    expect(text).toContain('"Hello there"');
-    expect(text).toContain("React to this message: 👍 approve · 👎 deny · 🛑 block");
-    expect(text).toContain("Or use a slash command:");
-    expect(text).toContain(`/allow ${approval.id}`);
-    expect(text).toContain(`/reject ${approval.id}`);
-    expect(text).toContain(`/ban ${approval.id}`);
+describe("buildApprovalA2UIBlob", () => {
+  it("builds approval cards with slash command actions", () => {
+    for (const approval of [
+      buildApprovalA2UIBlob({
+        type: "dm",
+        requestId: "da1b2",
+        requestingShip: "~sampel-palnet",
+        messagePreview: "Hello, I would like to chat with your bot.",
+      }),
+      buildApprovalA2UIBlob({
+        type: "channel",
+        requestId: "c3d4e",
+        requestingShip: "~littel-wolfur",
+        channelDisplay: "Design (chat/~zod/design)",
+        messagePreview: "@bot can you review this build before I merge?",
+      }),
+      buildApprovalA2UIBlob({
+        type: "group",
+        requestId: "g5f6a",
+        requestingShip: "~robin-dasler",
+        groupDisplay: "Garden Club (~robin-dasler/garden-club)",
+      }),
+    ]) {
+      expect(validateA2UIBlobEntry(approval)).toBe(true);
+      const text = JSON.stringify(approval);
+      expect(text).toContain("/allow ");
+      expect(text).toContain("/reject ");
+      expect(text).toContain("/ban ");
+      expect(text).toContain(APPROVAL_REQUEST_NOTIFICATION_TEXT);
+    }
   });
 
-  it("channel request shows channel name and ship", () => {
-    const approval = createPendingApproval({
-      type: "channel",
-      requestingShip: "~sampel-palnet",
-      channelNest: "chat/~host/general",
-      messagePreview: "Hey @bot",
-    });
-    const text = formatApprovalRequest(approval, ctx);
-    expect(text).toContain("~sampel-palnet");
-    expect(text).toContain("general (chat/~host/general)");
-    expect(text).toContain(`/allow ${approval.id}`);
-  });
-
-  it("group request shows group title", () => {
-    const approval = createPendingApproval({
-      type: "group",
-      requestingShip: "~sampel-palnet",
-      groupFlag: "~host/cool-group",
-    });
-    const text = formatApprovalRequest(approval, ctx);
-    expect(text).toContain("Cool Group (~host/cool-group)");
-    expect(text).toContain(`/allow ${approval.id}`);
-  });
-
-  it("group request uses groupTitle field over context", () => {
-    const approval = createPendingApproval({
-      type: "group",
+  it("builds dm approval cards with default request ids", () => {
+    const approval = buildDmApprovalA2UIBlob({
       requestingShip: "~zod",
-      groupFlag: "~host/other-group",
-      groupTitle: "Other Title",
+      reason: "hello",
     });
-    const text = formatApprovalRequest(approval, ctx);
-    expect(text).toContain("Other Title (~host/other-group)");
+
+    expect(validateA2UIBlobEntry(approval)).toBe(true);
+    expect(JSON.stringify(approval)).toContain("/allow d0000");
   });
 
-  it("works without context", () => {
-    const approval = createPendingApproval({
-      type: "dm",
-      requestingShip: "~zod",
-    });
-    const text = formatApprovalRequest(approval);
-    expect(text).toContain("~zod");
+  it("builds pending approval cards with display context", () => {
+    const approval = buildApprovalA2UIBlobForPendingApproval(
+      {
+        id: "cc3d4",
+        type: "channel",
+        requestingShip: "~zod",
+        channelNest: "chat/~host/general",
+        timestamp: 1,
+      },
+      ctx,
+    );
+
+    expect(validateA2UIBlobEntry(approval)).toBe(true);
+    expect(JSON.stringify(approval)).toContain("general (chat/~host/general)");
+    expect(JSON.stringify(approval)).toContain("/allow cc3d4");
   });
 });
 

@@ -304,7 +304,7 @@ export async function downloadBlobAttachments(
   const notices: string[] = [];
 
   for (const entry of blobData) {
-    if (entry.type === "unknown") continue;
+    if (entry.type === "unknown" || entry.type === "a2ui") continue;
 
     const uri = "fileUri" in entry ? entry.fileUri : undefined;
     if (!uri) continue;
@@ -339,7 +339,10 @@ export async function downloadBlobAttachments(
   return { attachments, notices };
 }
 
-function formatBlobTooLargeNotice(entry: Exclude<ClientPostBlobData[number], { type: "unknown" }>, sizeBytes?: number): string {
+function formatBlobTooLargeNotice(
+  entry: Exclude<ClientPostBlobData[number], { type: "unknown" } | { type: "a2ui" }>,
+  sizeBytes?: number,
+): string {
   const label = entry.type === "voicememo" ? "voice memo" : entry.name || "blob attachment";
   const sizeText = sizeBytes !== undefined ? formatFileSize(sizeBytes) : "unknown size";
   return `[blob not downloaded: ${label} is ${sizeText}, over the ${formatFileSize(MAX_BLOB_DOWNLOAD_BYTES)} limit]`;

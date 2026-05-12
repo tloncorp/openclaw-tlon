@@ -85,15 +85,17 @@ import { createTlonTelemetry } from "../telemetry.js";
 import { resolveTlonAccount } from "../types.js";
 import { configureTlonApiWithPoke } from "../urbit/api-client.js";
 import { authenticate } from "../urbit/auth.js";
+import { serializeBlobField } from "../urbit/blob.js";
 import { ssrfPolicyFromAllowPrivateNetwork } from "../urbit/context.js";
 import { sendDm, sendChannelPost, type BotProfile } from "../urbit/send.js";
 import { UrbitSSEClient } from "../urbit/sse-client.js";
 import { markdownToStory } from "../urbit/story.js";
 import {
+  APPROVAL_REQUEST_NOTIFICATION_TEXT,
+  buildApprovalA2UIBlobForPendingApproval,
   type PendingApproval,
   type DisplayContext,
   createPendingApproval,
-  formatApprovalRequest,
   formatApprovalConfirmation,
   findPendingApproval,
   removePendingApproval,
@@ -460,6 +462,18 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       channelNames,
       groupNames: groupNameCache,
     };
+  }
+
+  function buildApprovalBlobField(
+    approval: PendingApproval,
+    ctx: DisplayContext,
+  ): string | undefined {
+    try {
+      return serializeBlobField(buildApprovalA2UIBlobForPendingApproval(approval, ctx));
+    } catch (err) {
+      runtime.error?.(`[tlon] Failed to build approval A2UI blob: ${String(err)}`);
+      return undefined;
+    }
   }
 
   // Migrate file config to settings store (seed on first run)
@@ -1045,7 +1059,10 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
   }
 
   // Helper to send DM notification to owner. Returns the message ID if sent successfully.
-  async function sendOwnerNotification(message: string): Promise<string | undefined> {
+  async function sendOwnerNotification(
+    message: string,
+    blob?: string,
+  ): Promise<string | undefined> {
     if (!effectiveOwnerShip) {
       runtime.log?.("[tlon] No ownerShip configured, cannot send notification");
       return undefined;
@@ -1056,6 +1073,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         fromShip: botShipName,
         toShip: effectiveOwnerShip,
         text: message,
+        blob,
       });
       runtime.log?.(`[tlon] Sent notification to owner ${effectiveOwnerShip}`);
       return result.messageId;
@@ -1150,8 +1168,11 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       // Saving before sendOwnerNotification causes a race: the settings subscription
       // event replaces pendingApprovals in-memory, so the notificationMessageId
       // set on the old object reference is lost.
-      const existMsg = formatApprovalRequest(existing, buildDisplayContext());
-      const existNotifId = await sendOwnerNotification(existMsg);
+      const displayContext = buildDisplayContext();
+      const existNotifId = await sendOwnerNotification(
+        APPROVAL_REQUEST_NOTIFICATION_TEXT,
+        buildApprovalBlobField(existing, displayContext),
+      );
       if (existNotifId) {
         existing.notificationMessageId = normalizeNotificationId(existNotifId);
       }
@@ -1161,8 +1182,11 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
 
     // Send notification before saving so notificationMessageId is included
     // in the single save. See comment above about the settings subscription race.
-    const message = formatApprovalRequest(approval, buildDisplayContext());
-    const notifId = await sendOwnerNotification(message);
+    const displayContext = buildDisplayContext();
+    const notifId = await sendOwnerNotification(
+      APPROVAL_REQUEST_NOTIFICATION_TEXT,
+      buildApprovalBlobField(approval, displayContext),
+    );
     if (notifId) {
       approval.notificationMessageId = normalizeNotificationId(notifId);
     }
