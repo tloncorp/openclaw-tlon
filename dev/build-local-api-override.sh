@@ -27,6 +27,14 @@ fi
 # no scripts run, and Node resolves the symlink to the realpath in homestead,
 # where transitive deps are reachable via the workspace's node_modules.
 TARGET="$PLUGIN_DIR/node_modules/@tloncorp/api"
+# Sanity-check before `rm -rf`: PLUGIN_DIR can be overridden via env, so verify
+# TARGET resolves to the expected node_modules subpath under a non-empty
+# PLUGIN_DIR before destroying anything.
+EXPECTED_SUFFIX="/node_modules/@tloncorp/api"
+if [ -z "${PLUGIN_DIR:-}" ] || [ "${TARGET#"$PLUGIN_DIR"}" != "$EXPECTED_SUFFIX" ]; then
+  echo "ERROR: refusing to rm TARGET=$TARGET (PLUGIN_DIR=$PLUGIN_DIR)"
+  exit 1
+fi
 echo "==> Linking local @tloncorp/api from $LOCAL_API_DIR -> $TARGET..."
 rm -rf "$TARGET"
 mkdir -p "$(dirname "$TARGET")"
