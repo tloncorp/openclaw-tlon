@@ -3,6 +3,7 @@
   "version": "0.4.3",
   "description": "OpenClaw Tlon/Urbit channel plugin",
   "license": "MIT",
+  "packageManager": "pnpm@9.15.9",
   "repository": {
     "type": "git",
     "url": "https://github.com/tloncorp/openclaw-tlon.git"
@@ -57,6 +58,12 @@
     "zod": "^4.4.1"
   },
   "devDependencies": {
+    "@slack/bolt": "^4.7.2",
+    "@slack/logger": "^4.0.1",
+    "@slack/oauth": "^3.0.5",
+    "@slack/socket-mode": "^2.0.7",
+    "@slack/types": "^2.21.1",
+    "@slack/web-api": "^7.15.2",
     "@types/node": "^25.4.0",
     "dotenv": "^17.2.4",
     "openclaw": "2026.4.2",
@@ -69,16 +76,6 @@
   },
   "peerDependencies": {
     "openclaw": ">=2026.3.22"
-  },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "@matrix-org/matrix-sdk-crypto-nodejs",
-      "@tloncorp/tlon-skill",
-      "koffi",
-      "openclaw",
-      "protobufjs",
-      "sharp"
-    ]
   },
   "openclaw": {
     "extensions": [

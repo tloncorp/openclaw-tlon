@@ -18,14 +18,22 @@ if [ ! -f "$LOCAL_DIST_DIR/index.js" ]; then
   exit 0
 fi
 
-echo "==> Linking local @tloncorp/api from $LOCAL_API_DIR..."
-cd "$LOCAL_API_DIR"
-npm link --ignore-scripts
-
-cd "$PLUGIN_DIR"
-npm link --ignore-scripts @tloncorp/api
+# We can't use `npm link` (runs `prepare` -> tsup -> rollup, fails on missing
+# linux native bindings from the host darwin bind mount), and a tarball
+# overlay into node_modules/@tloncorp/api doesn't work because pnpm uses an
+# isolated layout: that path is normally a symlink into .pnpm/, and replacing
+# it with a real directory breaks resolution of transitive deps like
+# any-ascii. A plain symlink to the local checkout sidesteps both problems:
+# no scripts run, and Node resolves the symlink to the realpath in homestead,
+# where transitive deps are reachable via the workspace's node_modules.
+TARGET="$PLUGIN_DIR/node_modules/@tloncorp/api"
+echo "==> Linking local @tloncorp/api from $LOCAL_API_DIR -> $TARGET..."
+rm -rf "$TARGET"
+mkdir -p "$(dirname "$TARGET")"
+ln -s "$LOCAL_API_DIR" "$TARGET"
 
 echo "==> Verifying linked @tloncorp/api exports..."
+cd "$PLUGIN_DIR"
 node --input-type=module -e '
   const mod = await import("@tloncorp/api");
   const required = [

@@ -1,5 +1,13 @@
 packages: []
 
+allowBuilds:
+  '@matrix-org/matrix-sdk-crypto-nodejs': set this to true or false
+  '@tloncorp/tlon-skill': set this to true or false
+  koffi: set this to true or false
+  openclaw: set this to true or false
+  protobufjs: set this to true or false
+  sharp: set this to true or false
+
 onlyBuiltDependencies:
   - '@matrix-org/matrix-sdk-crypto-nodejs'
   - '@tloncorp/api'
