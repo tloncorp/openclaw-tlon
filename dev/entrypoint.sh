@@ -24,7 +24,7 @@ pnpm build
 # Expose tlon CLI to PATH
 TLON_BIN_DIR="/workspace/openclaw-tlon/node_modules/.bin"
 if [ -f "$TLON_BIN_DIR/tlon" ]; then
-  export PATH="$PATH:$TLON_BIN_DIR"
+  export PATH="$TLON_BIN_DIR:$PATH"
   echo "==> tlon CLI available at $TLON_BIN_DIR/tlon"
 fi
 
