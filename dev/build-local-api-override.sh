@@ -27,19 +27,23 @@ fi
 # no scripts run, and Node resolves the symlink to the realpath in homestead,
 # where transitive deps are reachable via the workspace's node_modules.
 # Sanity-check before `rm -rf`: PLUGIN_DIR can be overridden via env, so
-# canonicalize via realpath before comparing to avoid string-prefix bypasses
-# like PLUGIN_DIR=/ or PLUGIN_DIR=.../... that would otherwise resolve outside
-# the plugin tree. `realpath -m` tolerates non-existent paths.
+# canonicalize it and compare to a known anchor to catch mis-sets like
+# PLUGIN_DIR=/ or PLUGIN_DIR=.../... that would resolve outside the plugin
+# tree. Keep TARGET literal (no realpath) — running realpath on TARGET would
+# dereference an existing symlink (pnpm's into .pnpm/ or our own from a
+# prior run), and the subsequent `rm -rf` would nuke the real package
+# instead of just removing the link.
 if [ -z "${PLUGIN_DIR:-}" ]; then
   echo "ERROR: PLUGIN_DIR is unset"
   exit 1
 fi
-TARGET=$(realpath -m "$PLUGIN_DIR/node_modules/@tloncorp/api")
-EXPECTED_TARGET="$(realpath -m "$PLUGIN_DIR")/node_modules/@tloncorp/api"
-if [ "$TARGET" != "$EXPECTED_TARGET" ]; then
-  echo "ERROR: refusing to rm TARGET=$TARGET (PLUGIN_DIR=$PLUGIN_DIR, EXPECTED=$EXPECTED_TARGET)"
+EXPECTED_PLUGIN_DIR="/workspace/openclaw-tlon"
+CANONICAL_PLUGIN_DIR=$(realpath -m "$PLUGIN_DIR")
+if [ "$CANONICAL_PLUGIN_DIR" != "$EXPECTED_PLUGIN_DIR" ]; then
+  echo "ERROR: PLUGIN_DIR=$PLUGIN_DIR canonicalizes to $CANONICAL_PLUGIN_DIR, expected $EXPECTED_PLUGIN_DIR"
   exit 1
 fi
+TARGET="$PLUGIN_DIR/node_modules/@tloncorp/api"
 echo "==> Linking local @tloncorp/api from $LOCAL_API_DIR -> $TARGET..."
 rm -rf "$TARGET"
 mkdir -p "$(dirname "$TARGET")"
