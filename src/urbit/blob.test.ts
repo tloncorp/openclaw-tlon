@@ -15,6 +15,12 @@ describe("a2ui blobs", () => {
     });
 
     expect(validateA2UIBlobEntry(weather)).toBe(true);
+    const text = JSON.stringify(weather);
+    expect(text).toContain("High");
+    expect(text).toContain("Low");
+    expect(text).toContain("forecast-row");
+    expect(text).toContain("Divider");
+    expect(text).not.toContain("Refresh");
     expect(JSON.parse(serializeBlobField(weather))).toEqual([weather]);
   });
 
