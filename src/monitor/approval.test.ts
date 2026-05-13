@@ -55,9 +55,9 @@ describe("createPendingApproval", () => {
       type: "group",
       requestingShip: "~zod",
       groupFlag: "~host/my-group",
-      groupTitle: "My Cool Group",
+      groupTitle: "Garden Club",
     });
-    expect(approval.groupTitle).toBe("My Cool Group");
+    expect(approval.groupTitle).toBe("Garden Club");
   });
 });
 
@@ -149,8 +149,9 @@ describe("findPendingApproval", () => {
 // ---------------------------------------------------------------------------
 
 const ctx: DisplayContext = {
-  channelNames: new Map([["chat/~host/general", "general"]]),
-  groupNames: new Map([["~host/cool-group", "Cool Group"]]),
+  channelNames: new Map([["chat/~host/general", "General"]]),
+  channelGroups: new Map([["chat/~host/general", "~host/cool-group"]]),
+  groupNames: new Map([["~host/cool-group", "Garden Club"]]),
 };
 
 describe("buildApprovalA2UIBlob", () => {
@@ -185,8 +186,46 @@ describe("buildApprovalA2UIBlob", () => {
       expect(text).toContain("/allow ");
       expect(text).toContain("/reject ");
       expect(text).toContain("/ban ");
-      expect(text).toContain(APPROVAL_REQUEST_NOTIFICATION_TEXT);
+      if (text.includes("Hello, I would") || text.includes("@bot can you review")) {
+        expect(text).toContain("Message: ");
+      }
+      expect(text).not.toContain(APPROVAL_REQUEST_NOTIFICATION_TEXT);
     }
+  });
+
+  it("uses request type as the card eyebrow", () => {
+    expect(JSON.stringify(buildApprovalA2UIBlob({
+      id: "da1b2",
+      type: "dm",
+      requestingShip: "~sampel-palnet",
+      timestamp: 1,
+    }))).toContain("DM access");
+    expect(JSON.stringify(buildApprovalA2UIBlob({
+      id: "cc3d4",
+      type: "channel",
+      requestingShip: "~sampel-palnet",
+      channelNest: "chat/~host/general",
+      timestamp: 1,
+    }))).toContain("Channel access");
+    expect(JSON.stringify(buildApprovalA2UIBlob({
+      id: "g5f6e",
+      type: "group",
+      requestingShip: "~sampel-palnet",
+      groupFlag: "~host/cool-group",
+      timestamp: 1,
+    }))).toContain("Group invite");
+  });
+
+  it("shows labeled metadata on dm cards", () => {
+    const approval = buildApprovalA2UIBlob({
+      id: "da1b2",
+      type: "dm",
+      requestingShip: "~sampel-palnet",
+      timestamp: 1,
+    });
+
+    expect(validateA2UIBlobEntry(approval)).toBe(true);
+    expect(JSON.stringify(approval)).toContain("Sender: ~sampel-palnet");
   });
 
   it("uses display context for channel and group labels", () => {
@@ -202,8 +241,49 @@ describe("buildApprovalA2UIBlob", () => {
     );
 
     expect(validateA2UIBlobEntry(approval)).toBe(true);
-    expect(JSON.stringify(approval)).toContain("general (chat/~host/general)");
-    expect(JSON.stringify(approval)).toContain("/allow cc3d4");
+    const text = JSON.stringify(approval);
+    expect(text).toContain("Let the bot reply to ~zod?");
+    expect(text).toContain("Sender: ~zod");
+    expect(text).toContain("Channel: General in Garden Club");
+    expect(text).not.toContain("General in Garden Club (chat/~host/general)");
+    expect(text).toContain("/allow cc3d4");
+  });
+
+  it("falls back to channel name when group name is unavailable", () => {
+    const approval = buildApprovalA2UIBlob(
+      {
+        id: "cc3d4",
+        type: "channel",
+        requestingShip: "~zod",
+        channelNest: "chat/~host/general",
+        timestamp: 1,
+      },
+      { channelNames: ctx.channelNames },
+    );
+
+    expect(validateA2UIBlobEntry(approval)).toBe(true);
+    const text = JSON.stringify(approval);
+    expect(text).toContain("Let the bot reply to ~zod?");
+    expect(text).toContain("Sender: ~zod");
+    expect(text).toContain("Channel: General");
+    expect(text).not.toContain("general (chat/~host/general)");
+  });
+
+  it("shows labeled metadata on group invite cards", () => {
+    const approval = buildApprovalA2UIBlob({
+      id: "g5f6e",
+      type: "group",
+      requestingShip: "~robin-dasler",
+      groupFlag: "~robin-dasler/garden-club",
+      groupTitle: "Garden Club",
+      timestamp: 1,
+    });
+
+    expect(validateA2UIBlobEntry(approval)).toBe(true);
+    const text = JSON.stringify(approval);
+    expect(text).toContain("Let the bot join Garden Club?");
+    expect(text).toContain("Inviter: ~robin-dasler");
+    expect(text).toContain("Group ID: ~robin-dasler/garden-club");
   });
 });
 
@@ -222,7 +302,7 @@ describe("formatApprovalConfirmation", () => {
       id: "cc3d4", type: "channel", requestingShip: "~zod",
       channelNest: "chat/~host/general", timestamp: 1,
     };
-    expect(formatApprovalConfirmation(approval, "approve", ctx)).toContain("general (chat/~host/general)");
+    expect(formatApprovalConfirmation(approval, "approve", ctx)).toContain("General in Garden Club (chat/~host/general)");
   });
 
   it("group confirmation shows group name", () => {
@@ -230,7 +310,7 @@ describe("formatApprovalConfirmation", () => {
       id: "g5f6e", type: "group", requestingShip: "~zod",
       groupFlag: "~host/cool-group", timestamp: 1,
     };
-    expect(formatApprovalConfirmation(approval, "approve", ctx)).toContain("Cool Group (~host/cool-group)");
+    expect(formatApprovalConfirmation(approval, "approve", ctx)).toContain("Garden Club (~host/cool-group)");
   });
 
   it("works without context", () => {
@@ -248,15 +328,15 @@ describe("formatApprovalConfirmation", () => {
 
 describe("formatBlockedList", () => {
   it("shows empty state", () => {
-    expect(formatBlockedList([])).toBe("No ships are currently blocked.");
+    expect(formatBlockedList([])).toBe("No users are currently blocked.");
   });
 
   it("shows ships", () => {
     const text = formatBlockedList(["~sampel-palnet", "~zod"]);
     expect(text).toContain("~sampel-palnet");
     expect(text).toContain("~zod");
-    expect(text).toContain("Blocked ships (2):");
-    expect(text).toContain("`/unban ~ship-name`");
+    expect(text).toContain("Blocked users (2):");
+    expect(text).toContain("`/unban ~sampel-palnet`");
   });
 });
 
@@ -294,7 +374,7 @@ describe("formatPendingList", () => {
       { id: "cc3d4", type: "channel", requestingShip: "~zod", channelNest: "chat/~host/general", timestamp: Date.now() },
     ];
     const text = formatPendingList(approvals, ctx);
-    expect(text).toContain("general (chat/~host/general)");
+    expect(text).toContain("General in Garden Club (chat/~host/general)");
   });
 
   it("shows group names for group approvals", () => {
@@ -302,7 +382,7 @@ describe("formatPendingList", () => {
       { id: "g5f6e", type: "group", requestingShip: "~zod", groupFlag: "~host/cool-group", timestamp: Date.now() },
     ];
     const text = formatPendingList(approvals, ctx);
-    expect(text).toContain("Cool Group (~host/cool-group)");
+    expect(text).toContain("Garden Club (~host/cool-group)");
   });
 
   it("includes slash command usage hint", () => {

@@ -448,11 +448,26 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
 
   // Group name cache for human-readable display (flag -> title)
   const groupNameCache = new Map<string, string>();
+  const channelNameCache = new Map<string, string>();
+
+  function extractMetadataTitle(value: unknown): string | undefined {
+    if (!value || typeof value !== "object") {
+      return undefined;
+    }
+    const metadata = value as { meta?: { title?: unknown }; title?: unknown };
+    const title = metadata.meta?.title ?? metadata.title;
+    return typeof title === "string" && title.trim() ? title.trim() : undefined;
+  }
 
   // Build display context for approval formatting
   function buildDisplayContext(): DisplayContext {
     const channelNames = new Map<string, string>();
     for (const nest of watchedChannels) {
+      const title = channelNameCache.get(nest);
+      if (title) {
+        channelNames.set(nest, title);
+        continue;
+      }
       const parsed = parseChannelNest(nest);
       if (parsed) {
         channelNames.set(nest, parsed.channelName);
@@ -460,6 +475,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     }
     return {
       channelNames,
+      channelGroups: channelToGroup,
       groupNames: groupNameCache,
     };
   }
@@ -773,16 +789,25 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     })();
   }
 
-  // Run channel discovery AFTER settings are loaded (so settings store value is used)
-  if (effectiveAutoDiscoverChannels) {
+  // Fetch group metadata AFTER settings are loaded so approval cards can display
+  // friendly group names for both auto-discovered and manually configured channels.
+  const shouldFetchGroupMetadata =
+    effectiveAutoDiscoverChannels ||
+    account.groupChannels.length > 0 ||
+    Boolean(currentSettings.groupChannels?.length) ||
+    effectiveAutoAcceptGroupInvites;
+  if (shouldFetchGroupMetadata) {
     try {
       const initData = await fetchInitData(api, runtime);
-      if (initData.channels.length > 0) {
+      if (effectiveAutoDiscoverChannels && initData.channels.length > 0) {
         groupChannels = initData.channels;
       }
       // Populate channel-to-group mapping for member hint injection
       for (const [nest, groupFlag] of initData.channelToGroup) {
         channelToGroup.set(nest, groupFlag);
+      }
+      for (const [nest, title] of initData.channelNames) {
+        channelNameCache.set(nest, title);
       }
       // Populate group name cache for human-readable display
       for (const [flag, title] of initData.groupNames) {
@@ -3039,6 +3064,11 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
                     continue;
                   }
 
+                  const channelTitle = extractMetadataTitle(_channelData);
+                  if (channelTitle) {
+                    channelNameCache.set(channelNest, channelTitle);
+                  }
+
                   // If this is a new channel we're not watching yet, add it
                   if (!watchedChannels.has(channelNest)) {
                     watchedChannels.add(channelNest);
@@ -3196,6 +3226,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
           if (!effectiveAutoAcceptGroupInvites) {
             // If owner is configured, queue approval
             if (effectiveOwnerShip) {
+              processedGroupInvites.add(groupFlag);
               const approval = createPendingApproval(
                 {
                   type: "group",
@@ -3206,7 +3237,6 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
                 pendingApprovals.map((a) => a.id),
               );
               await queueApprovalRequest(approval);
-              processedGroupInvites.add(groupFlag);
             }
             continue;
           }
@@ -3222,6 +3252,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
           if (!isAllowed) {
             // If owner is configured, queue approval
             if (effectiveOwnerShip) {
+              processedGroupInvites.add(groupFlag);
               const approval = createPendingApproval(
                 {
                   type: "group",
@@ -3232,7 +3263,6 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
                 pendingApprovals.map((a) => a.id),
               );
               await queueApprovalRequest(approval);
-              processedGroupInvites.add(groupFlag);
             } else {
               runtime.log?.(
                 `[tlon] Rejected group invite from ${inviterShip} (not in groupInviteAllowlist): ${groupFlag}`,
