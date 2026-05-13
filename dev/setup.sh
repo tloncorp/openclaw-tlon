@@ -21,7 +21,10 @@ clone_if_missing ../tlonbot tlonbot
 # If your local checkout uses a different name (for example "homestead"),
 # set TLON_APPS_DIR when running dev/link commands instead.
 clone_if_missing ../tlon-apps tlon-apps
-# Note: tlon-skill is installed from npm, no clone needed
+
+# Clone tlon-skill for the dev-only local @tloncorp/tlon-skill override flow.
+# Set TLON_SKILL_DIR if your local checkout is not named ../tlon-skill.
+clone_if_missing ../tlon-skill tlon-skill
 
 # Create .env if missing
 if [ ! -f .env ]; then
