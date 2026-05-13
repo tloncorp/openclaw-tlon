@@ -91,12 +91,12 @@ import { sendDm, sendChannelPost, type BotProfile } from "../urbit/send.js";
 import { UrbitSSEClient } from "../urbit/sse-client.js";
 import { markdownToStory } from "../urbit/story.js";
 import {
-  APPROVAL_REQUEST_NOTIFICATION_TEXT,
   buildApprovalA2UIBlob,
   type PendingApproval,
   type DisplayContext,
   createPendingApproval,
   formatApprovalConfirmation,
+  formatApprovalRequestNotification,
   findPendingApproval,
   removePendingApproval,
   pruneExpired,
@@ -474,6 +474,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       }
     }
     return {
+      contactNames: nicknameCache,
       channelNames,
       channelGroups: channelToGroup,
       groupNames: groupNameCache,
@@ -1195,7 +1196,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       // set on the old object reference is lost.
       const displayContext = buildDisplayContext();
       const existNotifId = await sendOwnerNotification(
-        APPROVAL_REQUEST_NOTIFICATION_TEXT,
+        formatApprovalRequestNotification(existing, displayContext),
         buildApprovalBlobField(existing, displayContext),
       );
       if (existNotifId) {
@@ -1209,7 +1210,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     // in the single save. See comment above about the settings subscription race.
     const displayContext = buildDisplayContext();
     const notifId = await sendOwnerNotification(
-      APPROVAL_REQUEST_NOTIFICATION_TEXT,
+      formatApprovalRequestNotification(approval, displayContext),
       buildApprovalBlobField(approval, displayContext),
     );
     if (notifId) {

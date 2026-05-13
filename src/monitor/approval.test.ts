@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { validateA2UIBlobEntry } from "@tloncorp/api";
 import {
-  APPROVAL_REQUEST_NOTIFICATION_TEXT,
   type DisplayContext,
   type PendingApproval,
   buildApprovalA2UIBlob,
+  formatApprovalRequestNotification,
   generateApprovalId,
   createPendingApproval,
   findPendingApproval,
@@ -149,6 +149,12 @@ describe("findPendingApproval", () => {
 // ---------------------------------------------------------------------------
 
 const ctx: DisplayContext = {
+  contactNames: new Map([
+    ["~sampel-palnet", "Sam Palnet"],
+    ["~littel-wolfur", "Littel Wolfur"],
+    ["~robin-dasler", "Robin Dasler"],
+    ["~zod", "Zod"],
+  ]),
   channelNames: new Map([["chat/~host/general", "General"]]),
   channelGroups: new Map([["chat/~host/general", "~host/cool-group"]]),
   groupNames: new Map([["~host/cool-group", "Garden Club"]]),
@@ -189,8 +195,23 @@ describe("buildApprovalA2UIBlob", () => {
       if (text.includes("Hello, I would") || text.includes("@bot can you review")) {
         expect(text).toContain("Message: ");
       }
-      expect(text).not.toContain(APPROVAL_REQUEST_NOTIFICATION_TEXT);
+      expect(text).not.toContain("New approval request");
     }
+  });
+
+  it("formats the visible notification text by request type", () => {
+    expect(formatApprovalRequestNotification({
+      type: "dm",
+      requestingShip: "~sampel-palnet",
+    }, ctx)).toBe("DM request from Sam Palnet (~sampel-palnet)");
+    expect(formatApprovalRequestNotification({
+      type: "channel",
+      requestingShip: "~littel-wolfur",
+    }, ctx)).toBe("Channel mention request from Littel Wolfur (~littel-wolfur)");
+    expect(formatApprovalRequestNotification({
+      type: "group",
+      requestingShip: "~robin-dasler",
+    }, ctx)).toBe("Group invite request from Robin Dasler (~robin-dasler)");
   });
 
   it("uses request type as the card eyebrow", () => {
@@ -242,9 +263,10 @@ describe("buildApprovalA2UIBlob", () => {
 
     expect(validateA2UIBlobEntry(approval)).toBe(true);
     const text = JSON.stringify(approval);
-    expect(text).toContain("Let the bot reply to ~zod?");
-    expect(text).toContain("Sender: ~zod");
-    expect(text).toContain("Channel: General in Garden Club");
+    expect(text).toContain("Let the bot reply to Zod in General?");
+    expect(text).toContain("Sender: Zod (~zod)");
+    expect(text).toContain("Channel: General");
+    expect(text).toContain("Group: Garden Club");
     expect(text).not.toContain("General in Garden Club (chat/~host/general)");
     expect(text).toContain("/allow cc3d4");
   });
@@ -258,32 +280,35 @@ describe("buildApprovalA2UIBlob", () => {
         channelNest: "chat/~host/general",
         timestamp: 1,
       },
-      { channelNames: ctx.channelNames },
+      { contactNames: ctx.contactNames, channelNames: ctx.channelNames },
     );
 
     expect(validateA2UIBlobEntry(approval)).toBe(true);
     const text = JSON.stringify(approval);
-    expect(text).toContain("Let the bot reply to ~zod?");
-    expect(text).toContain("Sender: ~zod");
+    expect(text).toContain("Let the bot reply to Zod in General?");
+    expect(text).toContain("Sender: Zod (~zod)");
     expect(text).toContain("Channel: General");
     expect(text).not.toContain("general (chat/~host/general)");
   });
 
   it("shows labeled metadata on group invite cards", () => {
-    const approval = buildApprovalA2UIBlob({
-      id: "g5f6e",
-      type: "group",
-      requestingShip: "~robin-dasler",
-      groupFlag: "~robin-dasler/garden-club",
-      groupTitle: "Garden Club",
-      timestamp: 1,
-    });
+    const approval = buildApprovalA2UIBlob(
+      {
+        id: "g5f6e",
+        type: "group",
+        requestingShip: "~robin-dasler",
+        groupFlag: "~robin-dasler/garden-club",
+        groupTitle: "Garden Club",
+        timestamp: 1,
+      },
+      ctx,
+    );
 
     expect(validateA2UIBlobEntry(approval)).toBe(true);
     const text = JSON.stringify(approval);
     expect(text).toContain("Let the bot join Garden Club?");
-    expect(text).toContain("Inviter: ~robin-dasler");
-    expect(text).toContain("Group ID: ~robin-dasler/garden-club");
+    expect(text).toContain("Inviter: Robin Dasler (~robin-dasler)");
+    expect(text).toContain("Group: Garden Club");
   });
 });
 
@@ -292,9 +317,9 @@ describe("formatApprovalConfirmation", () => {
     const approval: PendingApproval = {
       id: "da1b2", type: "dm", requestingShip: "~sampel-palnet", timestamp: 1,
     };
-    expect(formatApprovalConfirmation(approval, "approve", ctx)).toContain("~sampel-palnet");
-    expect(formatApprovalConfirmation(approval, "deny", ctx)).toContain("~sampel-palnet");
-    expect(formatApprovalConfirmation(approval, "block", ctx)).toContain("~sampel-palnet");
+    expect(formatApprovalConfirmation(approval, "approve", ctx)).toContain("Sam Palnet (~sampel-palnet)");
+    expect(formatApprovalConfirmation(approval, "deny", ctx)).toContain("Sam Palnet (~sampel-palnet)");
+    expect(formatApprovalConfirmation(approval, "block", ctx)).toContain("Sam Palnet (~sampel-palnet)");
   });
 
   it("channel confirmation shows channel name", () => {
@@ -366,7 +391,7 @@ describe("formatPendingList", () => {
       { id: "da1b2", type: "dm", requestingShip: "~zod", timestamp: Date.now() },
     ];
     const text = formatPendingList(approvals, ctx);
-    expect(text).toContain("~zod");
+    expect(text).toContain("Zod (~zod)");
   });
 
   it("shows channel names for channel approvals", () => {

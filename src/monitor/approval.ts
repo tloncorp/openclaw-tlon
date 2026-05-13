@@ -17,7 +17,6 @@ import { makeA2UIBlob, type TlonA2UIBlob } from "../urbit/blob.js";
 export type { PendingApproval };
 
 export type ApprovalType = "dm" | "channel" | "group";
-export const APPROVAL_REQUEST_NOTIFICATION_TEXT = "New approval request";
 
 export type CreateApprovalParams = {
   type: ApprovalType;
@@ -37,12 +36,28 @@ export type CreateApprovalParams = {
   };
 };
 
+export function formatApprovalRequestNotification(
+  approval: Pick<PendingApproval, "type" | "requestingShip">,
+  ctx?: DisplayContext,
+): string {
+  const ship = displayShipWithId(approval.requestingShip, ctx);
+  if (approval.type === "dm") {
+    return `DM request from ${ship}`;
+  }
+  if (approval.type === "channel") {
+    return `Channel mention request from ${ship}`;
+  }
+  return `Group invite request from ${ship}`;
+}
+
 // ============================================================================
 // Display Context — pass human-readable names without breaking purity
 // ============================================================================
 
 /** Display hints for human-readable formatting. Callers resolve these from caches/lookups. */
 export type DisplayContext = {
+  /** Map from ship (~sampel-palnet) to human-readable contact nickname */
+  contactNames?: Map<string, string>;
   /** Map from channel nest (chat/~host/name) to human-readable channel display name */
   channelNames?: Map<string, string>;
   /** Map from channel nest (chat/~host/name) to containing group flag */
@@ -50,6 +65,15 @@ export type DisplayContext = {
   /** Map from group flag (~host/name) to human-readable group title */
   groupNames?: Map<string, string>;
 };
+
+function displayShipName(ship: string, ctx?: DisplayContext): string {
+  return ctx?.contactNames?.get(ship) || ship;
+}
+
+function displayShipWithId(ship: string, ctx?: DisplayContext): string {
+  const name = ctx?.contactNames?.get(ship);
+  return name ? `${name} (${ship})` : ship;
+}
 
 function displayChannel(nest: string, ctx?: DisplayContext): string {
   const name = ctx?.channelNames?.get(nest);
@@ -184,6 +208,8 @@ type ApprovalA2UIParams = {
   type: ApprovalType;
   requestId: string;
   requestingShip: string;
+  requestingShipName?: string;
+  requestingShipLabel?: string;
   messagePreview?: string;
   channelName?: string;
   channelContext?: string;
@@ -192,6 +218,14 @@ type ApprovalA2UIParams = {
   groupFlag?: string;
   groupTitle?: string;
 };
+
+function approvalRequesterName(params: ApprovalA2UIParams): string {
+  return params.requestingShipName ?? params.requestingShip;
+}
+
+function approvalRequesterLabel(params: ApprovalA2UIParams): string {
+  return params.requestingShipLabel ?? params.requestingShip;
+}
 
 function approvalTarget(params: ApprovalA2UIParams): string | undefined {
   if (params.type === "channel") {
@@ -207,9 +241,9 @@ function approvalTitle(params: ApprovalA2UIParams): string {
   const target = approvalTarget(params);
   switch (params.type) {
     case "dm":
-      return `Allow ${params.requestingShip} to DM the bot?`;
+      return `Allow ${approvalRequesterName(params)} to DM the bot?`;
     case "channel":
-      return `Let the bot reply to ${params.requestingShip}?`;
+      return `Let the bot reply to ${approvalRequesterName(params)} in ${approvalChannelLabel(params)}?`;
     case "group":
       return `Let the bot join ${truncate(target ?? "this group", 60)}?`;
   }
@@ -227,25 +261,25 @@ function approvalEyebrow(params: ApprovalA2UIParams): string {
 }
 
 function approvalChannelLabel(params: ApprovalA2UIParams): string {
-  if (params.channelContext && params.channelName) {
-    return `${params.channelName} in ${params.channelContext}`;
-  }
-  return params.channelName ?? params.channelContext ?? params.channelNest ?? "this channel";
+  return params.channelName ?? params.channelNest ?? "this channel";
 }
 
 function approvalContextLines(params: ApprovalA2UIParams): string[] {
   switch (params.type) {
     case "dm":
-      return [`Sender: ${params.requestingShip}`];
+      return [`Sender: ${approvalRequesterLabel(params)}`];
     case "channel":
       return [
-        `Sender: ${params.requestingShip}`,
+        `Sender: ${approvalRequesterLabel(params)}`,
         `Channel: ${approvalChannelLabel(params)}`,
+        ...(params.channelContext ? [`Group: ${params.channelContext}`] : []),
       ];
     case "group":
       return [
-        `Inviter: ${params.requestingShip}`,
-        ...(params.groupFlag ? [`Group ID: ${params.groupFlag}`] : []),
+        `Inviter: ${approvalRequesterLabel(params)}`,
+        ...(approvalTarget(params) || params.groupFlag
+          ? [`Group: ${approvalTarget(params) ?? params.groupFlag}`]
+          : []),
       ];
   }
 }
@@ -275,6 +309,7 @@ function buildApprovalA2UIBlobFromParams(params: ApprovalA2UIParams): TlonA2UIBl
   const bodyChildren = [
     "eyebrow",
     "title",
+    "titleDivider",
     ...contextIds,
     ...(copy ? ["copy"] : []),
     "divider",
@@ -317,6 +352,7 @@ function buildApprovalA2UIBlobFromParams(params: ApprovalA2UIParams): TlonA2UIBl
       variant: "h3",
       text: approvalTitle(params),
     },
+    { id: "titleDivider", component: "Divider" },
     ...contextComponents,
     ...copyComponents,
     { id: "divider", component: "Divider" },
@@ -429,6 +465,8 @@ export function buildApprovalA2UIBlob(
     type: approval.type,
     requestId: approval.id,
     requestingShip: approval.requestingShip,
+    requestingShipName: displayShipName(approval.requestingShip, ctx),
+    requestingShipLabel: displayShipWithId(approval.requestingShip, ctx),
     messagePreview: approval.messagePreview,
     channelNest: approval.channelNest,
     channelName: displayChannelForApproval(approval.channelNest, ctx),
@@ -517,7 +555,7 @@ export function formatApprovalConfirmation(
   action: "approve" | "deny" | "block",
   ctx?: DisplayContext,
 ): string {
-  const ship = approval.requestingShip;
+  const ship = displayShipWithId(approval.requestingShip, ctx);
 
   if (action === "block") {
     return `Blocked ${ship}. They will no longer be able to contact the bot.`;
@@ -578,7 +616,7 @@ export function formatPendingList(approvals: PendingApproval[], ctx?: DisplayCon
   }
 
   const entries = active.map((a) => {
-    const ship = a.requestingShip;
+    const ship = displayShipWithId(a.requestingShip, ctx);
     const preview = a.messagePreview ? `\n    "${truncate(a.messagePreview, 80)}"` : "";
 
     switch (a.type) {
