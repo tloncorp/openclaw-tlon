@@ -37,6 +37,7 @@
     "format:fix": "oxfmt --write",
     "lint": "oxlint --type-aware",
     "lint:fix": "pnpm format:fix && oxlint --type-aware --fix",
+    "postinstall": "node scripts/generate-version.js",
     "prebuild": "node scripts/generate-version.js",
     "test": "vitest run src/",
     "test:all": "vitest run",
