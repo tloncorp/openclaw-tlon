@@ -1,17 +1,12 @@
-import {
-  appendToPostBlob,
-  validateA2UIBlobEntry,
-  type A2UIComponent,
-  type PostBlobDataEntryA2UI,
-} from "@tloncorp/api";
+import { A2UI, appendToPostBlob } from "@tloncorp/api";
 
 export const TLON_A2UI_CATALOG_ID = "tlon.a2ui.basic.v1";
-export type TlonA2UIBlob = PostBlobDataEntryA2UI;
+export type TlonA2UIBlob = A2UI.BlobEntry;
 
 export function makeA2UIBlob(
   surfaceId: string,
   root: string,
-  components: A2UIComponent[],
+  components: A2UI.Component[],
 ): TlonA2UIBlob {
   const blob: TlonA2UIBlob = {
     type: "a2ui",
@@ -27,7 +22,7 @@ export function makeA2UIBlob(
       },
     ],
   };
-  if (!validateA2UIBlobEntry(blob)) {
+  if (!A2UI.validateBlobEntry(blob)) {
     throw new Error("invalid a2ui blob");
   }
   return blob;

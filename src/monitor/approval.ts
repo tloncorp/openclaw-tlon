@@ -1,8 +1,5 @@
+import { A2UI } from "@tloncorp/api";
 import { randomUUID } from "node:crypto";
-import {
-  TLON_A2UI_ACTION_SEND_MESSAGE,
-  type A2UIComponent,
-} from "@tloncorp/api";
 /**
  * Approval system for managing DM, channel mention, and group invite approvals.
  *
@@ -10,13 +7,16 @@ import {
  * a notification and can approve or deny the request via slash commands
  * (/allow, /reject, /ban).
  */
-
 import type { PendingApproval } from "../settings.js";
 import { makeA2UIBlob, type TlonA2UIBlob } from "../urbit/blob.js";
 
 export type { PendingApproval };
 
 export type ApprovalType = "dm" | "channel" | "group";
+
+function assertNever(value: never): never {
+  throw new Error(`Unexpected approval type: ${String(value)}`);
+}
 
 export type CreateApprovalParams = {
   type: ApprovalType;
@@ -247,6 +247,7 @@ function approvalTitle(params: ApprovalA2UIParams): string {
     case "group":
       return `Let the bot join ${truncate(target ?? "this group", 60)}?`;
   }
+  return assertNever(params.type);
 }
 
 function approvalEyebrow(params: ApprovalA2UIParams): string {
@@ -258,6 +259,7 @@ function approvalEyebrow(params: ApprovalA2UIParams): string {
     case "group":
       return "Group invite";
   }
+  return assertNever(params.type);
 }
 
 function approvalChannelLabel(params: ApprovalA2UIParams): string {
@@ -282,6 +284,7 @@ function approvalContextLines(params: ApprovalA2UIParams): string[] {
           : []),
       ];
   }
+  return assertNever(params.type);
 }
 
 function approvalCopy(params: ApprovalA2UIParams): string | undefined {
@@ -300,6 +303,7 @@ function approvalAllowNote(params: ApprovalA2UIParams): string {
     case "group":
       return "The bot will be able to read and respond in channels it joins.";
   }
+  return assertNever(params.type);
 }
 
 function buildApprovalA2UIBlobFromParams(params: ApprovalA2UIParams): TlonA2UIBlob {
@@ -316,13 +320,13 @@ function buildApprovalA2UIBlobFromParams(params: ApprovalA2UIParams): TlonA2UIBl
     "details",
     "actions",
   ];
-  const contextComponents: A2UIComponent[] = contextLines.map((line, index) => ({
+  const contextComponents: A2UI.Component[] = contextLines.map((line, index) => ({
     id: `context${index}`,
     component: "Text",
     variant: "caption",
     text: line,
   }));
-  const copyComponents: A2UIComponent[] = copy
+  const copyComponents: A2UI.Component[] = copy
     ? [
         {
           id: "copy",
@@ -333,7 +337,7 @@ function buildApprovalA2UIBlobFromParams(params: ApprovalA2UIParams): TlonA2UIBl
       ]
     : [];
 
-  const components: A2UIComponent[] = [
+  const components: A2UI.Component[] = [
     { id: "root", component: "Card", child: "body" },
     {
       id: "body",
@@ -379,7 +383,7 @@ function buildApprovalA2UIBlobFromParams(params: ApprovalA2UIParams): TlonA2UIBl
       child: "allowLabel",
       action: {
         event: {
-          name: TLON_A2UI_ACTION_SEND_MESSAGE,
+          name: A2UI.action.sendMessage,
           context: { text: `/allow ${params.requestId}` },
         },
       },
@@ -391,7 +395,7 @@ function buildApprovalA2UIBlobFromParams(params: ApprovalA2UIParams): TlonA2UIBl
       child: "rejectLabel",
       action: {
         event: {
-          name: TLON_A2UI_ACTION_SEND_MESSAGE,
+          name: A2UI.action.sendMessage,
           context: { text: `/reject ${params.requestId}` },
         },
       },
@@ -404,7 +408,7 @@ function buildApprovalA2UIBlobFromParams(params: ApprovalA2UIParams): TlonA2UIBl
       child: "banLabel",
       action: {
         event: {
-          name: TLON_A2UI_ACTION_SEND_MESSAGE,
+          name: A2UI.action.sendMessage,
           context: { text: `/ban ${params.requestId}` },
         },
       },
@@ -584,6 +588,7 @@ export function formatApprovalConfirmation(
       return `Denied group invite from ${ship} to ${group}.`;
     }
   }
+  return assertNever(approval.type);
 }
 
 // ============================================================================
@@ -627,6 +632,7 @@ export function formatPendingList(approvals: PendingApproval[], ctx?: DisplayCon
       case "group":
         return `  #${a.id} - Group invite from ${ship} to ${displayGroup(a.groupFlag ?? "", ctx, a.groupTitle)}`;
     }
+    return assertNever(a.type);
   });
 
   return [

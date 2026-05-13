@@ -1,5 +1,5 @@
+import { A2UI } from "@tloncorp/api";
 import { describe, expect, it } from "vitest";
-import { validateA2UIBlobEntry } from "@tloncorp/api";
 import {
   type DisplayContext,
   type PendingApproval,
@@ -187,7 +187,7 @@ describe("buildApprovalA2UIBlob", () => {
         timestamp: 1,
       }),
     ]) {
-      expect(validateA2UIBlobEntry(approval)).toBe(true);
+      expect(A2UI.validateBlobEntry(approval)).toBe(true);
       const text = JSON.stringify(approval);
       expect(text).toContain("/allow ");
       expect(text).toContain("/reject ");
@@ -245,7 +245,7 @@ describe("buildApprovalA2UIBlob", () => {
       timestamp: 1,
     });
 
-    expect(validateA2UIBlobEntry(approval)).toBe(true);
+    expect(A2UI.validateBlobEntry(approval)).toBe(true);
     expect(JSON.stringify(approval)).toContain("Sender: ~sampel-palnet");
   });
 
@@ -261,7 +261,7 @@ describe("buildApprovalA2UIBlob", () => {
       ctx,
     );
 
-    expect(validateA2UIBlobEntry(approval)).toBe(true);
+    expect(A2UI.validateBlobEntry(approval)).toBe(true);
     const text = JSON.stringify(approval);
     expect(text).toContain("Let the bot reply to Zod in General?");
     expect(text).toContain("Sender: Zod (~zod)");
@@ -283,7 +283,7 @@ describe("buildApprovalA2UIBlob", () => {
       { contactNames: ctx.contactNames, channelNames: ctx.channelNames },
     );
 
-    expect(validateA2UIBlobEntry(approval)).toBe(true);
+    expect(A2UI.validateBlobEntry(approval)).toBe(true);
     const text = JSON.stringify(approval);
     expect(text).toContain("Let the bot reply to Zod in General?");
     expect(text).toContain("Sender: Zod (~zod)");
@@ -304,7 +304,7 @@ describe("buildApprovalA2UIBlob", () => {
       ctx,
     );
 
-    expect(validateA2UIBlobEntry(approval)).toBe(true);
+    expect(A2UI.validateBlobEntry(approval)).toBe(true);
     const text = JSON.stringify(approval);
     expect(text).toContain("Let the bot join Garden Club?");
     expect(text).toContain("Inviter: Robin Dasler (~robin-dasler)");
