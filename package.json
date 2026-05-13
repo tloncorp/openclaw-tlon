@@ -33,6 +33,8 @@
     "dev": "./dev/run.sh",
     "dev:api:link": "./dev/link-local-api.sh",
     "dev:api:unlink": "./dev/unlink-local-api.sh",
+    "dev:skill:link": "./dev/link-local-skill.sh",
+    "dev:skill:unlink": "./dev/unlink-local-skill.sh",
     "format": "oxfmt --check",
     "format:fix": "oxfmt --write",
     "lint": "oxlint --type-aware",
