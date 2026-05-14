@@ -20,6 +20,7 @@ cd /workspace/openclaw-tlon
 pnpm install
 pnpm build
 ./dev/build-local-api-override.sh
+./dev/build-local-skill-override.sh
 
 # Expose tlon CLI to PATH
 TLON_BIN_DIR="/workspace/openclaw-tlon/node_modules/.bin"

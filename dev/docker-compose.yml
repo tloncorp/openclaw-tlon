@@ -11,6 +11,9 @@ services:
       # Inside the container, the local tlon-apps/homestead checkout is always mounted here.
       # This must not use the host absolute path from .env.
       - TLON_APPS_DIR=/workspace/tlon-apps
+      # Inside the container, the local tlon-skill checkout is always mounted here.
+      # This must not use the host absolute path from .env.
+      - TLON_SKILL_DIR=/workspace/tlon-skill
     ports:
       - "${OPENCLAW_GATEWAY_PORT:-18789}:18789"
     volumes:
@@ -23,7 +26,9 @@ services:
       # Local tlon-apps/homestead checkout for dev-only @tloncorp/api override builds.
       # Set TLON_APPS_DIR when your local checkout is not named ../tlon-apps.
       - ${TLON_APPS_DIR:-../../tlon-apps}:/workspace/tlon-apps
-      # Note: tlon-skill is installed from npm, no mount needed
+      # Local tlon-skill checkout for dev-only @tloncorp/tlon-skill override.
+      # Set TLON_SKILL_DIR when your local checkout is not named ../tlon-skill.
+      - ${TLON_SKILL_DIR:-../../tlon-skill}:/workspace/tlon-skill
       # Persist OpenClaw state
       - openclaw-state:/root/.openclaw
       # Config from tlonbot (copied + patched by entrypoint, not mounted directly)
