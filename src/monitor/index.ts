@@ -3227,7 +3227,6 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
           if (!effectiveAutoAcceptGroupInvites) {
             // If owner is configured, queue approval
             if (effectiveOwnerShip) {
-              processedGroupInvites.add(groupFlag);
               const approval = createPendingApproval(
                 {
                   type: "group",
@@ -3238,6 +3237,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
                 pendingApprovals.map((a) => a.id),
               );
               await queueApprovalRequest(approval);
+              processedGroupInvites.add(groupFlag);
             }
             continue;
           }
@@ -3253,7 +3253,6 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
           if (!isAllowed) {
             // If owner is configured, queue approval
             if (effectiveOwnerShip) {
-              processedGroupInvites.add(groupFlag);
               const approval = createPendingApproval(
                 {
                   type: "group",
@@ -3264,6 +3263,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
                 pendingApprovals.map((a) => a.id),
               );
               await queueApprovalRequest(approval);
+              processedGroupInvites.add(groupFlag);
             } else {
               runtime.log?.(
                 `[tlon] Rejected group invite from ${inviterShip} (not in groupInviteAllowlist): ${groupFlag}`,
