@@ -33,9 +33,15 @@ export function daysBetween(earlierMs: number, laterMs: number): number {
  * Returns `null` when no nudge is wanted at this idle level.
  */
 export function computeTargetStage(daysIdle: number): NudgeStage | null {
-  if (daysIdle < 7) {return null;}
-  if (daysIdle < 14) {return 1;}
-  if (daysIdle < 30) {return 2;}
+  if (daysIdle < 7) {
+    return null;
+  }
+  if (daysIdle < 14) {
+    return 1;
+  }
+  if (daysIdle < 30) {
+    return 2;
+  }
   return 3;
 }
 
@@ -65,10 +71,7 @@ function resolveUserTimezone(cfg: OpenClawConfig | null | undefined): string {
   return Intl.DateTimeFormat().resolvedOptions().timeZone?.trim() || "UTC";
 }
 
-function resolveActiveHoursTimezone(
-  cfg: OpenClawConfig | null | undefined,
-  raw: unknown,
-): string {
+function resolveActiveHoursTimezone(cfg: OpenClawConfig | null | undefined, raw: unknown): string {
   const trimmed = typeof raw === "string" ? raw.trim() : "";
   if (!trimmed || trimmed === "user") {
     return resolveUserTimezone(cfg);
@@ -85,15 +88,23 @@ function resolveActiveHoursTimezone(
 }
 
 function parseActiveHoursTime(raw: unknown, opts: { allow24: boolean }): number | null {
-  if (typeof raw !== "string") {return null;}
+  if (typeof raw !== "string") {
+    return null;
+  }
   const trimmed = raw.trim();
-  if (!ACTIVE_HOURS_TIME_PATTERN.test(trimmed)) {return null;}
+  if (!ACTIVE_HOURS_TIME_PATTERN.test(trimmed)) {
+    return null;
+  }
   const [hourStr, minuteStr] = trimmed.split(":");
   const hour = Number(hourStr);
   const minute = Number(minuteStr);
-  if (!Number.isFinite(hour) || !Number.isFinite(minute)) {return null;}
+  if (!Number.isFinite(hour) || !Number.isFinite(minute)) {
+    return null;
+  }
   if (hour === 24) {
-    if (!opts.allow24 || minute !== 0) {return null;}
+    if (!opts.allow24 || minute !== 0) {
+      return null;
+    }
     return 24 * 60;
   }
   return hour * 60 + minute;
@@ -105,14 +116,17 @@ function parseActiveHoursTime(raw: unknown, opts: { allow24: boolean }): number 
  * malformed. Callers use the `null` case to fall through to a lower-
  * precedence tier's value for that field.
  */
-function overlayActiveHoursTime(
-  raw: unknown,
-  opts: { allow24: boolean },
-): string | null {
-  if (typeof raw !== "string") {return null;}
+function overlayActiveHoursTime(raw: unknown, opts: { allow24: boolean }): string | null {
+  if (typeof raw !== "string") {
+    return null;
+  }
   const trimmed = raw.trim();
-  if (!trimmed) {return null;}
-  if (parseActiveHoursTime(trimmed, opts) == null) {return null;}
+  if (!trimmed) {
+    return null;
+  }
+  if (parseActiveHoursTime(trimmed, opts) == null) {
+    return null;
+  }
   return trimmed;
 }
 
@@ -126,10 +140,16 @@ function overlayActiveHoursTimezone(
   cfg: OpenClawConfig | null | undefined,
   raw: unknown,
 ): string | null {
-  if (typeof raw !== "string") {return null;}
+  if (typeof raw !== "string") {
+    return null;
+  }
   const trimmed = raw.trim();
-  if (!trimmed) {return null;}
-  if (trimmed === "user") {return resolveUserTimezone(cfg);}
+  if (!trimmed) {
+    return null;
+  }
+  if (trimmed === "user") {
+    return resolveUserTimezone(cfg);
+  }
   if (trimmed === "local") {
     return Intl.DateTimeFormat().resolvedOptions().timeZone?.trim() || null;
   }
@@ -145,7 +165,9 @@ function activeHoursFromShape(
   cfg: OpenClawConfig | null | undefined,
   raw: { start?: unknown; end?: unknown; timezone?: unknown } | undefined | null,
 ): ActiveHours | null {
-  if (!raw) {return null;}
+  if (!raw) {
+    return null;
+  }
   const start = typeof raw.start === "string" ? raw.start.trim() : undefined;
   const end = typeof raw.end === "string" ? raw.end.trim() : undefined;
   if (!start || !end) {
@@ -164,20 +186,14 @@ function activeHoursFromShape(
   };
 }
 
-function activeHoursFromChannelsTlon(
-  cfg: OpenClawConfig | null | undefined,
-): ActiveHours | null {
-  const tlon = (
-    cfg as { channels?: { tlon?: { nudgeActiveHours?: unknown } } } | null | undefined
-  )?.channels?.tlon;
+function activeHoursFromChannelsTlon(cfg: OpenClawConfig | null | undefined): ActiveHours | null {
+  const tlon = (cfg as { channels?: { tlon?: { nudgeActiveHours?: unknown } } } | null | undefined)
+    ?.channels?.tlon;
   const raw = (tlon as { nudgeActiveHours?: unknown } | undefined)?.nudgeActiveHours;
   if (!raw || typeof raw !== "object") {
     return null;
   }
-  return activeHoursFromShape(
-    cfg,
-    raw as { start?: unknown; end?: unknown; timezone?: unknown },
-  );
+  return activeHoursFromShape(cfg, raw as { start?: unknown; end?: unknown; timezone?: unknown });
 }
 
 function activeHoursFromFileConfig(cfg: OpenClawConfig | null | undefined): ActiveHours | null {
@@ -218,25 +234,18 @@ export function resolveActiveHours(
   settings: TlonSettingsStore,
   cfg: OpenClawConfig | null | undefined,
 ): ActiveHours {
-  const baseline =
-    activeHoursFromChannelsTlon(cfg) ??
+  const baseline = activeHoursFromChannelsTlon(cfg) ??
     activeHoursFromFileConfig(cfg) ?? {
       start: DEFAULT_ACTIVE_HOURS_START,
       end: DEFAULT_ACTIVE_HOURS_END,
       timezone: DEFAULT_ACTIVE_HOURS_TIMEZONE,
     };
 
-  const startOverride = overlayActiveHoursTime(
-    settings.nudgeActiveHoursStart,
-    { allow24: false },
-  );
+  const startOverride = overlayActiveHoursTime(settings.nudgeActiveHoursStart, { allow24: false });
   const endOverride = overlayActiveHoursTime(settings.nudgeActiveHoursEnd, {
     allow24: true,
   });
-  const timezoneOverride = overlayActiveHoursTimezone(
-    cfg,
-    settings.nudgeActiveHoursTimezone,
-  );
+  const timezoneOverride = overlayActiveHoursTimezone(cfg, settings.nudgeActiveHoursTimezone);
 
   return {
     start: startOverride ?? baseline.start,
@@ -259,12 +268,18 @@ function formatLocalHhMm(date: Date, timezone: string): string {
   let hh = "00";
   let mm = "00";
   for (const part of parts) {
-    if (part.type === "hour") {hh = part.value;}
-    if (part.type === "minute") {mm = part.value;}
+    if (part.type === "hour") {
+      hh = part.value;
+    }
+    if (part.type === "minute") {
+      mm = part.value;
+    }
   }
   // `Intl.DateTimeFormat` with `hour12: false` can yield "24:00" at midnight
   // on some engines; normalize to "00:00" for comparison consistency.
-  if (hh === "24") {hh = "00";}
+  if (hh === "24") {
+    hh = "00";
+  }
   return `${hh}:${mm}`;
 }
 
@@ -340,8 +355,14 @@ export type ShouldSendInputs = {
 };
 
 export function shouldSend(inputs: ShouldSendInputs): boolean {
-  if (inputs.targetStage == null) {return false;}
-  if (!inputs.ownerShip) {return false;}
-  if (!inputs.isInActiveHours) {return false;}
+  if (inputs.targetStage == null) {
+    return false;
+  }
+  if (!inputs.ownerShip) {
+    return false;
+  }
+  if (!inputs.isInActiveHours) {
+    return false;
+  }
   return inputs.targetStage > inputs.lastNudgeStage;
 }

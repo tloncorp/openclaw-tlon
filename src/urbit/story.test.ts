@@ -10,9 +10,7 @@ describe("markdownToStory", () => {
       expect(story[0]).toHaveProperty("inline");
       const inlines = (story[0] as { inline: unknown[] }).inline;
       // Find ship in inlines
-      const hasShip = inlines.some(
-        (i) => typeof i === "object" && i !== null && "ship" in i
-      );
+      const hasShip = inlines.some((i) => typeof i === "object" && i !== null && "ship" in i);
       expect(hasShip).toBe(true);
     });
 
@@ -32,9 +30,7 @@ describe("markdownToStory", () => {
 
       // Bold content should contain ship and path
       const boldContent = first.bold as unknown[];
-      const hasShip = boldContent.some(
-        (i) => typeof i === "object" && i !== null && "ship" in i
-      );
+      const hasShip = boldContent.some((i) => typeof i === "object" && i !== null && "ship" in i);
       expect(hasShip).toBe(true);
     });
 
@@ -51,7 +47,9 @@ describe("markdownToStory", () => {
     });
 
     it("converts ship name in bold with surrounding text", () => {
-      const story = markdownToStory("Check out **~sidwyn-nimnev-nocsyx-lassul/d4parq4f** for details.");
+      const story = markdownToStory(
+        "Check out **~sidwyn-nimnev-nocsyx-lassul/d4parq4f** for details.",
+      );
       expect(story).toHaveLength(1);
       expect(story[0]).toHaveProperty("inline");
 

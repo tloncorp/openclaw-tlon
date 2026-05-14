@@ -3,7 +3,6 @@
   "version": "0.4.3",
   "description": "OpenClaw Tlon/Urbit channel plugin",
   "license": "MIT",
-  "packageManager": "pnpm@9.15.9",
   "repository": {
     "type": "git",
     "url": "https://github.com/tloncorp/openclaw-tlon.git"
@@ -28,7 +27,6 @@
   },
   "scripts": {
     "build": "tsc",
-    "postbuild": "node scripts/generate-channel-configs.mjs",
     "clean": "rm -rf dist",
     "dev": "./dev/run.sh",
     "dev:api:link": "./dev/link-local-api.sh",
@@ -37,7 +35,11 @@
     "format:fix": "oxfmt --write",
     "lint": "oxlint --type-aware",
     "lint:fix": "pnpm format:fix && oxlint --type-aware --fix",
+    "pack:publish": "npm run prepare:publish && npm pack .publish",
+    "postbuild": "node scripts/generate-channel-configs.mjs",
     "prebuild": "node scripts/generate-version.js",
+    "prepare:publish": "npm run build && node scripts/prepare-publish-package.js",
+    "publish:clean": "npm run prepare:publish && npm publish .publish --access public",
     "test": "vitest run src/",
     "test:all": "vitest run",
     "test:integration": "bash ./test/run.sh",
@@ -45,10 +47,7 @@
     "test:integration:watch": "./test/run-dev.sh --watch",
     "test:manual": "bash ./test/run-manual.sh",
     "test:security": "vitest run src/security.test.ts",
-    "test:watch": "vitest src/",
-    "prepare:publish": "npm run build && node scripts/prepare-publish-package.js",
-    "pack:publish": "npm run prepare:publish && npm pack .publish",
-    "publish:clean": "npm run prepare:publish && npm publish .publish --access public"
+    "test:watch": "vitest src/"
   },
   "dependencies": {
     "@tloncorp/api": "presence",
@@ -80,6 +79,7 @@
   "peerDependencies": {
     "openclaw": ">=2026.3.22"
   },
+  "packageManager": "pnpm@9.15.9",
   "openclaw": {
     "extensions": [
       "./dist/index.js"

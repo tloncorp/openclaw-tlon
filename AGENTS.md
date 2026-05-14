@@ -94,6 +94,7 @@ src/
 See [SECURITY.md](SECURITY.md) for the full security model (authorization, credentials, invariants).
 
 Quick reminders:
+
 - ❌ `Math.random()` → ✅ `crypto.randomUUID()`
 - ❌ Raw `fetch()` with user URLs → ✅ `urbitFetch` with SSRF policy
 - ❌ Unsanitized input to `spawn()` → ✅ Validate/allowlist first
@@ -106,6 +107,7 @@ Quick reminders:
 ### Use `@tloncorp/api` First
 
 If the API package supports it, use it. Don't write raw HTTP calls for things the SDK handles:
+
 - Channel operations (subscribe, poke)
 - Scries for data fetching
 - Types for Tlon data structures (Post, Writ, etc.)
@@ -157,6 +159,7 @@ pnpm test:watch        # watch mode during development
 ```
 
 What to unit test:
+
 - Ship normalization (`~ship` handling)
 - Channel nest parsing
 - Story/markdown conversion
@@ -174,6 +177,7 @@ pnpm tsc --noEmit               # full type check
 ```
 
 Upstream security scanners catch:
+
 - Weak randomness (`Math.random()` in security contexts)
 - Temp path handling (path traversal risks)
 - SSRF vulnerabilities (raw fetch with user input)
@@ -198,20 +202,20 @@ describe("my feature", () => {
   test("mutates state correctly", async () => {
     // 1. Generate unique token for this test run
     const token = `test-value-${Date.now().toString(36)}`;
-    
+
     // 2. Send natural language prompt
     const response = await fixtures.client.prompt(
-      `Update your profile status to exactly "${token}" and confirm.`
+      `Update your profile status to exactly "${token}" and confirm.`,
     );
     expect(response.success).toBe(true);
-    
+
     // 3. Verify state changed on bot ship (not response text)
     const updated = await waitFor(async () => {
       const contacts = await fixtures.botState.contacts();
-      const self = contacts.find(c => c.id === fixtures.botShip);
+      const self = contacts.find((c) => c.id === fixtures.botShip);
       return self?.status === token ? true : undefined;
     }, 30_000);
-    
+
     expect(updated).toBe(true);
   });
 });
@@ -227,12 +231,12 @@ describe("my feature", () => {
 #### State Client Methods
 
 ```typescript
-fixtures.botState.groups()           // All groups bot is in
-fixtures.botState.group(flag)        // Specific group details
-fixtures.botState.contacts()         // All contacts
-fixtures.botState.settings()         // Bot settings
-fixtures.botState.channelPosts(id)   // Messages in a channel
-fixtures.botState.activity()         // Activity feed
+fixtures.botState.groups(); // All groups bot is in
+fixtures.botState.group(flag); // Specific group details
+fixtures.botState.contacts(); // All contacts
+fixtures.botState.settings(); // Bot settings
+fixtures.botState.channelPosts(id); // Messages in a channel
+fixtures.botState.activity(); // Activity feed
 ```
 
 #### Running Integration Tests
@@ -279,6 +283,7 @@ Before opening a PR:
 ### Upstream CI Checks
 
 When merged to OpenClaw, these run automatically:
+
 - `actionlint` — GitHub Actions syntax
 - `checks (node, test)` — Full test suite
 - `checks (bun, test)` — Bun compatibility
@@ -286,11 +291,11 @@ When merged to OpenClaw, these run automatically:
 
 ### Common CI Failures
 
-| Failure | Fix |
-|---------|-----|
-| `Math.random()` detected | Use `crypto.randomUUID()` |
+| Failure                             | Fix                                        |
+| ----------------------------------- | ------------------------------------------ |
+| `Math.random()` detected            | Use `crypto.randomUUID()`                  |
 | Merge conflicts in `pnpm-lock.yaml` | Regenerate: `pnpm install --lockfile-only` |
-| Type errors after merge | Check for API changes in main |
+| Type errors after merge             | Check for API changes in main              |
 
 ---
 

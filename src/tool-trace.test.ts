@@ -8,9 +8,15 @@ import {
 
 describe("tool trace helpers", () => {
   it("detects env-gated content tracing", () => {
-    expect(liveToolTraceContentsEnabled({ TEST_LIVE_TOOL_TRACE_CONTENTS: "1" } as NodeJS.ProcessEnv)).toBe(true);
-    expect(liveToolTraceContentsEnabled({ CI_LIVE_TOOL_TRACE_CONTENTS: "true" } as NodeJS.ProcessEnv)).toBe(true);
-    expect(liveToolTraceContentsEnabled({ TEST_LIVE_TOOL_TRACE_CONTENTS: "0" } as NodeJS.ProcessEnv)).toBe(false);
+    expect(
+      liveToolTraceContentsEnabled({ TEST_LIVE_TOOL_TRACE_CONTENTS: "1" } as NodeJS.ProcessEnv),
+    ).toBe(true);
+    expect(
+      liveToolTraceContentsEnabled({ CI_LIVE_TOOL_TRACE_CONTENTS: "true" } as NodeJS.ProcessEnv),
+    ).toBe(true);
+    expect(
+      liveToolTraceContentsEnabled({ TEST_LIVE_TOOL_TRACE_CONTENTS: "0" } as NodeJS.ProcessEnv),
+    ).toBe(false);
   });
 
   it("redacts sensitive keys and truncates long strings", () => {
@@ -30,7 +36,7 @@ describe("tool trace helpers", () => {
     expect(event).toContain('"toolName":"read"');
     expect(event).toContain('"token":"[REDACTED]"');
     expect(event).toContain('"password":"[REDACTED]"');
-    expect(event).toContain('[350 chars]');
+    expect(event).toContain("[350 chars]");
     expect(event).not.toContain("secret-token");
     expect(event).not.toContain("hunter2");
   });

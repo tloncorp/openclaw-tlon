@@ -5,8 +5,8 @@
  * CommandContextLike instead of the full PluginCommandContext.
  */
 
-import { getBridge, getAllBridges, type ApprovalCommandBridge } from "./command-bridge.js";
 import { normalizeShip } from "../targets.js";
+import { getBridge, getAllBridges, type ApprovalCommandBridge } from "./command-bridge.js";
 
 /** Minimal input shape — avoids coupling to plugin SDK types. */
 export type CommandContextLike = {
@@ -29,12 +29,12 @@ export function resolveBridgeForCommand(
   // 1. Try accountId if available
   if (ctx.accountId) {
     const bridge = getBridge(ctx.accountId);
-    if (bridge) return checkOwner(ctx, bridge);
+    if (bridge) {return checkOwner(ctx, bridge);}
   }
 
   // 2. Fallback: enumerate all bridges
   const all = getAllBridges();
-  if (all.size === 0) return { error: "Bot is not connected yet." };
+  if (all.size === 0) {return { error: "Bot is not connected yet." };}
   if (all.size === 1) {
     const [, only] = [...all.entries()][0];
     return checkOwner(ctx, only);
@@ -46,11 +46,12 @@ export function resolveBridgeForCommand(
   if (ctx.senderId) {
     const normalized = normalizeShip(ctx.senderId);
     const matches = [...all.values()].filter((b) => b.ownerShip === normalized);
-    if (matches.length === 1) return checkOwner(ctx, matches[0]);
+    if (matches.length === 1) {return checkOwner(ctx, matches[0]);}
   }
 
   return {
-    error: "Multiple accounts connected. Run this command from the owner DM for the target account.",
+    error:
+      "Multiple accounts connected. Run this command from the owner DM for the target account.",
   };
 }
 

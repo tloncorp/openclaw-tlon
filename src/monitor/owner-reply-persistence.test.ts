@@ -19,9 +19,13 @@ function makeApi() {
 function extractEntryKey(call: PokeCall): string | undefined {
   const json = (call.json ?? {}) as Record<string, unknown>;
   const put = json["put-entry"] as Record<string, unknown> | undefined;
-  if (put) {return String(put["entry-key"] ?? "");}
+  if (put) {
+    return String(put["entry-key"] ?? "");
+  }
   const del = json["del-entry"] as Record<string, unknown> | undefined;
-  if (del) {return String(del["entry-key"] ?? "");}
+  if (del) {
+    return String(del["entry-key"] ?? "");
+  }
   return undefined;
 }
 
@@ -43,10 +47,15 @@ describe("owner-reply-persistence queue", () => {
     // Both put-entries are issued immediately, del-entry is not yet.
     await Promise.resolve();
     await Promise.resolve();
-    expect(calls.map((c) => c.key).toSorted()).toEqual(["lastOwnerMessageAt", "lastOwnerMessageDate"]);
+    expect(calls.map((c) => c.key).toSorted()).toEqual([
+      "lastOwnerMessageAt",
+      "lastOwnerMessageDate",
+    ]);
 
     // Resolve put-entries; del-entry should now fire.
-    for (const c of calls) {c.resolve();}
+    for (const c of calls) {
+      c.resolve();
+    }
     await Promise.resolve();
     await Promise.resolve();
     await Promise.resolve();

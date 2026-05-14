@@ -41,10 +41,7 @@ describe("generateApprovalId", () => {
 describe("createPendingApproval", () => {
   it("passes existing IDs for collision avoidance", () => {
     const first = createPendingApproval({ type: "dm", requestingShip: "~zod" });
-    const second = createPendingApproval(
-      { type: "dm", requestingShip: "~bus" },
-      [first.id],
-    );
+    const second = createPendingApproval({ type: "dm", requestingShip: "~bus" }, [first.id]);
     expect(second.id).not.toBe(first.id);
   });
 
@@ -66,14 +63,19 @@ describe("createPendingApproval", () => {
 describe("isExpired", () => {
   it("returns false for fresh approvals", () => {
     const approval: PendingApproval = {
-      id: "da1b2", type: "dm", requestingShip: "~zod", timestamp: Date.now(),
+      id: "da1b2",
+      type: "dm",
+      requestingShip: "~zod",
+      timestamp: Date.now(),
     };
     expect(isExpired(approval)).toBe(false);
   });
 
   it("returns true for approvals older than TTL", () => {
     const approval: PendingApproval = {
-      id: "da1b2", type: "dm", requestingShip: "~zod",
+      id: "da1b2",
+      type: "dm",
+      requestingShip: "~zod",
       timestamp: Date.now() - APPROVAL_TTL_MS - 1,
     };
     expect(isExpired(approval)).toBe(true);
@@ -81,7 +83,9 @@ describe("isExpired", () => {
 
   it("returns false for approvals at exactly TTL boundary", () => {
     const approval: PendingApproval = {
-      id: "da1b2", type: "dm", requestingShip: "~zod",
+      id: "da1b2",
+      type: "dm",
+      requestingShip: "~zod",
       timestamp: Date.now() - APPROVAL_TTL_MS + 1000,
     };
     expect(isExpired(approval)).toBe(false);
@@ -95,7 +99,13 @@ describe("isExpired", () => {
 describe("findPendingApproval", () => {
   const approvals: PendingApproval[] = [
     { id: "da1b2", type: "dm", requestingShip: "~zod", timestamp: Date.now() },
-    { id: "cc3d4", type: "channel", requestingShip: "~bus", channelNest: "chat/~host/general", timestamp: Date.now() },
+    {
+      id: "cc3d4",
+      type: "channel",
+      requestingShip: "~bus",
+      channelNest: "chat/~host/general",
+      timestamp: Date.now(),
+    },
   ];
 
   it("finds by exact match", () => {
@@ -134,7 +144,12 @@ describe("findPendingApproval", () => {
 
   it("skips expired approvals", () => {
     const mixed: PendingApproval[] = [
-      { id: "da1b2", type: "dm", requestingShip: "~zod", timestamp: Date.now() - APPROVAL_TTL_MS - 1 },
+      {
+        id: "da1b2",
+        type: "dm",
+        requestingShip: "~zod",
+        timestamp: Date.now() - APPROVAL_TTL_MS - 1,
+      },
       { id: "cc3d4", type: "channel", requestingShip: "~bus", timestamp: Date.now() },
     ];
     expect(findPendingApproval(mixed, "da1b2")).toBeUndefined();
@@ -216,7 +231,10 @@ describe("formatApprovalRequest", () => {
 describe("formatApprovalConfirmation", () => {
   it("shows ship in confirmation", () => {
     const approval: PendingApproval = {
-      id: "da1b2", type: "dm", requestingShip: "~sampel-palnet", timestamp: 1,
+      id: "da1b2",
+      type: "dm",
+      requestingShip: "~sampel-palnet",
+      timestamp: 1,
     };
     expect(formatApprovalConfirmation(approval, "approve", ctx)).toContain("~sampel-palnet");
     expect(formatApprovalConfirmation(approval, "deny", ctx)).toContain("~sampel-palnet");
@@ -225,23 +243,36 @@ describe("formatApprovalConfirmation", () => {
 
   it("channel confirmation shows channel name", () => {
     const approval: PendingApproval = {
-      id: "cc3d4", type: "channel", requestingShip: "~zod",
-      channelNest: "chat/~host/general", timestamp: 1,
+      id: "cc3d4",
+      type: "channel",
+      requestingShip: "~zod",
+      channelNest: "chat/~host/general",
+      timestamp: 1,
     };
-    expect(formatApprovalConfirmation(approval, "approve", ctx)).toContain("general (chat/~host/general)");
+    expect(formatApprovalConfirmation(approval, "approve", ctx)).toContain(
+      "general (chat/~host/general)",
+    );
   });
 
   it("group confirmation shows group name", () => {
     const approval: PendingApproval = {
-      id: "g5f6e", type: "group", requestingShip: "~zod",
-      groupFlag: "~host/cool-group", timestamp: 1,
+      id: "g5f6e",
+      type: "group",
+      requestingShip: "~zod",
+      groupFlag: "~host/cool-group",
+      timestamp: 1,
     };
-    expect(formatApprovalConfirmation(approval, "approve", ctx)).toContain("Cool Group (~host/cool-group)");
+    expect(formatApprovalConfirmation(approval, "approve", ctx)).toContain(
+      "Cool Group (~host/cool-group)",
+    );
   });
 
   it("works without context", () => {
     const approval: PendingApproval = {
-      id: "da1b2", type: "dm", requestingShip: "~zod", timestamp: 1,
+      id: "da1b2",
+      type: "dm",
+      requestingShip: "~zod",
+      timestamp: 1,
     };
     const text = formatApprovalConfirmation(approval, "approve");
     expect(text).toContain("~zod");
@@ -281,7 +312,13 @@ describe("formatPendingList", () => {
 
   it("shows message previews", () => {
     const approvals: PendingApproval[] = [
-      { id: "da1b2", type: "dm", requestingShip: "~zod", messagePreview: "Hello there", timestamp: Date.now() },
+      {
+        id: "da1b2",
+        type: "dm",
+        requestingShip: "~zod",
+        messagePreview: "Hello there",
+        timestamp: Date.now(),
+      },
     ];
     const text = formatPendingList(approvals);
     expect(text).toContain('"Hello there"');
@@ -297,7 +334,13 @@ describe("formatPendingList", () => {
 
   it("shows channel names for channel approvals", () => {
     const approvals: PendingApproval[] = [
-      { id: "cc3d4", type: "channel", requestingShip: "~zod", channelNest: "chat/~host/general", timestamp: Date.now() },
+      {
+        id: "cc3d4",
+        type: "channel",
+        requestingShip: "~zod",
+        channelNest: "chat/~host/general",
+        timestamp: Date.now(),
+      },
     ];
     const text = formatPendingList(approvals, ctx);
     expect(text).toContain("general (chat/~host/general)");
@@ -305,7 +348,13 @@ describe("formatPendingList", () => {
 
   it("shows group names for group approvals", () => {
     const approvals: PendingApproval[] = [
-      { id: "g5f6e", type: "group", requestingShip: "~zod", groupFlag: "~host/cool-group", timestamp: Date.now() },
+      {
+        id: "g5f6e",
+        type: "group",
+        requestingShip: "~zod",
+        groupFlag: "~host/cool-group",
+        timestamp: Date.now(),
+      },
     ];
     const text = formatPendingList(approvals, ctx);
     expect(text).toContain("Cool Group (~host/cool-group)");
@@ -323,7 +372,12 @@ describe("formatPendingList", () => {
 
   it("filters out expired approvals", () => {
     const approvals: PendingApproval[] = [
-      { id: "da1b2", type: "dm", requestingShip: "~zod", timestamp: Date.now() - APPROVAL_TTL_MS - 1 },
+      {
+        id: "da1b2",
+        type: "dm",
+        requestingShip: "~zod",
+        timestamp: Date.now() - APPROVAL_TTL_MS - 1,
+      },
     ];
     const text = formatPendingList(approvals);
     expect(text).toBe("No pending approval requests.");
@@ -395,7 +449,13 @@ describe("normalizeNotificationId", () => {
 describe("hasDuplicatePending", () => {
   const approvals: PendingApproval[] = [
     { id: "da1b2", type: "dm", requestingShip: "~zod", timestamp: 1 },
-    { id: "cc3d4", type: "channel", requestingShip: "~bus", channelNest: "chat/~host/general", timestamp: 2 },
+    {
+      id: "cc3d4",
+      type: "channel",
+      requestingShip: "~bus",
+      channelNest: "chat/~host/general",
+      timestamp: 2,
+    },
   ];
 
   it("detects DM duplicates", () => {

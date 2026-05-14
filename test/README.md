@@ -25,6 +25,7 @@ pnpm test:integration test/cases/07-security.test.ts
 ```
 
 This is what CI uses. Requires:
+
 - `OPENROUTER_API_KEY` in `.env` (or as environment variable)
 - Optional: `../tlonbot` repo cloned for local prompt files (otherwise fetches from GitHub using `TLONBOT_TOKEN`)
 
@@ -52,10 +53,10 @@ Requires `.env` configured with ship credentials (see below).
 
 ### Ships
 
-| Ship | Role | Port | Description |
-|------|------|------|-------------|
-| ~zod | Bot | 8080 | The bot ship running OpenClaw + Tlon plugin |
-| ~ten | Owner | 8081 | Configured as `ownerShip`, on the DM allowlist |
+| Ship | Role        | Port | Description                                              |
+| ---- | ----------- | ---- | -------------------------------------------------------- |
+| ~zod | Bot         | 8080 | The bot ship running OpenClaw + Tlon plugin              |
+| ~ten | Owner       | 8081 | Configured as `ownerShip`, on the DM allowlist           |
 | ~mug | Third party | 8082 | Non-owner, not on allowlist (goes through approval flow) |
 
 ### Environment Variables
@@ -165,7 +166,7 @@ describe("my feature", () => {
     const token = `test-${Date.now().toString(36)}`;
 
     const response = await fixtures.client.prompt(
-      `Update your profile status to exactly "${token}" and confirm.`
+      `Update your profile status to exactly "${token}" and confirm.`,
     );
     expect(response.success).toBe(true);
 

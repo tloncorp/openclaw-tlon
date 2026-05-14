@@ -39,9 +39,6 @@ export async function getLatestSequenceForAuthor(
   }
 }
 
-export function isPostNewerThanSequence(
-  post: SequencePostView,
-  baselineSequence: number,
-): boolean {
+export function isPostNewerThanSequence(post: SequencePostView, baselineSequence: number): boolean {
   return getPostSequence(post) > baselineSequence;
 }

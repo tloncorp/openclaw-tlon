@@ -3,11 +3,11 @@ on:
   push:
     branches: [master, stable]
     paths:
-      - 'src/**'
+      - "src/**"
   workflow_dispatch:
     inputs:
       mode:
-        description: 'Which ships to restart'
+        description: "Which ships to restart"
         required: true
         type: choice
         options:

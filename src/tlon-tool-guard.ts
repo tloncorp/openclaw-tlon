@@ -16,7 +16,7 @@ const DM_SEND_ACTIONS = new Set(["send", "reply"]);
  * or null if the operation is allowed.
  */
 export function checkBlockedSendOperation(args: string[]): string | null {
-  if (args.length < 2) return null;
+  if (args.length < 2) {return null;}
 
   const subcommand = args[0]?.toLowerCase();
   const action = args[1]?.toLowerCase();
@@ -27,7 +27,7 @@ export function checkBlockedSendOperation(args: string[]): string | null {
 
   // dms send/reply require a target as the next argument
   const target = args[2];
-  if (!target) return null;
+  if (!target) {return null;}
 
   // Allow legacy club targets (0v...) for backward compatibility
   if (target.startsWith("0v")) {

@@ -11,6 +11,7 @@ import type { TlonTelemetryClient } from "../telemetry.js";
 import type { BotProfile } from "../urbit/send.js";
 import type { UrbitSSEClient } from "../urbit/sse-client.js";
 import type { LastOwnerActivity, LastNudgeStageShadow } from "./nudge-state.js";
+import type { OwnerReplyPersistenceQueue } from "./owner-reply-persistence.js";
 import {
   computeTargetStage,
   daysBetween,
@@ -24,7 +25,6 @@ import {
   DEFAULT_NUDGE_TICK_INTERVAL_MS,
   type NudgeScheduler,
 } from "../nudge-scheduler.js";
-import type { OwnerReplyPersistenceQueue } from "./owner-reply-persistence.js";
 import { parseSettingsResponse, type TlonSettingsStore } from "../settings.js";
 import { listRunnableTlonAccountIds } from "../types.js";
 
@@ -188,27 +188,39 @@ export function createNudgeRunner(deps: NudgeRunnerDeps): NudgeRunner {
   }
 
   async function tick(): Promise<void> {
-    if (deps.abortSignal?.aborted) {return;}
+    if (deps.abortSignal?.aborted) {
+      return;
+    }
 
     const settings = deps.getSettings();
     const ownerShip = deps.getEffectiveOwnerShip(deps.accountId);
-    if (!ownerShip) {return;}
+    if (!ownerShip) {
+      return;
+    }
 
     const activeHours = resolveActiveHours(settings, deps.cfg);
-    if (!inActiveHours(new Date(now()), activeHours)) {return;}
+    if (!inActiveHours(new Date(now()), activeHours)) {
+      return;
+    }
 
     const lastOwnerAt = resolveLastOwnerInstant(
       deps.getLastOwnerActivity(deps.accountId),
       settings,
     );
-    if (lastOwnerAt == null) {return;}
+    if (lastOwnerAt == null) {
+      return;
+    }
 
     const idle = daysBetween(lastOwnerAt, now());
     const targetStage = computeTargetStage(idle);
-    if (targetStage == null) {return;}
+    if (targetStage == null) {
+      return;
+    }
 
     const freshStage = await resolveAuthoritativeStage();
-    if (targetStage <= freshStage) {return;}
+    if (targetStage <= freshStage) {
+      return;
+    }
 
     try {
       await pokeLastNudgeStage(targetStage);

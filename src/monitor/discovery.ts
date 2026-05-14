@@ -57,7 +57,11 @@ export async function fetchInitData(
           }
           if (groupData.channels) {
             for (const channelNest of Object.keys(groupData.channels)) {
-              if (channelNest.startsWith("chat/") || channelNest.startsWith("heap/") || channelNest.startsWith("diary/")) {
+              if (
+                channelNest.startsWith("chat/") ||
+                channelNest.startsWith("heap/") ||
+                channelNest.startsWith("diary/")
+              ) {
                 channels.push(channelNest);
                 channelToGroup.set(channelNest, groupFlag);
               }

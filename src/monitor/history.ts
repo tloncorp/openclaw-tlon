@@ -36,9 +36,12 @@ function normalizeMessageId(id: string | number | undefined | null): string {
 const messageCache = new Map<string, TlonHistoryEntry[]>();
 const MAX_CACHED_MESSAGES = 100;
 
-export function lookupCachedMessage(channelNest: string, messageId: string): TlonHistoryEntry | undefined {
+export function lookupCachedMessage(
+  channelNest: string,
+  messageId: string,
+): TlonHistoryEntry | undefined {
   const cache = messageCache.get(channelNest);
-  if (!cache) return undefined;
+  if (!cache) {return undefined;}
   const normalizedId = normalizeMessageId(messageId);
   return cache.find((m) => m.id && normalizeMessageId(m.id) === normalizedId);
 }
@@ -293,7 +296,9 @@ export async function fetchThreadContextHistory(
     fetchThreadHistory(api, channelNest, parentId, count, runtime),
   ]);
 
-  const ordered = [parentPost, ...replies].filter((entry): entry is TlonHistoryEntry => Boolean(entry));
+  const ordered = [parentPost, ...replies].filter((entry): entry is TlonHistoryEntry =>
+    Boolean(entry),
+  );
   const seen = new Set<string>();
   const deduped: TlonHistoryEntry[] = [];
 

@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     # Only run if the push was not from this action (prevent loops)
     if: github.actor != 'tloncorp-actionbot[bot]'
-    
+
     steps:
       - name: Generate app token
         id: app-token

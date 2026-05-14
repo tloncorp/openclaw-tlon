@@ -9,7 +9,8 @@ const MAX_STRING_LENGTH = 300;
 const MAX_ARRAY_ITEMS = 20;
 const MAX_OBJECT_KEYS = 30;
 
-const SENSITIVE_KEY_RE = /^(?:authorization|auth|password|secret|token|accesstoken|refreshtoken|apikey|api_key|cookie|set-cookie|code)$/i;
+const SENSITIVE_KEY_RE =
+  /^(?:authorization|auth|password|secret|token|accesstoken|refreshtoken|apikey|api_key|cookie|set-cookie|code)$/i;
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -78,9 +79,7 @@ function sanitizeValue(value: unknown, depth = 0): unknown {
         output.__truncated__ = `[+${entries.length - MAX_OBJECT_KEYS} more keys]`;
         break;
       }
-      output[key] = SENSITIVE_KEY_RE.test(key)
-        ? REDACTED
-        : sanitizeValue(nested, depth + 1);
+      output[key] = SENSITIVE_KEY_RE.test(key) ? REDACTED : sanitizeValue(nested, depth + 1);
     }
     return output;
   }

@@ -1,6 +1,6 @@
+import type { LookupFn, SsrFPolicy } from "openclaw/plugin-sdk/tlon";
 import { randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
-import type { LookupFn, SsrFPolicy } from "openclaw/plugin-sdk/tlon";
 import { ensureUrbitChannelOpen, pokeUrbitChannel, scryUrbitPath } from "./channel-ops.js";
 import { getUrbitContext, normalizeUrbitCookie } from "./context.js";
 import { urbitFetch } from "./fetch.js";
@@ -285,7 +285,13 @@ export class UrbitSSEClient {
     }
 
     try {
-      const parsed = JSON.parse(data) as { id?: number; json?: unknown; response?: string; ok?: string; err?: unknown };
+      const parsed = JSON.parse(data) as {
+        id?: number;
+        json?: unknown;
+        response?: string;
+        ok?: string;
+        err?: unknown;
+      };
 
       // Log poke ack/nack responses (normally silent — critical for debugging DM delivery issues)
       if (parsed.response === "poke") {
@@ -451,10 +457,10 @@ export class UrbitSSEClient {
    */
   private async resubscribeAfterQuit(oldSubId: number) {
     const oldSub = this.subscriptions.find((s) => s.id === oldSubId);
-    if (!oldSub || this.aborted) return;
+    if (!oldSub || this.aborted) {return;}
 
     const handlers = this.eventHandlers.get(oldSubId);
-    if (!handlers) return;
+    if (!handlers) {return;}
 
     const maxAttempts = 5;
     const baseDelay = 2000;
@@ -468,7 +474,7 @@ export class UrbitSSEClient {
 
       await new Promise((resolve) => setTimeout(resolve, delay));
 
-      if (this.aborted || !this.isConnected) return;
+      if (this.aborted || !this.isConnected) {return;}
 
       try {
         const newSubId = this.subscriptions.length + 1;

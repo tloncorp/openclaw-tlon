@@ -1,10 +1,10 @@
-import { readStringParam } from "openclaw/plugin-sdk/param-readers";
 import type {
   ChannelMessageActionAdapter,
   ChannelMessageActionName,
 } from "openclaw/plugin-sdk/channel-contract";
-import { resolveTlonAccount } from "./types.js";
+import { readStringParam } from "openclaw/plugin-sdk/param-readers";
 import { normalizeShip, parseTlonTarget } from "./targets.js";
+import { resolveTlonAccount } from "./types.js";
 import { withAuthenticatedTlonApi } from "./urbit/api-client.js";
 import {
   addChannelReaction,
@@ -22,7 +22,7 @@ function createActionGate(
   actions: Record<string, boolean | undefined> | undefined,
 ): (key: string) => boolean {
   return (key: string) => {
-    if (!actions) return true;
+    if (!actions) {return true;}
     return actions[key] !== false;
   };
 }
@@ -62,9 +62,9 @@ export const tlonMessageActions: ChannelMessageActionAdapter = {
       (cfg.channels?.tlon as { actions?: Record<string, boolean | undefined> })?.actions,
     );
     const actions: ChannelMessageActionName[] = [];
-    if (gate("reactions")) actions.push("react");
-    if (gate("delete")) actions.push("delete");
-    if (gate("reply")) actions.push("reply");
+    if (gate("reactions")) {actions.push("react");}
+    if (gate("delete")) {actions.push("delete");}
+    if (gate("reply")) {actions.push("reply");}
     return actions.length > 0 ? { actions } : null;
   },
 
@@ -77,7 +77,12 @@ export const tlonMessageActions: ChannelMessageActionAdapter = {
     }
 
     return await withAuthenticatedTlonApi(
-      { url: account.url, code: account.code, ship: account.ship, allowPrivateNetwork: account.allowPrivateNetwork ?? undefined },
+      {
+        url: account.url,
+        code: account.code,
+        ship: account.ship,
+        allowPrivateNetwork: account.allowPrivateNetwork ?? undefined,
+      },
       async () => {
         const fromShip = normalizeShip(account.ship!);
 
@@ -207,7 +212,9 @@ async function handleDelete({
 
   const nestPrefix = parsed.nest.split("/")[0];
   if (nestPrefix !== "heap") {
-    throw new Error("Tlon delete is currently only supported for heap posts. Use heap/~host/channel as the target.");
+    throw new Error(
+      "Tlon delete is currently only supported for heap posts. Use heap/~host/channel as the target.",
+    );
   }
 
   await deleteHeapPost({
@@ -230,9 +237,7 @@ async function handleReply({
 }) {
   const messageId = readStringParam(params, "messageId");
   if (!messageId) {
-    throw new Error(
-      "Tlon reply requires messageId parameter (the ID of the post to reply to).",
-    );
+    throw new Error("Tlon reply requires messageId parameter (the ID of the post to reply to).");
   }
 
   const message = readStringParam(params, "message");

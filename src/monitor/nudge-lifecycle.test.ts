@@ -11,6 +11,7 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { TlonSettingsStore } from "../settings.js";
 import { computeTargetStage, daysBetween, resolveLastOwnerInstant } from "../nudge-decision.js";
 import {
   clearPendingNudge,
@@ -23,7 +24,6 @@ import {
   type PendingNudge,
   _testing as pendingTesting,
 } from "../pending-nudge.js";
-import type { TlonSettingsStore } from "../settings.js";
 import {
   _testing as shadowTesting,
   clearShadowsForAccount,
@@ -72,7 +72,7 @@ function reconcileStageShadow(
   const shadowReconcileTrusted = source === "subscription" || opts.fresh === true;
   const stageChanged = prevSettings.lastNudgeStage !== newSettings.lastNudgeStage;
   if (shadowReconcileTrusted && stageChanged) {
-    setLastNudgeStageShadow(accountId, (newSettings.lastNudgeStage ?? 0) as 0 | 1 | 2 | 3);
+    setLastNudgeStageShadow(accountId, (newSettings.lastNudgeStage ?? 0));
   }
 }
 
@@ -383,7 +383,11 @@ describe("in-flight tick reply race", () => {
       const json = p.json as Record<string, unknown>;
       const put = json["put-entry"] as Record<string, unknown> | undefined;
       const del = json["del-entry"] as Record<string, unknown> | undefined;
-      return put ? `put:${String(put["entry-key"])}` : del ? `del:${String(del["entry-key"])}` : "?";
+      return put
+        ? `put:${String(put["entry-key"])}`
+        : del
+          ? `del:${String(del["entry-key"])}`
+          : "?";
     });
     expect(keys).not.toContain("del:lastNudgeStage");
   });
@@ -582,7 +586,9 @@ describe("live-settings owner-activity shadow reconciliation", () => {
   const THREE_DAYS_MS = 3 * 24 * 60 * 60 * 1000;
 
   function makeSettings(at: number | undefined): TlonSettingsStore {
-    if (at == null) {return {};}
+    if (at == null) {
+      return {};
+    }
     return {
       lastOwnerMessageAt: at,
       lastOwnerMessageDate: new Date(at).toISOString().split("T")[0] ?? "",
@@ -603,12 +609,7 @@ describe("live-settings owner-activity shadow reconciliation", () => {
     // though the shadow already held a fresher timestamp.
     const backdatedAt = nowMs - EIGHT_DAYS_MS;
     const subscriptionSettings = makeSettings(backdatedAt);
-    reconcileOwnerActivityShadow(
-      ACCOUNT_ID,
-      startupSettings,
-      subscriptionSettings,
-      "subscription",
-    );
+    reconcileOwnerActivityShadow(ACCOUNT_ID, startupSettings, subscriptionSettings, "subscription");
 
     const shadow = getLastOwnerActivity(ACCOUNT_ID);
     expect(shadow?.at).toBe(backdatedAt);
@@ -631,12 +632,7 @@ describe("live-settings owner-activity shadow reconciliation", () => {
     // that the owner just replied. The scheduler should suppress the
     // nudge on the next tick because the shadow now reflects "fresh".
     const subscriptionSettings = makeSettings(nowMs);
-    reconcileOwnerActivityShadow(
-      ACCOUNT_ID,
-      startupSettings,
-      subscriptionSettings,
-      "subscription",
-    );
+    reconcileOwnerActivityShadow(ACCOUNT_ID, startupSettings, subscriptionSettings, "subscription");
 
     const shadow = getLastOwnerActivity(ACCOUNT_ID);
     expect(shadow?.at).toBe(nowMs);
@@ -666,13 +662,9 @@ describe("live-settings owner-activity shadow reconciliation", () => {
     // from regressing the shadow.
     const prevSettings = makeSettings(nowMs - EIGHT_DAYS_MS);
     const staleRefreshSettings = makeSettings(nowMs - 2 * EIGHT_DAYS_MS);
-    reconcileOwnerActivityShadow(
-      ACCOUNT_ID,
-      prevSettings,
-      staleRefreshSettings,
-      "refresh",
-      { fresh: false },
-    );
+    reconcileOwnerActivityShadow(ACCOUNT_ID, prevSettings, staleRefreshSettings, "refresh", {
+      fresh: false,
+    });
 
     const shadow = getLastOwnerActivity(ACCOUNT_ID);
     expect(shadow?.at).toBe(locallyFreshAt);
@@ -689,13 +681,9 @@ describe("live-settings owner-activity shadow reconciliation", () => {
     // the refresh path is trusted when `fresh: true`.
     const refreshedAt = nowMs - 1000;
     const refreshSettings = makeSettings(refreshedAt);
-    reconcileOwnerActivityShadow(
-      ACCOUNT_ID,
-      startupSettings,
-      refreshSettings,
-      "refresh",
-      { fresh: true },
-    );
+    reconcileOwnerActivityShadow(ACCOUNT_ID, startupSettings, refreshSettings, "refresh", {
+      fresh: true,
+    });
 
     expect(getLastOwnerActivity(ACCOUNT_ID)?.at).toBe(refreshedAt);
   });
@@ -720,12 +708,7 @@ describe("live-settings owner-activity shadow reconciliation", () => {
       ...baseSettings,
       channelRules: { "chat/~zod/foo": { mode: "open", allowedShips: [] } },
     };
-    reconcileOwnerActivityShadow(
-      ACCOUNT_ID,
-      baseSettings,
-      unrelatedUpdate,
-      "subscription",
-    );
+    reconcileOwnerActivityShadow(ACCOUNT_ID, baseSettings, unrelatedUpdate, "subscription");
 
     expect(getLastOwnerActivity(ACCOUNT_ID)?.at).toBe(locallyFreshAt);
   });
@@ -743,12 +726,7 @@ describe("live-settings lastNudgeStage shadow reconciliation", () => {
 
   it("subscription lower from stage 2 to stage 1 updates the shadow", () => {
     setLastNudgeStageShadow(ACCOUNT_ID, 2);
-    reconcileStageShadow(
-      ACCOUNT_ID,
-      { lastNudgeStage: 2 },
-      { lastNudgeStage: 1 },
-      "subscription",
-    );
+    reconcileStageShadow(ACCOUNT_ID, { lastNudgeStage: 2 }, { lastNudgeStage: 1 }, "subscription");
     expect(getLastNudgeStageShadow(ACCOUNT_ID)).toBe(1);
   });
 
@@ -772,25 +750,13 @@ describe("live-settings lastNudgeStage shadow reconciliation", () => {
 
   it("refresh fresh=false does not lower the shadow even on a stale snapshot diff", () => {
     setLastNudgeStageShadow(ACCOUNT_ID, 2);
-    reconcileStageShadow(
-      ACCOUNT_ID,
-      { lastNudgeStage: 2 },
-      {},
-      "refresh",
-      { fresh: false },
-    );
+    reconcileStageShadow(ACCOUNT_ID, { lastNudgeStage: 2 }, {}, "refresh", { fresh: false });
     expect(getLastNudgeStageShadow(ACCOUNT_ID)).toBe(2);
   });
 
   it("refresh fresh=true reconciles a clear into the shadow", () => {
     setLastNudgeStageShadow(ACCOUNT_ID, 1);
-    reconcileStageShadow(
-      ACCOUNT_ID,
-      { lastNudgeStage: 1 },
-      {},
-      "refresh",
-      { fresh: true },
-    );
+    reconcileStageShadow(ACCOUNT_ID, { lastNudgeStage: 1 }, {}, "refresh", { fresh: true });
     expect(getLastNudgeStageShadow(ACCOUNT_ID)).toBe(0);
   });
 
@@ -799,12 +765,7 @@ describe("live-settings lastNudgeStage shadow reconciliation", () => {
     setLastNudgeStageShadow(ACCOUNT_ID, 1);
 
     // External clear arrives via subscription: lastNudgeStage del-entry'd.
-    reconcileStageShadow(
-      ACCOUNT_ID,
-      { lastNudgeStage: 1 },
-      {},
-      "subscription",
-    );
+    reconcileStageShadow(ACCOUNT_ID, { lastNudgeStage: 1 }, {}, "subscription");
     expect(getLastNudgeStageShadow(ACCOUNT_ID)).toBe(0);
 
     // Model the runner's resolveAuthoritativeStage guard. With the shadow

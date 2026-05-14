@@ -128,36 +128,30 @@ describe("nudge-decision", () => {
     });
 
     it("tier 2: channels.tlon.nudgeActiveHours wins when settings store is empty", () => {
-      const result = resolveActiveHours(
-        {},
-        {
-          channels: {
-            tlon: {
-              nudgeActiveHours: { start: "00:00", end: "24:00", timezone: "UTC" },
+      const result = resolveActiveHours({}, {
+        channels: {
+          tlon: {
+            nudgeActiveHours: { start: "00:00", end: "24:00", timezone: "UTC" },
+          },
+        },
+        agents: {
+          defaults: {
+            heartbeat: {
+              activeHours: { start: "10:00", end: "22:00", timezone: "America/New_York" },
             },
           },
-          agents: {
-            defaults: {
-              heartbeat: {
-                activeHours: { start: "10:00", end: "22:00", timezone: "America/New_York" },
-              },
-            },
-          },
-        } as never,
-      );
+        },
+      } as never);
       expect(result).toEqual({ start: "00:00", end: "24:00", timezone: "UTC" });
     });
 
     it("tier 2: channels.tlon.nudgeActiveHours accepts an omitted timezone and falls back to user tz", () => {
-      const result = resolveActiveHours(
-        {},
-        {
-          channels: {
-            tlon: { nudgeActiveHours: { start: "09:00", end: "17:00" } },
-          },
-          agents: { defaults: { userTimezone: "America/Chicago" } },
-        } as never,
-      );
+      const result = resolveActiveHours({}, {
+        channels: {
+          tlon: { nudgeActiveHours: { start: "09:00", end: "17:00" } },
+        },
+        agents: { defaults: { userTimezone: "America/Chicago" } },
+      } as never);
       expect(result).toEqual({ start: "09:00", end: "17:00", timezone: "America/Chicago" });
     });
 
@@ -175,19 +169,16 @@ describe("nudge-decision", () => {
     });
 
     it('tier 3: agents.defaults.heartbeat.activeHours timezone "user" resolves via agents.defaults.userTimezone', () => {
-      const result = resolveActiveHours(
-        {},
-        {
-          agents: {
-            defaults: {
-              userTimezone: "America/Los_Angeles",
-              heartbeat: {
-                activeHours: { start: "07:30", end: "23:30", timezone: "user" },
-              },
+      const result = resolveActiveHours({}, {
+        agents: {
+          defaults: {
+            userTimezone: "America/Los_Angeles",
+            heartbeat: {
+              activeHours: { start: "07:30", end: "23:30", timezone: "user" },
             },
           },
-        } as never,
-      );
+        },
+      } as never);
       expect(result).toEqual({
         start: "07:30",
         end: "23:30",
@@ -197,18 +188,15 @@ describe("nudge-decision", () => {
 
     it('tier 3: agents.defaults.heartbeat.activeHours timezone "local" resolves to the host timezone', () => {
       const hostTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone?.trim() || "UTC";
-      const result = resolveActiveHours(
-        {},
-        {
-          agents: {
-            defaults: {
-              heartbeat: {
-                activeHours: { start: "07:30", end: "23:30", timezone: "local" },
-              },
+      const result = resolveActiveHours({}, {
+        agents: {
+          defaults: {
+            heartbeat: {
+              activeHours: { start: "07:30", end: "23:30", timezone: "local" },
             },
           },
-        } as never,
-      );
+        },
+      } as never);
       expect(result).toEqual({
         start: "07:30",
         end: "23:30",
@@ -217,19 +205,16 @@ describe("nudge-decision", () => {
     });
 
     it("tier 3: omitted agents.defaults.heartbeat.activeHours timezone falls back to the configured user timezone", () => {
-      const result = resolveActiveHours(
-        {},
-        {
-          agents: {
-            defaults: {
-              userTimezone: "Europe/Berlin",
-              heartbeat: {
-                activeHours: { start: "07:30", end: "23:30" },
-              },
+      const result = resolveActiveHours({}, {
+        agents: {
+          defaults: {
+            userTimezone: "Europe/Berlin",
+            heartbeat: {
+              activeHours: { start: "07:30", end: "23:30" },
             },
           },
-        } as never,
-      );
+        },
+      } as never);
       expect(result).toEqual({
         start: "07:30",
         end: "23:30",
@@ -301,29 +286,23 @@ describe("nudge-decision", () => {
     });
 
     it("field-wise overlay: settings timezone-only edit overrides baseline timezone only", () => {
-      const result = resolveActiveHours(
-        { nudgeActiveHoursTimezone: "UTC" },
-        {
-          channels: {
-            tlon: {
-              nudgeActiveHours: { start: "07:00", end: "19:00", timezone: "Europe/London" },
-            },
+      const result = resolveActiveHours({ nudgeActiveHoursTimezone: "UTC" }, {
+        channels: {
+          tlon: {
+            nudgeActiveHours: { start: "07:00", end: "19:00", timezone: "Europe/London" },
           },
-        } as never,
-      );
+        },
+      } as never);
       expect(result).toEqual({ start: "07:00", end: "19:00", timezone: "UTC" });
     });
 
     it('field-wise overlay: timezone-only edit with the "user" keyword resolves via userTimezone', () => {
-      const result = resolveActiveHours(
-        { nudgeActiveHoursTimezone: "user" },
-        {
-          agents: { defaults: { userTimezone: "America/Chicago" } },
-          channels: {
-            tlon: { nudgeActiveHours: { start: "08:00", end: "20:00", timezone: "UTC" } },
-          },
-        } as never,
-      );
+      const result = resolveActiveHours({ nudgeActiveHoursTimezone: "user" }, {
+        agents: { defaults: { userTimezone: "America/Chicago" } },
+        channels: {
+          tlon: { nudgeActiveHours: { start: "08:00", end: "20:00", timezone: "UTC" } },
+        },
+      } as never);
       expect(result).toEqual({
         start: "08:00",
         end: "20:00",
@@ -332,40 +311,31 @@ describe("nudge-decision", () => {
     });
 
     it("field-wise overlay: single-bound settings edit overlays onto baseline", () => {
-      const result = resolveActiveHours(
-        { nudgeActiveHoursEnd: "22:00" },
-        {
-          channels: {
-            tlon: { nudgeActiveHours: { start: "09:00", end: "17:00", timezone: "UTC" } },
-          },
-        } as never,
-      );
+      const result = resolveActiveHours({ nudgeActiveHoursEnd: "22:00" }, {
+        channels: {
+          tlon: { nudgeActiveHours: { start: "09:00", end: "17:00", timezone: "UTC" } },
+        },
+      } as never);
       expect(result).toEqual({ start: "09:00", end: "22:00", timezone: "UTC" });
     });
 
     it("field-wise overlay: malformed single-bound settings value does not mask baseline", () => {
-      const result = resolveActiveHours(
-        { nudgeActiveHoursEnd: "not-a-time" },
-        {
-          channels: {
-            tlon: { nudgeActiveHours: { start: "09:00", end: "17:00", timezone: "UTC" } },
-          },
-        } as never,
-      );
+      const result = resolveActiveHours({ nudgeActiveHoursEnd: "not-a-time" }, {
+        channels: {
+          tlon: { nudgeActiveHours: { start: "09:00", end: "17:00", timezone: "UTC" } },
+        },
+      } as never);
       expect(result).toEqual({ start: "09:00", end: "17:00", timezone: "UTC" });
     });
 
     it("field-wise overlay: settings single-bound + heartbeat backwards-compat baseline", () => {
-      const result = resolveActiveHours(
-        { nudgeActiveHoursStart: "07:00" },
-        {
-          agents: {
-            defaults: {
-              heartbeat: { activeHours: { start: "09:00", end: "21:00", timezone: "UTC" } },
-            },
+      const result = resolveActiveHours({ nudgeActiveHoursStart: "07:00" }, {
+        agents: {
+          defaults: {
+            heartbeat: { activeHours: { start: "09:00", end: "21:00", timezone: "UTC" } },
           },
-        } as never,
-      );
+        },
+      } as never);
       expect(result).toEqual({ start: "07:00", end: "21:00", timezone: "UTC" });
     });
   });

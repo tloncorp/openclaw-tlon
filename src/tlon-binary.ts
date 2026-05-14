@@ -11,21 +11,20 @@ type SkillPackageJson = {
 };
 
 function findPluginPackageJsonPath(moduleDir: string, exists: ExistsFn): string | null {
-  return [join(moduleDir, "package.json"), join(moduleDir, "..", "package.json")].find(exists) ?? null;
+  return (
+    [join(moduleDir, "package.json"), join(moduleDir, "..", "package.json")].find(exists) ?? null
+  );
 }
 
-function resolveSkillBinPath(
-  resolveModule: ResolveModuleFn,
-  readFile: ReadFileFn,
-): string | null {
+function resolveSkillBinPath(resolveModule: ResolveModuleFn, readFile: ReadFileFn): string | null {
   try {
     const skillPackageJsonPath = resolveModule("@tloncorp/tlon-skill/package.json");
     const skillPackageDir = dirname(skillPackageJsonPath);
-    const skillPackageJson = JSON.parse(readFile(skillPackageJsonPath, "utf-8")) as SkillPackageJson;
+    const skillPackageJson = JSON.parse(
+      readFile(skillPackageJsonPath, "utf-8"),
+    ) as SkillPackageJson;
     const relativeBin =
-      typeof skillPackageJson.bin === "string"
-        ? skillPackageJson.bin
-        : skillPackageJson.bin?.tlon;
+      typeof skillPackageJson.bin === "string" ? skillPackageJson.bin : skillPackageJson.bin?.tlon;
 
     return relativeBin ? join(skillPackageDir, relativeBin) : null;
   } catch {

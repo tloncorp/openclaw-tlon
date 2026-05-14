@@ -6,7 +6,6 @@ import { randomUUID } from "node:crypto";
  * a notification and can approve or deny the request via slash commands
  * (/allow, /reject, /ban).
  */
-
 import type { PendingApproval } from "../settings.js";
 
 export type { PendingApproval };
@@ -200,9 +199,7 @@ function actionHintsGroup(id: string): string {
  * Format a notification message for the owner about a pending approval.
  */
 export function formatApprovalRequest(approval: PendingApproval, ctx?: DisplayContext): string {
-  const preview = approval.messagePreview
-    ? `\n"${truncate(approval.messagePreview, 100)}"`
-    : "";
+  const preview = approval.messagePreview ? `\n"${truncate(approval.messagePreview, 100)}"` : "";
 
   switch (approval.type) {
     case "dm":
@@ -351,12 +348,9 @@ export function formatBlockedList(ships: string[]): string {
     return "No ships are currently blocked.";
   }
   const lines = ships.map((s) => `  ${s}`);
-  return [
-    `Blocked ships (${ships.length}):`,
-    ...lines,
-    "",
-    "To unban: `/unban ~ship-name`",
-  ].join("\n");
+  return [`Blocked ships (${ships.length}):`, ...lines, "", "To unban: `/unban ~ship-name`"].join(
+    "\n",
+  );
 }
 
 /**

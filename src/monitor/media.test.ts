@@ -99,7 +99,13 @@ describe("parseBlobData", () => {
   it("parses multiple entries", () => {
     const blob = JSON.stringify([
       { type: "file", version: 1, fileUri: "https://example.com/a.pdf", size: 100 },
-      { type: "voicememo", version: 1, fileUri: "https://example.com/b.m4a", size: 200, duration: 5 },
+      {
+        type: "voicememo",
+        version: 1,
+        fileUri: "https://example.com/b.m4a",
+        size: 200,
+        duration: 5,
+      },
     ]);
     const result = parseBlobData(blob);
     expect(result).toHaveLength(2);
@@ -177,7 +183,13 @@ describe("formatBlobAnnotations", () => {
   it("formats multiple entries on separate lines", () => {
     const text = formatBlobAnnotations([
       { type: "file", version: 1, fileUri: "https://example.com/a.pdf", name: "a.pdf", size: 1024 },
-      { type: "voicememo", version: 1, fileUri: "https://example.com/b.m4a", size: 2048, duration: 5 },
+      {
+        type: "voicememo",
+        version: 1,
+        fileUri: "https://example.com/b.m4a",
+        size: 2048,
+        duration: 5,
+      },
     ]);
     const lines = text.split("\n").filter(Boolean);
     expect(lines.length).toBeGreaterThanOrEqual(2);
@@ -312,9 +324,9 @@ describe("blob download limits", () => {
     expect(result.notices).toEqual([]);
     expect(result.attachments).toHaveLength(1);
     expect(result.attachments[0]?.contentType).toBe("text/plain");
-    const saved = await stat(result.attachments[0]!.path);
+    const saved = await stat(result.attachments[0].path);
     expect(saved.size).toBe(10);
-    expect(result.attachments[0]!.path.startsWith(mediaDir)).toBe(true);
+    expect(result.attachments[0].path.startsWith(mediaDir)).toBe(true);
     expect(MAX_BLOB_DOWNLOAD_BYTES).toBe(100 * 1024 * 1024);
   });
 });

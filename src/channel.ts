@@ -1,14 +1,19 @@
-import type { ChannelPlugin, ChannelAccountSnapshot, OpenClawConfig } from "openclaw/plugin-sdk/tlon";
-import { DEFAULT_ACCOUNT_ID } from "openclaw/plugin-sdk/tlon";
+import type {
+  ChannelPlugin,
+  ChannelAccountSnapshot,
+  OpenClawConfig,
+} from "openclaw/plugin-sdk/tlon";
+import { describeAccountSnapshot } from "openclaw/plugin-sdk/account-helpers";
+import { createHybridChannelConfigAdapter } from "openclaw/plugin-sdk/channel-config-helpers";
 import { createChatChannelPlugin } from "openclaw/plugin-sdk/core";
 import { createLazyRuntimeModule } from "openclaw/plugin-sdk/lazy-runtime";
-import { createHybridChannelConfigAdapter } from "openclaw/plugin-sdk/channel-config-helpers";
 import { createRuntimeOutboundDelegates } from "openclaw/plugin-sdk/outbound-runtime";
 import {
   createComputedAccountStatusAdapter,
   createDefaultChannelRuntimeState,
 } from "openclaw/plugin-sdk/status-helpers";
-import { describeAccountSnapshot } from "openclaw/plugin-sdk/account-helpers";
+import { DEFAULT_ACCOUNT_ID } from "openclaw/plugin-sdk/tlon";
+import { tlonMessageActions } from "./actions.js";
 import { tlonChannelConfigSchema } from "./config-schema.js";
 import {
   applyTlonSetupConfig,
@@ -16,13 +21,8 @@ import {
   resolveTlonSetupConfigured,
   tlonSetupAdapter,
 } from "./setup-core.js";
-import {
-  formatTargetHint,
-  normalizeShip,
-  parseTlonTarget,
-} from "./targets.js";
+import { formatTargetHint, normalizeShip, parseTlonTarget } from "./targets.js";
 import { resolveTlonAccount, listTlonAccountIds } from "./types.js";
-import { tlonMessageActions } from "./actions.js";
 
 const TLON_CHANNEL_ID = "tlon" as const;
 

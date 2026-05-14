@@ -147,8 +147,7 @@ function parseInlineMarkdown(text: string): StoryInline[] {
       specialTokenIndices.push(urlIndex);
     }
 
-    const nextTokenIndex =
-      specialTokenIndices.length > 0 ? Math.min(...specialTokenIndices) : -1;
+    const nextTokenIndex = specialTokenIndices.length > 0 ? Math.min(...specialTokenIndices) : -1;
 
     if (nextTokenIndex > 0) {
       result.push(remaining.slice(0, nextTokenIndex));

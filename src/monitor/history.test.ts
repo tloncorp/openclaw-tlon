@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-
 import {
   buildThreadContextMessage,
   fetchParentPostHistoryEntry,
@@ -131,7 +130,11 @@ describe("retainThreadContextMessages", () => {
 describe("buildThreadContextMessage", () => {
   it("includes the parent post body in the emitted previous-messages block", () => {
     const history = [
-      makeEntry({ author: "~nec", content: "Heartbeat to System Cron Migration Plan", id: "parent" }),
+      makeEntry({
+        author: "~nec",
+        content: "Heartbeat to System Cron Migration Plan",
+        id: "parent",
+      }),
       makeEntry({ author: "~zod", content: "latest reply", id: "reply-1", timestamp: 2 }),
     ];
 

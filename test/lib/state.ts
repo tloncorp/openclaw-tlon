@@ -5,6 +5,7 @@
  * API calls are serialized because @tloncorp/api uses a shared client singleton.
  */
 
+import type { Story } from "@tloncorp/api";
 import {
   createGroup,
   getCurrentUserId,
@@ -24,7 +25,6 @@ import {
   joinGroup,
   inviteGroupMembers,
 } from "@tloncorp/api";
-import type { Story } from "@tloncorp/api";
 
 export interface StateClientConfig {
   shipUrl: string;
@@ -64,7 +64,10 @@ export interface StateClient {
   poke(params: { app: string; mark: string; json: unknown }): Promise<void>;
 
   /** Create a group with a default chat channel */
-  createGroup(title: string, memberIds?: string[]): Promise<{ groupId: string; chatChannel: string }>;
+  createGroup(
+    title: string,
+    memberIds?: string[],
+  ): Promise<{ groupId: string; chatChannel: string }>;
 
   /** Invite ships to a group */
   inviteToGroup(groupId: string, contactIds: string[]): Promise<void>;
@@ -76,11 +79,7 @@ export interface StateClient {
   isMemberOfGroup(groupId: string): Promise<boolean>;
 
   /** Send a post (DM or channel) via @tloncorp/api sendPost */
-  sendPost(params: {
-    channelId: string;
-    content: Story;
-    blob?: string;
-  }): Promise<void>;
+  sendPost(params: { channelId: string; content: Story; blob?: string }): Promise<void>;
 
   /** Send a reply (DM or channel) via @tloncorp/api sendReply */
   sendReply(params: {
@@ -98,7 +97,7 @@ function runExclusive<T>(fn: () => Promise<T>): Promise<T> {
   const next = apiQueue.then(fn, fn);
   apiQueue = next.then(
     () => undefined,
-    () => undefined
+    () => undefined,
   );
   return next;
 }
@@ -234,11 +233,7 @@ export function createStateClient(config: StateClientConfig): StateClient {
       });
     },
 
-    async sendPost(params: {
-      channelId: string;
-      content: Story;
-      blob?: string;
-    }) {
+    async sendPost(params: { channelId: string; content: Story; blob?: string }) {
       return withClient(async () => {
         await sendPost({
           channelId: params.channelId,

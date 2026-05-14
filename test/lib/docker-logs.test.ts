@@ -31,11 +31,7 @@ vi.mock("node:child_process", () => ({
   spawn: childProcessMocks.spawn,
 }));
 
-import {
-  getContainerLogsSince,
-  startLiveToolTrace,
-  toolWasInvoked,
-} from "./docker-logs.js";
+import { getContainerLogsSince, startLiveToolTrace, toolWasInvoked } from "./docker-logs.js";
 
 describe("docker log helpers", () => {
   beforeEach(() => {

@@ -1,17 +1,13 @@
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import path from "node:path";
 import type { OpenClawConfig } from "openclaw/plugin-sdk/tlon";
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { PendingNudge } from "../pending-nudge.js";
 import type { TlonSettingsStore } from "../settings.js";
 import type { LastNudgeStageShadow, LastOwnerActivity } from "./nudge-state.js";
 import { NUDGE_MESSAGES } from "../nudge-messages.js";
-import {
-  createNudgeRunner,
-  shouldStartNudgeRunner,
-  type NudgeRunnerDeps,
-} from "./nudge-runner.js";
+import { createNudgeRunner, shouldStartNudgeRunner, type NudgeRunnerDeps } from "./nudge-runner.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const ACCOUNT_ID = "default";
@@ -128,7 +124,9 @@ function makeHarness(opts: HarnessOpts): Harness {
 
 function scryReturning(stage: number | undefined) {
   const tlon: Record<string, unknown> = {};
-  if (stage != null) {tlon.lastNudgeStage = stage;}
+  if (stage != null) {
+    tlon.lastNudgeStage = stage;
+  }
   return { all: { moltbot: { tlon } } };
 }
 

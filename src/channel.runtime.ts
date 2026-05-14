@@ -1,16 +1,17 @@
-import crypto from "node:crypto";
-import type { ChannelAccountSnapshot, ChannelOutboundAdapter, ChannelPlugin } from "openclaw/plugin-sdk/tlon";
+import type {
+  ChannelAccountSnapshot,
+  ChannelOutboundAdapter,
+  ChannelPlugin,
+} from "openclaw/plugin-sdk/tlon";
 import type { OpenClawConfig } from "openclaw/plugin-sdk/tlon";
+import { scry } from "@tloncorp/api";
+import crypto from "node:crypto";
 import { monitorTlonProvider } from "./monitor/index.js";
 import { tlonSetupWizard } from "./setup-surface.js";
-import {
-  formatTargetHint,
-  normalizeShip,
-  parseTlonTarget,
-} from "./targets.js";
+import { formatTargetHint, normalizeShip, parseTlonTarget } from "./targets.js";
 import { resolveTlonAccount } from "./types.js";
-import { authenticate } from "./urbit/auth.js";
 import { withAuthenticatedTlonApi } from "./urbit/api-client.js";
+import { authenticate } from "./urbit/auth.js";
 import { ssrfPolicyFromAllowPrivateNetwork } from "./urbit/context.js";
 import { urbitFetch } from "./urbit/fetch.js";
 import {
@@ -20,9 +21,8 @@ import {
   sendChannelPost,
   type BotProfile,
 } from "./urbit/send.js";
-import { uploadImageFromUrl } from "./urbit/upload.js";
 import { markdownToStory } from "./urbit/story.js";
-import { scry } from "@tloncorp/api";
+import { uploadImageFromUrl } from "./urbit/upload.js";
 
 type ResolvedTlonAccount = ReturnType<typeof resolveTlonAccount>;
 type ConfiguredTlonAccount = ResolvedTlonAccount & {
@@ -60,7 +60,9 @@ async function getBotProfile(ship: string): Promise<BotProfile | undefined> {
     profileCache.set(ship, profile);
 
     if (profile.nickname || profile.avatar) {
-      console.log(`[tlon] Using self profile for bot meta (${ship}): ${profile.nickname || "(no nickname)"}`);
+      console.log(
+        `[tlon] Using self profile for bot meta (${ship}): ${profile.nickname || "(no nickname)"}`,
+      );
       return profile;
     }
   } catch (err) {
@@ -96,13 +98,24 @@ export const tlonRuntimeOutbound: Pick<ChannelOutboundAdapter, "sendText" | "sen
   sendText: async ({ cfg, to, text, accountId, replyToId, threadId }) => {
     const { account, parsed } = resolveOutboundContext({ cfg, accountId, to });
     return await withAuthenticatedTlonApi(
-      { url: account.url, code: account.code, ship: account.ship, allowPrivateNetwork: account.allowPrivateNetwork ?? undefined },
+      {
+        url: account.url,
+        code: account.code,
+        ship: account.ship,
+        allowPrivateNetwork: account.allowPrivateNetwork ?? undefined,
+      },
       async () => {
         const fromShip = normalizeShip(account.ship);
         const replyId = resolveReplyId(replyToId, threadId);
         const botProfile = await getBotProfile(fromShip);
         if (parsed.kind === "dm") {
-          return await sendDm({ fromShip, toShip: parsed.ship, text, replyToId: replyId, botProfile });
+          return await sendDm({
+            fromShip,
+            toShip: parsed.ship,
+            text,
+            replyToId: replyId,
+            botProfile,
+          });
         }
         return await sendChannelPost({
           fromShip,
@@ -117,7 +130,12 @@ export const tlonRuntimeOutbound: Pick<ChannelOutboundAdapter, "sendText" | "sen
   sendMedia: async ({ cfg, to, text, mediaUrl, accountId, replyToId, threadId }) => {
     const { account, parsed } = resolveOutboundContext({ cfg, accountId, to });
     return await withAuthenticatedTlonApi(
-      { url: account.url, code: account.code, ship: account.ship, allowPrivateNetwork: account.allowPrivateNetwork ?? undefined },
+      {
+        url: account.url,
+        code: account.code,
+        ship: account.ship,
+        allowPrivateNetwork: account.allowPrivateNetwork ?? undefined,
+      },
       async () => {
         const uploadedUrl = mediaUrl ? await uploadImageFromUrl(mediaUrl) : undefined;
         const fromShip = normalizeShip(account.ship);
@@ -125,7 +143,13 @@ export const tlonRuntimeOutbound: Pick<ChannelOutboundAdapter, "sendText" | "sen
         const replyId = resolveReplyId(replyToId, threadId);
         const botProfile = await getBotProfile(fromShip);
         if (parsed.kind === "dm") {
-          return await sendDmWithStory({ fromShip, toShip: parsed.ship, story, replyToId: replyId, botProfile });
+          return await sendDmWithStory({
+            fromShip,
+            toShip: parsed.ship,
+            story,
+            replyToId: replyId,
+            botProfile,
+          });
         }
         return await sendChannelPost({
           fromShip,

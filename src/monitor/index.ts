@@ -340,7 +340,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     const out = new Set<string>();
     for (const raw of list) {
       const canonical = canonicalizeNest(raw);
-      if (canonical) out.add(canonical);
+      if (canonical) {out.add(canonical);}
     }
     return [...out];
   };
@@ -1598,10 +1598,14 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
           runtime,
         );
         if (threadContextHistory.length > 0) {
-          const threadContextMessage = buildThreadContextMessage(threadContextHistory, messageText, {
-            formatAuthor: formatShipWithNickname,
-            sanitizeContent: sanitizeMessageText,
-          });
+          const threadContextMessage = buildThreadContextMessage(
+            threadContextHistory,
+            messageText,
+            {
+              formatAuthor: formatShipWithNickname,
+              sanitizeContent: sanitizeMessageText,
+            },
+          );
           if (threadContextMessage) {
             messageText = threadContextMessage.messageText;
             runtime?.log?.(

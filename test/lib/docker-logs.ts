@@ -28,10 +28,7 @@ const TOOL_TRACE_LINE_RE = /(?:embedded run tool (?:start|end):|tooltrace (?:bef
  * @returns Raw log text
  * @throws If docker compose command fails (propagates to test as assertion failure)
  */
-export function getContainerLogsSince(
-  composeFile: string,
-  sinceIso: string,
-): string {
+export function getContainerLogsSince(composeFile: string, sinceIso: string): string {
   const output = execFileSync(
     "docker",
     ["compose", "-f", composeFile, "logs", "--no-color", "--since", sinceIso, "openclaw"],
@@ -114,9 +111,7 @@ function recordTraceLine(lines: string[], label: string | undefined, line: strin
  * Start streaming only structured tool-execution lines from the openclaw
  * docker container logs. Intended for live CI debugging around a single prompt.
  */
-export function startLiveToolTrace(
-  options: LiveToolTraceOptions,
-): LiveToolTraceHandle {
+export function startLiveToolTrace(options: LiveToolTraceOptions): LiveToolTraceHandle {
   const child = spawn(
     "docker",
     [
@@ -238,7 +233,5 @@ export function toolWasInvoked(logs: string, toolName: string): boolean {
   const escaped = escapeRegex(toolName);
   // Match only the structured "embedded run tool start/end" log format.
   // The key distinguisher is "embedded run tool" prefix + " tool=<name>" field.
-  return new RegExp(
-    `embedded run tool (?:start|end):.*\\btool=${escaped}\\b`,
-  ).test(logs);
+  return new RegExp(`embedded run tool (?:start|end):.*\\btool=${escaped}\\b`).test(logs);
 }

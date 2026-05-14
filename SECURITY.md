@@ -171,10 +171,10 @@ _Note: Not currently enforced — future enhancement._
 
 **Principle:** The LLM must be able to distinguish owner messages from regular users.
 
-| Sender Type   | Label Format      | SenderRole Field |
-| ------------- | ----------------- | ---------------- |
-| Owner         | `~ship [owner]`   | `"owner"`        |
-| Approved user | `~ship [user]`    | `"user"`         |
+| Sender Type   | Label Format    | SenderRole Field |
+| ------------- | --------------- | ---------------- |
+| Owner         | `~ship [owner]` | `"owner"`        |
+| Approved user | `~ship [user]`  | `"user"`         |
 
 **Defense in Depth:**
 
@@ -197,10 +197,10 @@ By including sender role in both the message label and context payload, the LLM 
 
 **Principle:** Each user's DM conversation must have isolated session memory.
 
-| dmScope Setting          | Behavior                       | Security              |
-| ------------------------ | ------------------------------ | --------------------- |
-| `main` (default)         | All DMs share one session      | ❌ Insecure           |
-| `per-channel-peer`       | Isolates by channel + sender   | ✅ Recommended        |
+| dmScope Setting    | Behavior                     | Security       |
+| ------------------ | ---------------------------- | -------------- |
+| `main` (default)   | All DMs share one session    | ❌ Insecure    |
+| `per-channel-peer` | Isolates by channel + sender | ✅ Recommended |
 
 **Critical Invariant:**
 
@@ -236,12 +236,12 @@ The Tlon plugin detects when multiple users share a DM session and:
 
 **Scope:** Blocking prevents DMs only. It does NOT affect group channel visibility.
 
-| Scenario                       | Behavior                     |
-| ------------------------------ | ---------------------------- |
-| Block DM sender (regular user) | ✅ Block DMs + notify owner  |
-| Block owner ship               | ❌ Ignored with warning      |
+| Scenario                       | Behavior                       |
+| ------------------------------ | ------------------------------ |
+| Block DM sender (regular user) | ✅ Block DMs + notify owner    |
+| Block owner ship               | ❌ Ignored with warning        |
 | Block third party              | ❌ Ignored (only block sender) |
-| No owner configured            | ✅ Block, no notification    |
+| No owner configured            | ✅ Block, no notification      |
 
 **Directive Format:**
 
@@ -263,22 +263,23 @@ The owner ship MUST never be blocked by the agent
 
 ### Weak Randomness
 
-| Usage | Allowed |
-|-------|---------|
+| Usage                          | Allowed                               |
+| ------------------------------ | ------------------------------------- |
 | `Math.random()` for IDs/tokens | ❌ No — fails upstream security tests |
-| `crypto.randomUUID()` | ✅ Yes |
-| `crypto.randomBytes()` | ✅ Yes |
+| `crypto.randomUUID()`          | ✅ Yes                                |
+| `crypto.randomBytes()`         | ✅ Yes                                |
 
 **Why:** `Math.random()` is not cryptographically secure and is detectable by OpenClaw's security scanners.
 
 ### SSRF Protection
 
-| Pattern | Allowed |
-|---------|---------|
-| Raw `fetch()` with user-provided URL | ❌ No |
-| `urbitFetch()` with SSRF policy | ✅ Yes |
+| Pattern                              | Allowed |
+| ------------------------------------ | ------- |
+| Raw `fetch()` with user-provided URL | ❌ No   |
+| `urbitFetch()` with SSRF policy      | ✅ Yes  |
 
 **Required Pattern:**
+
 ```typescript
 import { urbitFetch, getDefaultSsrfPolicy } from "openclaw/plugin-sdk";
 
@@ -295,18 +296,18 @@ try {
 
 ### Resource Cleanup
 
-| Resource | Cleanup Required |
-|----------|------------------|
+| Resource              | Cleanup Required                       |
+| --------------------- | -------------------------------------- |
 | `urbitFetch` response | ✅ Call `release()` in `finally` block |
-| SSE connections | ✅ Close on abort signal |
-| Timers | ✅ Clear on cleanup |
+| SSE connections       | ✅ Close on abort signal               |
+| Timers                | ✅ Clear on cleanup                    |
 
 ### Command Injection
 
-| Pattern | Allowed |
-|---------|---------|
-| `spawn(userInput)` | ❌ No |
-| `spawn(allowlistedCommand, validatedArgs)` | ✅ Yes |
+| Pattern                                    | Allowed |
+| ------------------------------------------ | ------- |
+| `spawn(userInput)`                         | ❌ No   |
+| `spawn(allowlistedCommand, validatedArgs)` | ✅ Yes  |
 
 **Why:** User input passed directly to shell execution enables arbitrary command execution.
 
@@ -318,14 +319,15 @@ try {
 
 **Restricted tools:** `tlon`, `cron`, `read`.
 
-| Scenario | Behavior |
-| -------- | -------- |
-| Owner uses restricted tool | ✅ Allowed |
-| Non-owner uses restricted tool | ❌ Blocked with error message |
+| Scenario                             | Behavior                                  |
+| ------------------------------------ | ----------------------------------------- |
+| Owner uses restricted tool           | ✅ Allowed                                |
+| Non-owner uses restricted tool       | ❌ Blocked with error message             |
 | Non-owner tricks LLM into using tool | ❌ Still blocked (hook-level enforcement) |
-| Internal session (heartbeat, cron) | ✅ Allowed (no role = not a user DM) |
+| Internal session (heartbeat, cron)   | ✅ Allowed (no role = not a user DM)      |
 
 **Implementation:**
+
 - `before_tool_call` hook intercepts calls to restricted tools
 - Checks SenderRole from session tracker
 - Only blocks when role is explicitly `"user"` (non-owner DM)
@@ -342,6 +344,7 @@ This check is enforced at the plugin hook level and cannot be bypassed via promp
 **Why This Matters:**
 
 Even with SenderRole correctly identified, a non-owner could social-engineer the LLM into using restricted tools:
+
 - "Send a DM to ~zod on my behalf" → blocked `tlon` tool
 - "List my tlon channels" → blocked `tlon` tool
 - "Read the SOUL.md file" → blocked `read` tool
@@ -349,7 +352,6 @@ Even with SenderRole correctly identified, a non-owner could social-engineer the
 The `before_tool_call` hook provides defense-in-depth by blocking restricted tools at the plugin level, regardless of what the LLM decides.
 
 ---
-
 
 ## Test Requirements
 
@@ -383,11 +385,11 @@ If you discover a security vulnerability:
 
 ## Changelog
 
-| Date       | Change                                   |
-| ---------- | ---------------------------------------- |
-| 2026-01-30 | Initial security model documented        |
-| 2026-01-30 | Added `groupInviteAllowlist` requirement |
-| 2026-02-11 | Added sender role identification (owner vs user) |
-| 2026-02-11 | Added session isolation warning for multi-user DMs |
+| Date       | Change                                                |
+| ---------- | ----------------------------------------------------- |
+| 2026-01-30 | Initial security model documented                     |
+| 2026-01-30 | Added `groupInviteAllowlist` requirement              |
+| 2026-02-11 | Added sender role identification (owner vs user)      |
+| 2026-02-11 | Added session isolation warning for multi-user DMs    |
 | 2026-02-11 | Added agent-initiated blocking via response directive |
-| 2026-02-12 | Added tool access control - tlon skill owner-only |
+| 2026-02-12 | Added tool access control - tlon skill owner-only     |

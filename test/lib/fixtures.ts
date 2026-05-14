@@ -231,7 +231,7 @@ export async function waitFor<T>(
   fn: () => Promise<T | undefined>,
   timeoutMs: number,
   intervalMs = 1500,
-  description = "condition"
+  description = "condition",
 ): Promise<T> {
   const started = Date.now();
   while (Date.now() - started < timeoutMs) {
@@ -249,12 +249,12 @@ export async function waitFor<T>(
  * Use this instead of early returns so tests fail clearly when fixtures are missing.
  */
 export function requireFixtureGroup(
-  fixtures: TestFixtures
+  fixtures: TestFixtures,
 ): asserts fixtures is TestFixtures & { group: NonNullable<TestFixtures["group"]> } {
   if (!fixtures.group) {
     throw new Error(
       "Test requires fixture group but it was not created. " +
-        "Check fixture setup logs for errors."
+        "Check fixture setup logs for errors.",
     );
   }
 }
@@ -263,9 +263,7 @@ export function requireFixtureGroup(
  * Asserts that third-party (non-owner) ship fixtures exist.
  * Tests using this require TEST_THIRD_PARTY_* env vars (set by test/run.sh).
  */
-export function requireThirdParty(
-  fixtures: TestFixtures
-): asserts fixtures is TestFixtures & {
+export function requireThirdParty(fixtures: TestFixtures): asserts fixtures is TestFixtures & {
   thirdPartyClient: TestClient;
   thirdPartyState: StateClient;
   thirdPartyShip: string;
@@ -273,7 +271,7 @@ export function requireThirdParty(
   if (!fixtures.thirdPartyClient || !fixtures.thirdPartyState || !fixtures.thirdPartyShip) {
     throw new Error(
       "Test requires third-party ship but it was not configured. " +
-        "Set TEST_THIRD_PARTY_URL, TEST_THIRD_PARTY_SHIP, TEST_THIRD_PARTY_CODE env vars."
+        "Set TEST_THIRD_PARTY_URL, TEST_THIRD_PARTY_SHIP, TEST_THIRD_PARTY_CODE env vars.",
     );
   }
 }
@@ -281,8 +279,7 @@ export function requireThirdParty(
 export async function ensureThirdPartyDmAccess(fixtures: TestFixtures): Promise<void> {
   requireThirdParty(fixtures);
 
-  const { botState, client, thirdPartyClient, thirdPartyState, thirdPartyShip, botShip } =
-    fixtures;
+  const { botState, client, thirdPartyClient, thirdPartyState, thirdPartyShip, botShip } = fixtures;
 
   console.log(`[FIXTURES] Ensuring DM access for ${thirdPartyShip}...`);
 
@@ -327,9 +324,7 @@ export async function ensureThirdPartyDmAccess(fixtures: TestFixtures): Promise<
     `[FIXTURES] Pending approval ${pendingApproval.id} found for ${thirdPartyShip}; approving...`,
   );
   const approvalResponse = await client.prompt("/allow", { timeoutMs: 45_000 });
-  console.log(
-    `[FIXTURES] Approval response: ${approvalResponse.text?.slice(0, 200)}`,
-  );
+  console.log(`[FIXTURES] Approval response: ${approvalResponse.text?.slice(0, 200)}`);
 
   const confirmToken = `fixture-dm-confirm-${Date.now().toString(36)}`;
   const confirmResponse = await thirdPartyClient.prompt(
@@ -368,10 +363,7 @@ async function setDmAllowlist(botState: StateClient, ships: string[]): Promise<v
   await sleep(3000);
 }
 
-async function ensureShipOnDmAllowlist(
-  botState: StateClient,
-  ship: string,
-): Promise<void> {
+async function ensureShipOnDmAllowlist(botState: StateClient, ship: string): Promise<void> {
   const currentList = await getDmAllowlist(botState);
   if (!currentList.includes(ship)) {
     await setDmAllowlist(botState, [...currentList, ship]);
@@ -404,10 +396,7 @@ async function ensureShipUnblocked(botState: StateClient, ship: string): Promise
   }
 }
 
-async function hasPriorBotDm(
-  thirdPartyState: StateClient,
-  botShip: string,
-): Promise<boolean> {
+async function hasPriorBotDm(thirdPartyState: StateClient, botShip: string): Promise<boolean> {
   try {
     const posts = await thirdPartyState.channelPosts(botShip, 10);
     return (posts ?? []).some((post) => {

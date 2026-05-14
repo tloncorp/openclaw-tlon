@@ -1,5 +1,5 @@
-import { randomUUID } from "node:crypto";
 import { gatewayHeartbeat } from "@tloncorp/api";
+import { randomUUID } from "node:crypto";
 
 // ── Constants (matching design doc recommendations) ─────────
 const HEARTBEAT_INTERVAL_MS = 30_000; // 30s
@@ -85,7 +85,9 @@ export function createGatewayStatusManager(opts: {
           opts.logger?.error?.(`[gateway-status] heartbeat failed: ${String(err)}`);
         }
       }, HEARTBEAT_INTERVAL_MS);
-      opts.logger?.log?.(`[gateway-status] heartbeat started (interval=${HEARTBEAT_INTERVAL_MS}ms)`);
+      opts.logger?.log?.(
+        `[gateway-status] heartbeat started (interval=${HEARTBEAT_INTERVAL_MS}ms)`,
+      );
     },
 
     stopHeartbeat() {

@@ -16,12 +16,12 @@ import {
   extractMessageText,
   sanitizeMessageText,
 } from "./monitor/utils.js";
-import { normalizeShip } from "./targets.js";
 import {
   setSessionRole,
   getSessionRole,
   _testing as sessionRolesTesting,
 } from "./session-roles.js";
+import { normalizeShip } from "./targets.js";
 
 describe("Security: DM Allowlist", () => {
   describe("isDmAllowed", () => {
@@ -260,7 +260,9 @@ describe("Security: Message Text Extraction", () => {
 
     it("extracts ship mentions wrapped in bold", () => {
       // Bold wrapping a ship name: **~sidwyn-nimnev-nocsyx-lassul/d4parq4f**
-      const content = [{ inline: [{ bold: [{ ship: "~sidwyn-nimnev-nocsyx-lassul" }, { ship: "/d4parq4f" }] }] }];
+      const content = [
+        { inline: [{ bold: [{ ship: "~sidwyn-nimnev-nocsyx-lassul" }, { ship: "/d4parq4f" }] }] },
+      ];
       const result = extractMessageText(content);
       expect(result).toContain("~sidwyn-nimnev-nocsyx-lassul");
       expect(result).toContain("/d4parq4f");
@@ -381,7 +383,7 @@ describe("Security: Sender Role Identification", () => {
 
   // Helper to compute sender role (mirrors logic in monitor/index.ts)
   function getSenderRole(senderShip: string, ownerShip: string | null): "owner" | "user" {
-    if (!ownerShip) return "user";
+    if (!ownerShip) {return "user";}
     return normalizeShip(senderShip) === normalizeShip(ownerShip) ? "owner" : "user";
   }
 
@@ -504,7 +506,9 @@ describe("Security: Agent-Initiated Blocking", () => {
 
       expect([...galaxyText.matchAll(blockDirectiveRegex)][0][1]).toBe("~zod");
       expect([...planetText.matchAll(blockDirectiveRegex)][0][1]).toBe("~sampel-palnet");
-      expect([...moonText.matchAll(blockDirectiveRegex)][0][1]).toBe("~dozzod-dozzod-dozzod-dozzod");
+      expect([...moonText.matchAll(blockDirectiveRegex)][0][1]).toBe(
+        "~dozzod-dozzod-dozzod-dozzod",
+      );
     });
 
     it("handles extra whitespace in directive", () => {

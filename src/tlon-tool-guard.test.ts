@@ -17,7 +17,11 @@ describe("tlon tool guard", () => {
 
     it("blocks dms reply with a ship target", () => {
       const result = checkBlockedSendOperation([
-        "dms", "reply", "~sampel-palnet", "170.141.184.507", "reply text",
+        "dms",
+        "reply",
+        "~sampel-palnet",
+        "170.141.184.507",
+        "reply text",
       ]);
       expect(result).toContain("message");
       expect(result).toContain("Blocked");
@@ -26,7 +30,11 @@ describe("tlon tool guard", () => {
 
     it("dms reply redirect includes replyTo with the messageId", () => {
       const result = checkBlockedSendOperation([
-        "dms", "reply", "~sampel-palnet", "170.141.184.507", "reply text",
+        "dms",
+        "reply",
+        "~sampel-palnet",
+        "170.141.184.507",
+        "reply text",
       ]);
       expect(result).toContain("replyTo=170.141.184.507");
     });
@@ -34,15 +42,17 @@ describe("tlon tool guard", () => {
 
   describe("allows legacy club targets", () => {
     it("allows dms send with a club ID", () => {
-      const result = checkBlockedSendOperation([
-        "dms", "send", "0v4.00000.fake1", "hello",
-      ]);
+      const result = checkBlockedSendOperation(["dms", "send", "0v4.00000.fake1", "hello"]);
       expect(result).toBeNull();
     });
 
     it("allows dms reply with a club ID", () => {
       const result = checkBlockedSendOperation([
-        "dms", "reply", "0v4.00000.fake1", "170.141.184.507", "reply text",
+        "dms",
+        "reply",
+        "0v4.00000.fake1",
+        "170.141.184.507",
+        "reply text",
       ]);
       expect(result).toBeNull();
     });
@@ -64,23 +74,17 @@ describe("tlon tool guard", () => {
     });
 
     it("allows dms unreact", () => {
-      expect(
-        checkBlockedSendOperation(["dms", "unreact", "~zod", "170.141.184.507"]),
-      ).toBeNull();
+      expect(checkBlockedSendOperation(["dms", "unreact", "~zod", "170.141.184.507"])).toBeNull();
     });
 
     it("allows dms delete", () => {
-      expect(
-        checkBlockedSendOperation(["dms", "delete", "~zod", "170.141.184.507"]),
-      ).toBeNull();
+      expect(checkBlockedSendOperation(["dms", "delete", "~zod", "170.141.184.507"])).toBeNull();
     });
   });
 
   describe("allows other subcommands", () => {
     it("allows notebook", () => {
-      expect(
-        checkBlockedSendOperation(["notebook", "diary/~host/slug", "Title"]),
-      ).toBeNull();
+      expect(checkBlockedSendOperation(["notebook", "diary/~host/slug", "Title"])).toBeNull();
     });
 
     it("allows posts react", () => {
@@ -94,15 +98,11 @@ describe("tlon tool guard", () => {
     });
 
     it("allows upload", () => {
-      expect(
-        checkBlockedSendOperation(["upload", "https://example.com/img.png"]),
-      ).toBeNull();
+      expect(checkBlockedSendOperation(["upload", "https://example.com/img.png"])).toBeNull();
     });
 
     it("allows activity mentions", () => {
-      expect(
-        checkBlockedSendOperation(["activity", "mentions", "--limit", "10"]),
-      ).toBeNull();
+      expect(checkBlockedSendOperation(["activity", "mentions", "--limit", "10"])).toBeNull();
     });
   });
 

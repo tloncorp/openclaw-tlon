@@ -6,7 +6,12 @@ const root = process.cwd();
 const outDir = join(root, ".publish");
 
 const copyEntries = ["dist", "openclaw.plugin.json", "README.md"];
-const publishOnlyScripts = new Set(["prepublishOnly", "prepare:publish", "pack:publish", "publish:clean"]);
+const publishOnlyScripts = new Set([
+  "prepublishOnly",
+  "prepare:publish",
+  "pack:publish",
+  "publish:clean",
+]);
 
 rmSync(outDir, { recursive: true, force: true });
 mkdirSync(outDir, { recursive: true });

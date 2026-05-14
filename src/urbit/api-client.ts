@@ -1,8 +1,8 @@
 import { configureClient } from "@tloncorp/api";
-import { createHttpPokeApi } from "./http-poke.js";
 import { authenticate } from "./auth.js";
 import { ssrfPolicyFromAllowPrivateNetwork } from "./context.js";
 import { urbitFetch } from "./fetch.js";
+import { createHttpPokeApi } from "./http-poke.js";
 
 type PokeFn = (params: { app: string; mark: string; json: unknown }) => Promise<unknown>;
 type ScryFn = (params: { app: string; path: string }) => Promise<unknown>;

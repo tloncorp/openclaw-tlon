@@ -1,6 +1,6 @@
+import type { SsrFPolicy } from "openclaw/plugin-sdk/tlon";
 import { randomUUID } from "node:crypto";
 import { authenticate } from "./auth.js";
-import type { SsrFPolicy } from "openclaw/plugin-sdk/tlon";
 import { ssrfPolicyFromAllowPrivateNetwork } from "./context.js";
 import { urbitFetch } from "./fetch.js";
 

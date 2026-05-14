@@ -1,5 +1,5 @@
-import { defineConfig, configDefaults } from "vitest/config";
 import { config } from "dotenv";
+import { defineConfig, configDefaults } from "vitest/config";
 
 // Load .env file
 config();
