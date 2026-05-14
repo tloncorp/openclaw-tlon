@@ -69,7 +69,7 @@ describe("security", () => {
         mark: "chat-unblock-ship",
         json: { ship: fixtures.thirdPartyShip },
       });
-      await new Promise((resolve) => setTimeout(resolve, 3000));
+      await new Promise((resolve) => setTimeout(resolve, 1500));
     }
   }
 
@@ -169,7 +169,7 @@ describe("security", () => {
         mark: "chat-block-ship",
         json: { ship: "~nec" },
       });
-      await new Promise((resolve) => setTimeout(resolve, 3000));
+      await new Promise((resolve) => setTimeout(resolve, 1500));
 
       try {
         const response = await fixtures.client.prompt("/banned");
@@ -188,7 +188,7 @@ describe("security", () => {
           mark: "chat-unblock-ship",
           json: { ship: "~nec" },
         });
-        await new Promise((resolve) => setTimeout(resolve, 3000));
+        await new Promise((resolve) => setTimeout(resolve, 1500));
       }
     });
 
@@ -200,7 +200,7 @@ describe("security", () => {
         mark: "chat-block-ship",
         json: { ship: "~nec" },
       });
-      await new Promise((resolve) => setTimeout(resolve, 3000));
+      await new Promise((resolve) => setTimeout(resolve, 1500));
 
       // Verify block is active via scry
       const blockedBefore = await getBlockedShips();
@@ -257,7 +257,7 @@ describe("security", () => {
         mark: "chat-block-ship",
         json: { ship: fixtures.thirdPartyShip },
       });
-      await new Promise((resolve) => setTimeout(resolve, 3000));
+      await new Promise((resolve) => setTimeout(resolve, 1500));
 
       try {
         // ~mug sends DM — the Urbit chat agent should silently drop it
@@ -278,7 +278,7 @@ describe("security", () => {
           mark: "chat-unblock-ship",
           json: { ship: fixtures.thirdPartyShip },
         });
-        await new Promise((resolve) => setTimeout(resolve, 3000));
+        await new Promise((resolve) => setTimeout(resolve, 1500));
       }
     });
 
@@ -310,7 +310,7 @@ describe("security", () => {
         },
       });
       // Give the settings subscription time to propagate
-      await new Promise((resolve) => setTimeout(resolve, 3000));
+      await new Promise((resolve) => setTimeout(resolve, 1500));
     }
 
     /**
@@ -354,7 +354,7 @@ describe("security", () => {
         mark: "chat-block-ship",
         json: { ship: fixtures.thirdPartyShip },
       });
-      await new Promise((resolve) => setTimeout(resolve, 3000));
+      await new Promise((resolve) => setTimeout(resolve, 1500));
 
       try {
         // Third party sends DM — Urbit drops it before it reaches the bot
@@ -375,7 +375,7 @@ describe("security", () => {
           mark: "chat-unblock-ship",
           json: { ship: fixtures.thirdPartyShip },
         });
-        await new Promise((resolve) => setTimeout(resolve, 3000));
+        await new Promise((resolve) => setTimeout(resolve, 1500));
       }
     });
 
@@ -464,7 +464,7 @@ describe("security", () => {
 
       // 6. Wait for the approval to be processed (removed from pending)
       // Give ames time to relay the reaction from ~ten → ~zod
-      await new Promise((resolve) => setTimeout(resolve, 3000));
+      await new Promise((resolve) => setTimeout(resolve, 1500));
       console.log("[TEST] Waiting for approval to be processed...");
       await waitFor(
         async () => {
@@ -572,7 +572,7 @@ describe("security", () => {
       });
 
       // 5. Wait for approval to be processed (removed from pending)
-      await new Promise((resolve) => setTimeout(resolve, 3000));
+      await new Promise((resolve) => setTimeout(resolve, 1500));
       console.log("[TEST] Waiting for denial to be processed...");
       await waitFor(
         async () => {
@@ -610,7 +610,7 @@ describe("security", () => {
 
       // Clean up: restore allowlist baseline for later tests
       await ensureThirdPartyOnAllowlist();
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+      await new Promise((resolve) => setTimeout(resolve, 1000));
     }, 180_000);
 
     test("removing ship from allowlist triggers approval instead of response", async () => {
@@ -670,7 +670,7 @@ describe("security", () => {
           },
         },
       });
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+      await new Promise((resolve) => setTimeout(resolve, 1000));
 
       try {
         await dmPromise;
@@ -754,7 +754,7 @@ describe("security", () => {
 
       // 6. Wait for approval to be processed
       // Give ames time to relay the reaction from ~ten → ~zod
-      await new Promise((resolve) => setTimeout(resolve, 3000));
+      await new Promise((resolve) => setTimeout(resolve, 1500));
       await waitFor(
         async () => {
           const settings = await fixtures.botState.scry<{
@@ -802,7 +802,7 @@ describe("security", () => {
         json: { ship: fixtures.thirdPartyShip },
       });
       await ensureThirdPartyOnAllowlist();
-      await new Promise((resolve) => setTimeout(resolve, 3000));
+      await new Promise((resolve) => setTimeout(resolve, 1500));
 
       try {
         await dmPromise;

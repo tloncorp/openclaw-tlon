@@ -209,7 +209,9 @@ export function createTlonClient(config: TlonClientConfig): TestClient {
 
         while (Date.now() - startTime < timeoutMs) {
           attempts += 1;
-          await sleep(2000);
+          // Poll interval — local docker ships return scrys in <100ms, so 500ms
+          // keeps cost low without busy-looping.
+          await sleep(500);
 
           try {
             const dmPosts = await testUserState.channelPosts(botShipNorm, 30);
@@ -235,7 +237,8 @@ export function createTlonClient(config: TlonClientConfig): TestClient {
               (p) => typeof p.sequenceNum === "number" && p.sequenceNum > baselineSequence,
             );
 
-            if (attempts === 1 || attempts % 5 === 0) {
+            // Log on first attempt and roughly every 10s (poll = 500ms × 20).
+            if (attempts === 1 || attempts % 20 === 0) {
               console.log(
                 `[poll #${attempts}] baselineSequence=${baselineSequence} candidates=${candidates.length} botPosts=${allBotPosts.length}`,
               );

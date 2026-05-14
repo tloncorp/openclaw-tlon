@@ -38,11 +38,11 @@ describe("owner-listen", () => {
   // How long to wait after sending a channel post before asserting
   // "no model call landed". Generous enough for SSE round-trip + the
   // plugin's engagement decision, short enough to not slow tests.
-  const NEGATIVE_SETTLE_MS = 8_000;
+  const NEGATIVE_SETTLE_MS = 2_000;
 
   // How long to wait for a settings-store mutation to propagate to the
   // plugin's effective state (via the SSE settings subscription).
-  const SETTINGS_PROPAGATE_MS = 3_000;
+  const SETTINGS_PROPAGATE_MS = 2_000;
 
   beforeAll(async () => {
     fixtures = await getFixtures();
