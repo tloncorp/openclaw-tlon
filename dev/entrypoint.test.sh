@@ -53,9 +53,6 @@ cat > "$CONFIG_DIR/openclaw.json" << EOF
         "baseUrl": "${FAKE_MODEL_BASE_URL:-http://fake-model:4000/v1}",
         "apiKey": "TEST_KEY",
         "api": "openai-completions",
-        "request": {
-          "allowPrivateNetwork": true
-        },
         "models": [
           {
             "id": "tlon-test-scripted",

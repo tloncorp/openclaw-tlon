@@ -27,6 +27,13 @@ if [ -f .env ]; then
   set +a
 fi
 
+# Force the integration suite onto the scripted fake-model. The .env load
+# above intentionally exposes dev creds (OPENROUTER_API_KEY, MODEL=...) so
+# `pnpm dev` works locally; without these overrides those would leak into
+# the test container and the bot would dial OpenRouter instead of the fake.
+export MODEL="custom-proxy/tlon-test-scripted"
+unset OPENROUTER_API_KEY
+
 # Fakezod credentials - these are the standard deterministic codes for ephemeral Urbit ships
 # ~zod is the bot ship, ~ten is the test user that sends DMs
 # Host ports can be overridden via env vars (container-internal ports stay fixed)
@@ -43,9 +50,10 @@ MUG_CODE="ravsut-bolryd-hapsum-pastul"
 
 # Gateway port can be overridden via env var (matches docker-compose.test.yml)
 GATEWAY_PORT="${OPENCLAW_GATEWAY_PORT:-18789}"
+FAKE_MODEL_PORT="${FAKE_MODEL_PORT:-4000}"
 
 # Check for port conflicts before starting
-for port in $ZOD_PORT $TEN_PORT $MUG_PORT $GATEWAY_PORT; do
+for port in $ZOD_PORT $TEN_PORT $MUG_PORT $GATEWAY_PORT $FAKE_MODEL_PORT; do
   if lsof -Pi ":$port" -sTCP:LISTEN -t >/dev/null 2>&1; then
     echo "Error: Port $port is already in use"
     if [ "$port" = "$GATEWAY_PORT" ]; then
@@ -53,12 +61,16 @@ for port in $ZOD_PORT $TEN_PORT $MUG_PORT $GATEWAY_PORT; do
       echo "  Either stop it, or use a different port:"
       echo "    OPENCLAW_GATEWAY_PORT=18790 pnpm test:integration"
     fi
+    if [ "$port" = "$FAKE_MODEL_PORT" ]; then
+      echo "  Hint: The fake-model server needs port $port to register scripts from the host."
+      echo "  Override with FAKE_MODEL_PORT=4100 pnpm test:integration"
+    fi
     exit 1
   fi
 done
 
 # Export port vars for docker-compose interpolation
-export ZOD_PORT TEN_PORT MUG_PORT
+export ZOD_PORT TEN_PORT MUG_PORT FAKE_MODEL_PORT
 
 # Use test compose file, add local override if tlonbot repo exists
 COMPOSE_FILES="-f dev/docker-compose.test.yml"
@@ -88,6 +100,23 @@ docker compose $COMPOSE_FILES down -v 2>/dev/null || true
 
 echo "==> Starting ships container..."
 docker compose $COMPOSE_FILES up -d ships
+
+echo "==> Starting fake-model container..."
+docker compose $COMPOSE_FILES up -d fake-model
+
+echo "==> Waiting for fake-model (port $FAKE_MODEL_PORT)..."
+for i in $(seq 1 30); do
+  if curl -fsS "http://localhost:$FAKE_MODEL_PORT/health" >/dev/null 2>&1; then
+    echo "fake-model ready"
+    break
+  fi
+  if [ $i -eq 30 ]; then
+    echo "Timeout waiting for fake-model after 30s"
+    docker compose $COMPOSE_FILES logs fake-model
+    exit 1
+  fi
+  sleep 1
+done
 
 echo "==> Building openclaw image..."
 docker compose $COMPOSE_FILES build openclaw
@@ -198,6 +227,7 @@ export TEST_THIRD_PARTY_CODE="$MUG_CODE"
 export TEST_MODE="tlon"
 export TEST_GATEWAY_URL="http://localhost:$GATEWAY_PORT"
 export TEST_COMPOSE_FILE="dev/docker-compose.test.yml"
+export FAKE_MODEL_BASE_URL="http://localhost:$FAKE_MODEL_PORT"
 
 # Debug: show env vars
 echo "Env vars:"
@@ -237,5 +267,9 @@ fi
 echo ""
 echo "==> OpenClaw container logs (last 200 lines):"
 docker compose $COMPOSE_FILES logs --tail=200 openclaw 2>/dev/null || true
+
+echo ""
+echo "==> fake-model container logs (last 100 lines):"
+docker compose $COMPOSE_FILES logs --tail=100 fake-model 2>/dev/null || true
 
 exit $TEST_EXIT

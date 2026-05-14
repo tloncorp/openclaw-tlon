@@ -108,7 +108,9 @@ describe("re-engagement nudges", () => {
         },
       }),
     ]);
-    console.log(`Seeded lastOwnerMessageDate=${offsetDate} (${Math.round(daysMs / (24 * 60 * 60 * 1000))} days ago)`);
+    console.log(
+      `Seeded lastOwnerMessageDate=${offsetDate} (${Math.round(daysMs / (24 * 60 * 60 * 1000))} days ago)`,
+    );
   }
 
   async function readLastNudgeStage(): Promise<number | null> {
@@ -138,7 +140,9 @@ describe("re-engagement nudges", () => {
         pollCount++;
         const newBotPosts = await readBotPostsSince(ownerState, botShip, baselineSequence);
         if (pollCount % 6 === 1) {
-          console.log(`[poll ${pollCount}] newBot=${newBotPosts.length} baseline=${baselineSequence}`);
+          console.log(
+            `[poll ${pollCount}] newBot=${newBotPosts.length} baseline=${baselineSequence}`,
+          );
         }
         const match = newBotPosts.filter((p) => p.text.includes(STAGE_1_MARKER));
         return match.length > 0 ? match[0] : null;

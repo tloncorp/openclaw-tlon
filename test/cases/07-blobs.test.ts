@@ -1,3 +1,4 @@
+import type { Story } from "@tloncorp/api";
 /**
  * Blob Attachment Integration Tests
  *
@@ -10,13 +11,7 @@
  *   ~ten = test user (configured as ownerShip)
  */
 import { describe, test, expect, beforeAll } from "vitest";
-import type { Story } from "@tloncorp/api";
-import {
-  getFixtures,
-  requireFixtureGroup,
-  waitFor,
-  type TestFixtures,
-} from "../lib/index.js";
+import { getFixtures, requireFixtureGroup, waitFor, type TestFixtures } from "../lib/index.js";
 import { getLatestSequenceForAuthor, isPostNewerThanSequence } from "../lib/post-baseline.js";
 
 describe("blobs", () => {
@@ -60,7 +55,8 @@ describe("blobs", () => {
       {
         type: "file",
         version: 1,
-        fileUri: "https://storage.googleapis.com/tlon-test-ci-shared/test-images/openclaw-image.png",
+        fileUri:
+          "https://storage.googleapis.com/tlon-test-ci-shared/test-images/openclaw-image.png",
         mimeType: "image/png",
         name: `${token}.png`,
         size: 12345,
@@ -69,12 +65,7 @@ describe("blobs", () => {
   }
 
   async function getDmBaseline(): Promise<number> {
-    return getLatestSequenceForAuthor(
-      fixtures.userState,
-      fixtures.botShip,
-      fixtures.botShip,
-      30,
-    );
+    return getLatestSequenceForAuthor(fixtures.userState, fixtures.botShip, fixtures.botShip, 30);
   }
 
   async function waitForDmReply(baseline: number, desc: string): Promise<string> {
@@ -82,10 +73,15 @@ describe("blobs", () => {
       async () => {
         const posts = await fixtures.userState.channelPosts(fixtures.botShip, 30);
         for (const post of posts ?? []) {
-          const p = post as { authorId?: string; sentAt?: number; sequenceNum?: number | null; textContent?: string };
-          if (p.authorId !== fixtures.botShip) continue;
-          if (!isPostNewerThanSequence(p, baseline)) continue;
-          if (p.textContent?.trim()) return p.textContent;
+          const p = post as {
+            authorId?: string;
+            sentAt?: number;
+            sequenceNum?: number | null;
+            textContent?: string;
+          };
+          if (p.authorId !== fixtures.botShip) {continue;}
+          if (!isPostNewerThanSequence(p, baseline)) {continue;}
+          if (p.textContent?.trim()) {return p.textContent;}
         }
         return undefined;
       },
@@ -96,12 +92,7 @@ describe("blobs", () => {
   }
 
   async function getChannelBaseline(nest: string): Promise<number> {
-    return getLatestSequenceForAuthor(
-      fixtures.botState,
-      nest,
-      fixtures.botShip,
-      30,
-    );
+    return getLatestSequenceForAuthor(fixtures.botState, nest, fixtures.botShip, 30);
   }
 
   async function waitForChannelReply(
@@ -113,10 +104,15 @@ describe("blobs", () => {
       async () => {
         const posts = await fixtures.botState.channelPosts(nest, 30);
         for (const post of posts ?? []) {
-          const p = post as { authorId?: string; sentAt?: number; sequenceNum?: number | null; textContent?: string };
-          if (p.authorId !== fixtures.botShip) continue;
-          if (!isPostNewerThanSequence(p, baseline)) continue;
-          if (p.textContent?.trim()) return p.textContent;
+          const p = post as {
+            authorId?: string;
+            sentAt?: number;
+            sequenceNum?: number | null;
+            textContent?: string;
+          };
+          if (p.authorId !== fixtures.botShip) {continue;}
+          if (!isPostNewerThanSequence(p, baseline)) {continue;}
+          if (p.textContent?.trim()) {return p.textContent;}
         }
         return undefined;
       },
@@ -185,7 +181,9 @@ describe("blobs", () => {
       return;
     }
 
-    console.log(`[TEST] Sending DM thread reply with voice memo blob (parent: ${parentPost.id})...`);
+    console.log(
+      `[TEST] Sending DM thread reply with voice memo blob (parent: ${parentPost.id})...`,
+    );
     await fixtures.userState.sendReply({
       channelId: fixtures.botShip,
       parentId: parentPost.id,
@@ -255,7 +253,11 @@ describe("blobs", () => {
       blob: fileBlob(token),
     });
 
-    const reply = await waitForChannelReply(nest, baseline, "bot reply to channel thread file blob");
+    const reply = await waitForChannelReply(
+      nest,
+      baseline,
+      "bot reply to channel thread file blob",
+    );
     console.log(`[TEST] Bot replied: ${reply.slice(0, 200)}`);
     expect(reply.length).toBeGreaterThan(0);
   });

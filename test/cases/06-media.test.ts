@@ -1,12 +1,10 @@
-import { describe, test, expect, beforeAll } from "vitest";
-import {
-  getFixtures,
-  waitFor,
-  type TestFixtures,
-} from "../lib/index.js";
+import { describe, test, expect, beforeAll, beforeEach } from "vitest";
+import { getFixtures, waitFor, type TestFixtures } from "../lib/index.js";
 import { getLatestSequenceForAuthor, isPostNewerThanSequence } from "../lib/post-baseline.js";
+import { fakeModel } from "../support/fake-model/client.js";
 
-const SOURCE_IMAGE_URL = "https://storage.googleapis.com/tlon-test-ci-shared/test-images/openclaw-image.png";
+const SOURCE_IMAGE_URL =
+  "https://storage.googleapis.com/tlon-test-ci-shared/test-images/openclaw-image.png";
 
 // Poke mark verified against fakezod — see plan §1b.
 // JSON keys must be kebab-case (storage-json/hoon), not camelCase.
@@ -21,10 +19,7 @@ const storageEnv = {
 };
 
 const hasStorageEnv = Boolean(
-  storageEnv.endpoint &&
-    storageEnv.bucket &&
-    storageEnv.accessKey &&
-    storageEnv.secretKey,
+  storageEnv.endpoint && storageEnv.bucket && storageEnv.accessKey && storageEnv.secretKey,
 );
 
 describe("media", () => {
@@ -32,6 +27,10 @@ describe("media", () => {
 
   beforeAll(async () => {
     fixtures = await getFixtures();
+  });
+
+  beforeEach(async () => {
+    await fakeModel.reset();
   });
 
   const mediaTest = hasStorageEnv ? test : test.skip;
@@ -61,18 +60,16 @@ describe("media", () => {
     const creds = rawCreds["storage-update"].credentials;
 
     const pokes: Record<string, unknown>[] = [];
-    if (creds.endpoint !== storageEnv.endpoint)
-      pokes.push({ "set-endpoint": storageEnv.endpoint });
+    if (creds.endpoint !== storageEnv.endpoint) {pokes.push({ "set-endpoint": storageEnv.endpoint });}
     if (creds.accessKeyId !== storageEnv.accessKey)
-      pokes.push({ "set-access-key-id": storageEnv.accessKey });
+      {pokes.push({ "set-access-key-id": storageEnv.accessKey });}
     if (creds.secretAccessKey !== storageEnv.secretKey)
-      pokes.push({ "set-secret-access-key": storageEnv.secretKey });
-    if (config.region !== storageEnv.region)
-      pokes.push({ "set-region": storageEnv.region });
+      {pokes.push({ "set-secret-access-key": storageEnv.secretKey });}
+    if (config.region !== storageEnv.region) {pokes.push({ "set-region": storageEnv.region });}
     if (!config.buckets.includes(storageEnv.bucket!))
-      pokes.push({ "add-bucket": storageEnv.bucket });
+      {pokes.push({ "add-bucket": storageEnv.bucket });}
     if (config.currentBucket !== storageEnv.bucket)
-      pokes.push({ "set-current-bucket": storageEnv.bucket });
+      {pokes.push({ "set-current-bucket": storageEnv.bucket });}
 
     for (const json of pokes) {
       await fixtures.botState.poke({
@@ -82,7 +79,9 @@ describe("media", () => {
       });
     }
     if (pokes.length > 0) {
-      console.log(`[TEST] Seeded ${pokes.length} storage config poke(s), waiting for propagation...`);
+      console.log(
+        `[TEST] Seeded ${pokes.length} storage config poke(s), waiting for propagation...`,
+      );
       await waitFor(
         async () => {
           const cfg = (
@@ -131,22 +130,34 @@ describe("media", () => {
 
     // ── Prompt bot to send image in this DM ──────────────────────────
     const token = `it-media-${Date.now().toString(36)}`;
-    const prompt =
-      `Send me an image message in this DM conversation with ` +
-      `media=${SOURCE_IMAGE_URL} and message="${token}". ` +
-      `Use the provided URL verbatim as the media parameter. ` +
-      `Do not fetch, inspect, validate, or substitute the image.`;
+    const key = "media-dm-image";
+    await fakeModel.script(key, [
+      {
+        kind: "tool_call",
+        name: "message",
+        args: {
+          action: "send",
+          // DM back to the prompt sender (~ten) — that's the channel the
+          // test polls for the image post.
+          target: fixtures.userShip,
+          message: token,
+          media: SOURCE_IMAGE_URL,
+        },
+      },
+      { kind: "text", content: "Image sent." },
+      { kind: "text", content: "Image sent." },
+    ]);
 
-        const response = await fixtures.client.prompt(prompt, { correlate: false });
-        
+    const response = await fixtures.client.prompt(
+      `[tlon-test:${key}] Send an image (media=${SOURCE_IMAGE_URL}) with text "${token}".`,
+    );
+
     if (!response.success) {
       throw new Error(response.error ?? "Prompt failed");
     }
 
     // ── Assert: bot sent an image in the DM with rewritten URL ───────
-    console.log(
-      `[TEST] Waiting for image DM with token "${token}"...`,
-    );
+    console.log(`[TEST] Waiting for image DM with token "${token}"...`);
     const result = await waitFor(
       async () => {
         const posts = await fixtures.userState.channelPosts(fixtures.botShip, 30);
@@ -158,11 +169,11 @@ describe("media", () => {
             textContent?: string | null;
             images?: Array<{ src?: string | null }>;
           };
-          if (p.authorId !== fixtures.botShip) continue;
-          if (!isPostNewerThanSequence(p, baselineSequence)) continue;
+          if (p.authorId !== fixtures.botShip) {continue;}
+          if (!isPostNewerThanSequence(p, baselineSequence)) {continue;}
           const text = (p.textContent ?? "").toLowerCase();
-          if (!text.includes(token.toLowerCase())) continue;
-          if (!p.images?.length || !p.images[0]?.src) continue;
+          if (!text.includes(token.toLowerCase())) {continue;}
+          if (!p.images?.length || !p.images[0]?.src) {continue;}
           return { src: p.images[0].src };
         }
         return undefined;
