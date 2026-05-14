@@ -19,7 +19,32 @@ import {
   ensureThirdPartyDmAccess,
   type TestFixtures,
 } from "../lib/index.js";
+import { getLatestSequenceForAuthor } from "../lib/post-baseline.js";
 import { fakeModel } from "../support/fake-model/client.js";
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Verify the bot did NOT post a new DM to `viewerState`'s view of the bot's
+ * DM channel since `baselineSeq`. Local-docker SSE round-trip is <100ms;
+ * 2s is plenty of headroom to catch a stray reply.
+ */
+async function expectNoNewBotDm(
+  viewerState: TestFixtures["botState"],
+  botShip: string,
+  baselineSeq: number,
+  settleMs = 2_000,
+): Promise<void> {
+  await sleep(settleMs);
+  const after = await getLatestSequenceForAuthor(viewerState, botShip, botShip, 30);
+  if (after > baselineSeq) {
+    throw new Error(
+      `Bot posted unexpectedly: latest sequence ${after} > baseline ${baselineSeq}`,
+    );
+  }
+}
 
 describe("security", () => {
   let fixtures: TestFixtures;
@@ -257,28 +282,29 @@ describe("security", () => {
         mark: "chat-block-ship",
         json: { ship: fixtures.thirdPartyShip },
       });
-      await new Promise((resolve) => setTimeout(resolve, 1500));
+      await sleep(1500);
 
       try {
-        // ~mug sends DM — the Urbit chat agent should silently drop it
+        const baselineSeq = await getLatestSequenceForAuthor(
+          fixtures.thirdPartyState!,
+          fixtures.botShip,
+          fixtures.botShip,
+          30,
+        );
         console.log(`[TEST] Sending DM as blocked ${fixtures.thirdPartyShip}...`);
-        const response = await fixtures.thirdPartyClient.prompt("Are you there? Please respond.", {
-          timeoutMs: 20_000,
-        });
+        await fixtures.thirdPartyClient!.sendDm("Are you there? Please respond.");
 
-        console.log(`[TEST] Response error: ${response.error}`);
-
-        // Bot should NOT respond — message never reached the SSE stream
-        expect(response.success).toBe(false);
+        // Urbit's chat agent drops the message before SSE → no bot reply
+        // should appear. 2s wait is plenty given local docker latency.
+        await expectNoNewBotDm(fixtures.thirdPartyState!, fixtures.botShip, baselineSeq);
       } finally {
-        // Always unblock to restore DM access for subsequent tests
         console.log(`[TEST] Unblocking ${fixtures.thirdPartyShip}...`);
         await fixtures.botState.poke({
           app: "chat",
           mark: "chat-unblock-ship",
           json: { ship: fixtures.thirdPartyShip },
         });
-        await new Promise((resolve) => setTimeout(resolve, 1500));
+        await sleep(1500);
       }
     });
 
@@ -357,25 +383,27 @@ describe("security", () => {
       await new Promise((resolve) => setTimeout(resolve, 1500));
 
       try {
-        // Third party sends DM — Urbit drops it before it reaches the bot
+        const baselineSeq = await getLatestSequenceForAuthor(
+          fixtures.thirdPartyState!,
+          fixtures.botShip,
+          fixtures.botShip,
+          30,
+        );
         console.log(`[TEST] Sending DM as blocked+allowlisted ${fixtures.thirdPartyShip}...`);
-        const response = await fixtures.thirdPartyClient.prompt(
+        await fixtures.thirdPartyClient!.sendDm(
           "Testing blocked ship on allowlist. Please respond.",
-          { timeoutMs: 20_000 },
         );
 
-        console.log(`[TEST] Response error: ${response.error}`);
-
-        expect(response.success).toBe(false);
+        // Urbit-level block beats allowlist — no bot reply should appear.
+        await expectNoNewBotDm(fixtures.thirdPartyState!, fixtures.botShip, baselineSeq);
       } finally {
-        // Clean up: unblock the ship
         console.log(`[TEST] Unblocking ${fixtures.thirdPartyShip}...`);
         await fixtures.botState.poke({
           app: "chat",
           mark: "chat-unblock-ship",
           json: { ship: fixtures.thirdPartyShip },
         });
-        await new Promise((resolve) => setTimeout(resolve, 1500));
+        await sleep(1500);
       }
     });
 
@@ -387,11 +415,11 @@ describe("security", () => {
       await ensureThirdPartyOffAllowlist();
       console.log(`\n[TEST] Removed ${fixtures.thirdPartyShip} from DM allowlist`);
 
-      // 2. Third party sends DM — should trigger an approval request to owner
+      // 2. Third party sends DM — should trigger an approval request to owner.
+      // Fire-and-forget (sendDm, not prompt) because the test asserts on
+      // settings-store state, not on a bot reply.
       console.log(`[TEST] ${fixtures.thirdPartyShip} sending DM to trigger approval...`);
-      const dmPromise = fixtures.thirdPartyClient.prompt("Hello, requesting to message.", {
-        timeoutMs: 90_000,
-      });
+      await fixtures.thirdPartyClient!.sendDm("Hello, requesting to message.");
 
       // 3. Wait for pending approval with notificationMessageId to appear
       console.log("[TEST] Waiting for pending approval with notification message ID...");
@@ -490,14 +518,7 @@ describe("security", () => {
       const updatedList = await getDmAllowlist();
       console.log(`[TEST] DM allowlist after reaction: ${JSON.stringify(updatedList)}`);
       expect(updatedList).toContain(fixtures.thirdPartyShip);
-
-      // Wait for the third party's original DM to complete
-      try {
-        await dmPromise;
-      } catch {
-        // OK if it times out — the approval replay might not produce a response
-      }
-    }, 180_000);
+    }, 60_000);
 
     test("deny reaction removes pending approval without allowlisting or blocking", async () => {
       requireThirdParty(fixtures);
@@ -507,11 +528,11 @@ describe("security", () => {
       await ensureThirdPartyOffAllowlist();
       console.log(`\n[TEST] Removed ${fixtures.thirdPartyShip} from DM allowlist`);
 
-      // 2. Third party sends DM — should trigger an approval request to owner
+      // 2. Third party sends DM — should trigger an approval request to owner.
+      // Fire-and-forget — the test asserts on settings state, not a bot reply
+      // (deny path means there should be NO reply).
       console.log(`[TEST] ${fixtures.thirdPartyShip} sending DM to trigger deny reaction...`);
-      const dmPromise = fixtures.thirdPartyClient.prompt("Hello, requesting to message.", {
-        timeoutMs: 90_000,
-      });
+      await fixtures.thirdPartyClient!.sendDm("Hello, requesting to message.");
 
       // 3. Wait for pending approval with notificationMessageId
       console.log("[TEST] Waiting for pending approval with notification message ID...");
@@ -601,17 +622,10 @@ describe("security", () => {
       console.log(`[TEST] Blocked ships after deny: ${JSON.stringify(blockedList)}`);
       expect(Array.isArray(blockedList) ? blockedList : []).not.toContain(fixtures.thirdPartyShip);
 
-      // 8. Original DM should not be replayed
-      try {
-        await dmPromise;
-      } catch {
-        // Timeout is expected: deny should remove pending approval without sending a response
-      }
-
       // Clean up: restore allowlist baseline for later tests
       await ensureThirdPartyOnAllowlist();
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-    }, 180_000);
+      await sleep(1000);
+    }, 60_000);
 
     test("removing ship from allowlist triggers approval instead of response", async () => {
       requireThirdParty(fixtures);
@@ -625,11 +639,10 @@ describe("security", () => {
       await ensureThirdPartyOffAllowlist();
       console.log(`[TEST] Removed ${fixtures.thirdPartyShip} from DM allowlist`);
 
-      // 3. Third party sends DM — should trigger approval, not a bot response
+      // 3. Third party sends DM — should trigger approval, not a bot response.
+      // Fire-and-forget — the assertion is "pending approval was created".
       console.log(`[TEST] ${fixtures.thirdPartyShip} sending DM (should trigger approval)...`);
-      const dmPromise = fixtures.thirdPartyClient.prompt("Hello after allowlist removal test.", {
-        timeoutMs: 30_000,
-      });
+      await fixtures.thirdPartyClient!.sendDm("Hello after allowlist removal test.");
 
       // 4. Wait for a pending approval to appear for this ship
       const approval = await waitFor(
@@ -657,7 +670,6 @@ describe("security", () => {
 
       // Clean up: re-add to allowlist and clear pending approvals
       await ensureThirdPartyOnAllowlist();
-      // Clear the pending approval so it doesn't interfere with later tests
       await fixtures.botState.poke({
         app: "settings",
         mark: "settings-event",
@@ -670,14 +682,8 @@ describe("security", () => {
           },
         },
       });
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-
-      try {
-        await dmPromise;
-      } catch {
-        /* timeout OK */
-      }
-    }, 90_000);
+      await sleep(1000);
+    }, 30_000);
 
     test("block reaction removes ship from allowlist", async () => {
       requireThirdParty(fixtures);
@@ -691,11 +697,10 @@ describe("security", () => {
       await ensureThirdPartyOffAllowlist();
       console.log(`[TEST] Removed ${fixtures.thirdPartyShip} from allowlist to trigger approval`);
 
-      // 3. Third party sends DM — triggers approval
+      // 3. Third party sends DM — triggers approval. Fire-and-forget — the
+      // assertions are on allowlist and blocked-ship state, not on bot reply.
       console.log(`[TEST] ${fixtures.thirdPartyShip} sending DM to trigger approval...`);
-      const dmPromise = fixtures.thirdPartyClient.prompt("Hello, testing block reaction.", {
-        timeoutMs: 90_000,
-      });
+      await fixtures.thirdPartyClient!.sendDm("Hello, testing block reaction.");
 
       // 4. Wait for pending approval with notificationMessageId
       await waitFor(
@@ -802,13 +807,7 @@ describe("security", () => {
         json: { ship: fixtures.thirdPartyShip },
       });
       await ensureThirdPartyOnAllowlist();
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-
-      try {
-        await dmPromise;
-      } catch {
-        /* timeout OK */
-      }
-    }, 120_000);
+      await sleep(1500);
+    }, 60_000);
   });
 });
