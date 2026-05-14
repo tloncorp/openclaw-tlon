@@ -39,6 +39,10 @@ describe("blobs", () => {
 
   // ── Helpers ──────────────────────────────────────────────────────────
 
+  function storyText(text: string): Story {
+    return [{ inline: [text] }];
+  }
+
   function storyTagged(key: string, text: string): Story {
     return [{ inline: [`[tlon-test:${key}] ${text}`] }];
   }
@@ -138,17 +142,15 @@ describe("blobs", () => {
     const parentMarker = `parent-${transcriptionToken}`;
     await fakeModel.script(key, [{ kind: "text", content: "got the reply" }]);
 
-    // Parent post sets up the thread. Untagged on purpose — we don't want
-    // the parent itself to fire a model call. The plugin's monitor will
-    // not engage on a DM only if owner-listen / mention rules say so, but
-    // owner DMs always engage. To prevent that engagement from racing the
-    // real assertion, fakeModel.reset already ran and any model call here
-    // would register under no key (and the awaitModelCall below filters
-    // by our key).
+    // Parent post is a thread anchor only — UNTAGGED and NO blob. The
+    // bot will still process it (owner DMs always engage) but that call
+    // hits the fake-model without a [tlon-test:KEY] tag and is recorded
+    // under key=null, so it can't satisfy fakeModel.received(key) below.
+    // This guarantees the assertion is about the REPLY path, not the
+    // parent path.
     await fixtures.userState.sendPost({
       channelId: fixtures.botShip,
-      content: storyTagged(key, parentMarker),
-      blob: voiceMemoBlob(transcriptionToken),
+      content: storyText(parentMarker),
     });
     const parent = await findParentPost(
       fixtures.userState,
@@ -165,15 +167,11 @@ describe("blobs", () => {
       blob: voiceMemoBlob(transcriptionToken),
     });
 
-    // At least one of the two messages (parent or reply) carried the blob
-    // into the model's user text. Both did, but we only need to verify
-    // one to confirm the extraction path.
-    const calls = await waitFor(async () => {
-      const c = await fakeModel.received(key);
-      return c.length > 0 ? c : undefined;
-    }, 30_000);
-    const combined = calls.map((c) => c.userText).join("\n");
-    expect(combined).toContain(transcriptionToken);
+    // Any model call recorded under `key` must come from the reply path
+    // (the parent was untagged). Assert the reply call's userText carries
+    // the blob transcription — that's the actual plumbing under test.
+    const call = await awaitModelCall(key);
+    expect(call.userText).toContain(transcriptionToken);
   });
 
   // ── Channel tests ────────────────────────────────────────────────────
