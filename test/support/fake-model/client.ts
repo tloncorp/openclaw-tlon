@@ -65,6 +65,14 @@ export interface ReceivedCall {
   stream: boolean;
   /** Number of messages in the request. */
   messageCount: number;
+  /**
+   * Concatenated text content of all user-role messages in the request,
+   * separated by newlines. Use this to assert that specific substrings
+   * (blob transcriptions, filenames, mentioned ship names, etc.) made it
+   * into the model's input — a real plumbing assertion, not just "the bot
+   * replied with something".
+   */
+  userText: string;
 }
 
 async function getReceivedCalls(key?: string): Promise<ReceivedCall[]> {

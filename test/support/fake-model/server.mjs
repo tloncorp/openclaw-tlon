@@ -88,12 +88,23 @@ const server = http.createServer(async (req, res) => {
       const key = extractLatestScriptKey(messages);
       const streamFlag = body.stream === true ? " stream=true" : "";
 
+      // Flatten user-role message text so tests can assert that specific
+      // content (e.g. blob transcriptions, filenames) actually reached the
+      // model request. We only record user-role messages (not system or
+      // assistant) to keep the payload small and the contract clear.
+      const userText = messages
+        .filter((m) => m?.role === "user")
+        .map((m) => extractText(m?.content))
+        .filter(Boolean)
+        .join("\n");
+
       receivedCalls.push({
         key,
         at: Date.now(),
         model: body.model ?? null,
         stream: body.stream === true,
         messageCount: messages.length,
+        userText,
       });
 
       if (!key) {

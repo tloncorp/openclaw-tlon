@@ -16,10 +16,6 @@ import { describe, test, expect, beforeAll, beforeEach } from "vitest";
 import { getFixtures, waitFor, requireFixtureGroup, type TestFixtures } from "../lib/index.js";
 import { fakeModel } from "../support/fake-model/client.js";
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 describe("messages", () => {
   let fixtures: TestFixtures;
 
@@ -164,7 +160,7 @@ describe("messages", () => {
 
       await fixtures.userState.sendReply({
         channelId: fixtures.botShip,
-        parentId: String(parent!.id),
+        parentId: String(parent.id),
         parentAuthor: fixtures.userShip,
         content: story(`[tlon-test:${key}] reply body`),
       });

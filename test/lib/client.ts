@@ -164,7 +164,10 @@ export function createTlonClient(config: TlonClientConfig): TestClient {
 
       // Snapshot the latest bot sequenceNum BEFORE sending so we can match
       // "any new bot post" without false positives from earlier traffic.
-      let baselineSequence = -1;
+      // Baseline capture MUST succeed: a -1 baseline accepts any prior bot
+      // post as a match, producing false greens. Fail the prompt loudly so
+      // tests don't silently mis-pass on a transient scry failure.
+      let baselineSequence: number;
       try {
         const before = await testUserState.channelPosts(botShipNorm, 30);
         baselineSequence = (before ?? [])
@@ -176,7 +179,11 @@ export function createTlonClient(config: TlonClientConfig): TestClient {
           })
           .reduce((max, seq) => Math.max(max, seq), -1);
       } catch (err) {
-        console.log(`Failed to capture DM baseline sequence: ${String(err)}`);
+        const errMsg = err instanceof Error ? err.message : String(err);
+        const fail = `Failed to capture DM baseline sequence: ${errMsg}`;
+        console.log(`[TEST] Response success: false`);
+        console.log(`[TEST] Response text: ${JSON.stringify(fail.slice(0, 500))}`);
+        return { success: false, error: fail };
       }
 
       const composeFile = process.env.TEST_COMPOSE_FILE;

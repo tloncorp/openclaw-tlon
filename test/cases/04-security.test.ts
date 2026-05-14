@@ -286,17 +286,17 @@ describe("security", () => {
 
       try {
         const baselineSeq = await getLatestSequenceForAuthor(
-          fixtures.thirdPartyState!,
+          fixtures.thirdPartyState,
           fixtures.botShip,
           fixtures.botShip,
           30,
         );
         console.log(`[TEST] Sending DM as blocked ${fixtures.thirdPartyShip}...`);
-        await fixtures.thirdPartyClient!.sendDm("Are you there? Please respond.");
+        await fixtures.thirdPartyClient.sendDm("Are you there? Please respond.");
 
         // Urbit's chat agent drops the message before SSE → no bot reply
         // should appear. 2s wait is plenty given local docker latency.
-        await expectNoNewBotDm(fixtures.thirdPartyState!, fixtures.botShip, baselineSeq);
+        await expectNoNewBotDm(fixtures.thirdPartyState, fixtures.botShip, baselineSeq);
       } finally {
         console.log(`[TEST] Unblocking ${fixtures.thirdPartyShip}...`);
         await fixtures.botState.poke({
@@ -384,18 +384,18 @@ describe("security", () => {
 
       try {
         const baselineSeq = await getLatestSequenceForAuthor(
-          fixtures.thirdPartyState!,
+          fixtures.thirdPartyState,
           fixtures.botShip,
           fixtures.botShip,
           30,
         );
         console.log(`[TEST] Sending DM as blocked+allowlisted ${fixtures.thirdPartyShip}...`);
-        await fixtures.thirdPartyClient!.sendDm(
+        await fixtures.thirdPartyClient.sendDm(
           "Testing blocked ship on allowlist. Please respond.",
         );
 
         // Urbit-level block beats allowlist — no bot reply should appear.
-        await expectNoNewBotDm(fixtures.thirdPartyState!, fixtures.botShip, baselineSeq);
+        await expectNoNewBotDm(fixtures.thirdPartyState, fixtures.botShip, baselineSeq);
       } finally {
         console.log(`[TEST] Unblocking ${fixtures.thirdPartyShip}...`);
         await fixtures.botState.poke({
@@ -419,11 +419,11 @@ describe("security", () => {
       // Fire-and-forget (sendDm, not prompt) because the test asserts on
       // settings-store state, not on a bot reply.
       console.log(`[TEST] ${fixtures.thirdPartyShip} sending DM to trigger approval...`);
-      await fixtures.thirdPartyClient!.sendDm("Hello, requesting to message.");
+      await fixtures.thirdPartyClient.sendDm("Hello, requesting to message.");
 
       // 3. Wait for pending approval with notificationMessageId to appear
       console.log("[TEST] Waiting for pending approval with notification message ID...");
-      const approval = await waitFor(
+      await waitFor(
         async () => {
           const settings = await fixtures.botState.scry<{
             all?: Record<string, Record<string, { pendingApprovals?: string }>>;
@@ -532,7 +532,7 @@ describe("security", () => {
       // Fire-and-forget — the test asserts on settings state, not a bot reply
       // (deny path means there should be NO reply).
       console.log(`[TEST] ${fixtures.thirdPartyShip} sending DM to trigger deny reaction...`);
-      await fixtures.thirdPartyClient!.sendDm("Hello, requesting to message.");
+      await fixtures.thirdPartyClient.sendDm("Hello, requesting to message.");
 
       // 3. Wait for pending approval with notificationMessageId
       console.log("[TEST] Waiting for pending approval with notification message ID...");
@@ -642,7 +642,7 @@ describe("security", () => {
       // 3. Third party sends DM — should trigger approval, not a bot response.
       // Fire-and-forget — the assertion is "pending approval was created".
       console.log(`[TEST] ${fixtures.thirdPartyShip} sending DM (should trigger approval)...`);
-      await fixtures.thirdPartyClient!.sendDm("Hello after allowlist removal test.");
+      await fixtures.thirdPartyClient.sendDm("Hello after allowlist removal test.");
 
       // 4. Wait for a pending approval to appear for this ship
       const approval = await waitFor(
@@ -700,7 +700,7 @@ describe("security", () => {
       // 3. Third party sends DM — triggers approval. Fire-and-forget — the
       // assertions are on allowlist and blocked-ship state, not on bot reply.
       console.log(`[TEST] ${fixtures.thirdPartyShip} sending DM to trigger approval...`);
-      await fixtures.thirdPartyClient!.sendDm("Hello, testing block reaction.");
+      await fixtures.thirdPartyClient.sendDm("Hello, testing block reaction.");
 
       // 4. Wait for pending approval with notificationMessageId
       await waitFor(
@@ -787,7 +787,7 @@ describe("security", () => {
         async () => {
           try {
             const list = await fixtures.botState.scry<string[]>("chat", "/blocked");
-            if (Array.isArray(list) && list.includes(fixtures.thirdPartyShip!)) {return list;}
+            if (Array.isArray(list) && list.includes(fixtures.thirdPartyShip)) {return list;}
           } catch {
             /* scry may fail transiently */
           }
