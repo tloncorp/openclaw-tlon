@@ -13,12 +13,6 @@ services:
   # Both fakezod ships in one container (they need shared fake ames)
   ships:
     image: ubuntu:22.04
-    # Pin DNS so apt-get and curl reach Ubuntu mirrors / bootstrap.urbit.org
-    # even when the Docker daemon's default DNS is wedged (a recurring failure
-    # mode on dev machines behind VPNs or with stale embedded DNS).
-    dns:
-      - 8.8.8.8
-      - 1.1.1.1
     command:
       - bash
       - -c
