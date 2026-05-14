@@ -240,28 +240,54 @@ echo ""
 # Strip leading "--" that pnpm passes through
 if [ "${1:-}" = "--" ]; then shift; fi
 TEST_EXIT=0
+
+# Track per-file durations and overall wall time for the summary.
+SUITE_START=$(date +%s)
+FILE_TIMINGS=()
+
+run_one() {
+  local test_file=$1
+  local start end elapsed
+  start=$(date +%s)
+  echo "Running $test_file..."
+  pnpm vitest run "$test_file" || TEST_EXIT=$?
+  end=$(date +%s)
+  elapsed=$((end - start))
+  FILE_TIMINGS+=("$(printf '%4ds  %s\n' "$elapsed" "$test_file")")
+  echo "==> $test_file finished in ${elapsed}s"
+}
+
 if [ $# -gt 0 ]; then
-  # Specific test files passed as arguments
   for test_file in "$@"; do
-    echo "Running $test_file..."
-    pnpm vitest run "$test_file" || TEST_EXIT=$?
-    # Exit code >= 128 means child was killed by a signal — stop the suite
+    run_one "$test_file"
     if [ "$TEST_EXIT" -ge 128 ]; then
       echo "==> Test runner killed by signal (exit $TEST_EXIT), stopping suite."
       break
     fi
   done
 else
-  # Default: run all test cases
   for test_file in test/cases/*.test.ts; do
-    echo "Running $test_file..."
-    pnpm vitest run "$test_file" || TEST_EXIT=$?
+    run_one "$test_file"
     if [ "$TEST_EXIT" -ge 128 ]; then
       echo "==> Test runner killed by signal (exit $TEST_EXIT), stopping suite."
       break
     fi
   done
 fi
+
+SUITE_END=$(date +%s)
+SUITE_TOTAL=$((SUITE_END - SUITE_START))
+
+echo ""
+echo "==> Suite timing"
+# bash 3.2 with set -u: subscripting an empty array would fail, so guard.
+if [ "${#FILE_TIMINGS[@]}" -gt 0 ]; then
+  for line in "${FILE_TIMINGS[@]}"; do
+    echo "    $line"
+  done
+fi
+printf "    ----\n    %4ds  total (test execution wall time)\n" "$SUITE_TOTAL"
+echo ""
 
 # Dump container logs only when tests failed; on green runs they're just noise.
 # Override with DUMP_LOGS=1 to force the dump (useful when debugging a passing
