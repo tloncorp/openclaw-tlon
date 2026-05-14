@@ -310,6 +310,22 @@ describe("buildApprovalA2UIBlob", () => {
     expect(text).toContain("Inviter: Robin Dasler (~robin-dasler)");
     expect(text).toContain("Group: Garden Club");
   });
+
+  it("keeps the group flag visible when no group title is available", () => {
+    const approval = buildApprovalA2UIBlob({
+      id: "g5f6e",
+      type: "group",
+      requestingShip: "~robin-dasler",
+      groupFlag: "~robin-dasler/private-garden",
+      timestamp: 1,
+    });
+
+    expect(A2UI.validateBlobEntry(approval)).toBe(true);
+    const text = JSON.stringify(approval);
+    expect(text).toContain("Let the bot join ~robin-dasler/private-garden?");
+    expect(text).toContain("Group: ~robin-dasler/private-garden");
+    expect(text).not.toContain("this group");
+  });
 });
 
 describe("formatApprovalConfirmation", () => {

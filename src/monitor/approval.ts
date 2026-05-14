@@ -458,7 +458,7 @@ function displayGroupForApproval(
   if (!flag) {
     return titleOverride;
   }
-  return titleOverride || ctx?.groupNames?.get(flag) || "this group";
+  return titleOverride || ctx?.groupNames?.get(flag) || flag;
 }
 
 export function buildApprovalA2UIBlob(
