@@ -7,8 +7,10 @@ export OPENCLAW_STATE_DIR=/root/.openclaw
 
 # Shorten the plugin's re-engagement nudge tick interval so integration
 # tests can exercise the scheduler within a reasonable wall-clock budget.
-# Production still uses the 15-minute default.
-export TLON_NUDGE_TICK_INTERVAL_MS=${TLON_NUDGE_TICK_INTERVAL_MS:-30000}
+# Production still uses the 15-minute default. 5s here lets the heartbeat
+# test fire its phase-1 nudge quickly and verify "no duplicate nudge" over
+# 2-3 tick intervals in ~15s instead of the previous 30s/75s.
+export TLON_NUDGE_TICK_INTERVAL_MS=${TLON_NUDGE_TICK_INTERVAL_MS:-5000}
 echo "==> HOME=$HOME"
 echo "==> OPENCLAW_STATE_DIR=$OPENCLAW_STATE_DIR"
 echo "==> User: $(whoami)"

@@ -16,7 +16,7 @@ import type { Story } from "@tloncorp/api";
  * [tlon-test:KEY], wait a beat, then assert no model call landed for KEY.
  */
 import { describe, test, expect, beforeAll, beforeEach } from "vitest";
-import { getFixtures, requireFixtureGroup, type TestFixtures } from "../lib/index.js";
+import { getFixtures, requireFixtureGroup, waitFor, type TestFixtures } from "../lib/index.js";
 import { fakeModel } from "../support/fake-model/client.js";
 
 function sleep(ms: number): Promise<void> {
@@ -40,9 +40,10 @@ describe("owner-listen", () => {
   // plugin's engagement decision, short enough to not slow tests.
   const NEGATIVE_SETTLE_MS = 2_000;
 
-  // How long to wait for a settings-store mutation to propagate to the
-  // plugin's effective state (via the SSE settings subscription).
-  const SETTINGS_PROPAGATE_MS = 2_000;
+  // Small headroom after the settings store confirms the value, to let
+  // the plugin's SSE subscriber ingest the update into its in-memory
+  // state. Local docker SSE round-trip is <100ms; 300ms is comfortable.
+  const PLUGIN_INGEST_HEADROOM_MS = 300;
 
   beforeAll(async () => {
     fixtures = await getFixtures();
@@ -50,13 +51,18 @@ describe("owner-listen", () => {
 
   beforeEach(async () => {
     await fakeModel.reset();
-    // Reset owner-listen to default state (enabled, no mutes) before each
-    // test so they're independent.
-    await setOwnerListenEnabled(true);
-    await setOwnerListenDisabledChannels([]);
+    // Two pokes, one combined waitFor — much faster than two sequential
+    // sleeps. Resets owner-listen to default (enabled, no mutes).
+    await pokeOwnerListenEnabled(true);
+    await pokeOwnerListenDisabledChannels([]);
+    await waitFor(async () => {
+      const state = await getOwnerListenState();
+      return state.enabled === true && state.disabled.length === 0 ? true : undefined;
+    }, 5_000);
+    await sleep(PLUGIN_INGEST_HEADROOM_MS);
   });
 
-  async function setOwnerListenEnabled(enabled: boolean): Promise<void> {
+  async function pokeOwnerListenEnabled(enabled: boolean): Promise<void> {
     await fixtures.botState.poke({
       app: "settings",
       mark: "settings-event",
@@ -69,10 +75,9 @@ describe("owner-listen", () => {
         },
       },
     });
-    await sleep(SETTINGS_PROPAGATE_MS);
   }
 
-  async function setOwnerListenDisabledChannels(nests: string[]): Promise<void> {
+  async function pokeOwnerListenDisabledChannels(nests: string[]): Promise<void> {
     await fixtures.botState.poke({
       app: "settings",
       mark: "settings-event",
@@ -85,7 +90,27 @@ describe("owner-listen", () => {
         },
       },
     });
-    await sleep(SETTINGS_PROPAGATE_MS);
+  }
+
+  async function setOwnerListenEnabled(enabled: boolean): Promise<void> {
+    await pokeOwnerListenEnabled(enabled);
+    await waitFor(async () => {
+      const state = await getOwnerListenState();
+      return state.enabled === enabled ? true : undefined;
+    }, 5_000);
+    await sleep(PLUGIN_INGEST_HEADROOM_MS);
+  }
+
+  async function setOwnerListenDisabledChannels(nests: string[]): Promise<void> {
+    await pokeOwnerListenDisabledChannels(nests);
+    await waitFor(async () => {
+      const state = await getOwnerListenState();
+      const same =
+        state.disabled.length === nests.length &&
+        state.disabled.every((n) => nests.includes(n));
+      return same ? true : undefined;
+    }, 5_000);
+    await sleep(PLUGIN_INGEST_HEADROOM_MS);
   }
 
   async function getOwnerListenState(): Promise<{
@@ -243,8 +268,12 @@ describe("owner-listen", () => {
         throw new Error(response.error ?? "slash command failed");
       }
 
-      await sleep(SETTINGS_PROPAGATE_MS);
-      const state = await getOwnerListenState();
+      // Poll the settings store for the new value (slash command writes
+      // settings synchronously after the bot processes it).
+      const state = await waitFor(async () => {
+        const s = await getOwnerListenState();
+        return s.enabled === false ? s : undefined;
+      }, 5_000);
       expect(state.enabled).toBe(false);
     });
 
@@ -256,8 +285,10 @@ describe("owner-listen", () => {
         throw new Error(response.error ?? "slash command failed");
       }
 
-      await sleep(SETTINGS_PROPAGATE_MS);
-      const state = await getOwnerListenState();
+      const state = await waitFor(async () => {
+        const s = await getOwnerListenState();
+        return s.enabled === true ? s : undefined;
+      }, 5_000);
       expect(state.enabled).toBe(true);
     });
   });

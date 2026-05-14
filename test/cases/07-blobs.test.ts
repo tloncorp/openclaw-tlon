@@ -167,19 +167,14 @@ describe("blobs", () => {
       content: story(`${token} starting a thread`),
     });
 
-    // Wait for parent to be processed, then get its ID
-    await new Promise((r) => setTimeout(r, 3000));
-
-    // Find the parent post ID
-    const posts = await fixtures.userState.channelPosts(fixtures.botShip, 10);
-    const parentPost = (posts ?? []).find(
-      (p: any) => p.authorId === fixtures.userShip && p.textContent?.includes(token),
-    ) as any;
-
-    if (!parentPost?.id) {
-      console.log(`[TEST] Could not find parent post, skipping DM reply test`);
-      return;
-    }
+    // Poll for the parent post to land instead of a fixed sleep.
+    const parentPost = await waitFor(async () => {
+      const posts = await fixtures.userState.channelPosts(fixtures.botShip, 10);
+      const found = (posts ?? []).find(
+        (p: any) => p.authorId === fixtures.userShip && p.textContent?.includes(token),
+      );
+      return found?.id ? (found as any) : undefined;
+    }, 10_000);
 
     console.log(
       `[TEST] Sending DM thread reply with voice memo blob (parent: ${parentPost.id})...`,
@@ -230,19 +225,14 @@ describe("blobs", () => {
       content: storyWithMention(fixtures.botShip, `${token} starting thread`),
     });
 
-    // Wait for bot to respond and join the thread
-    await new Promise((r) => setTimeout(r, 5000));
-
-    // Find the parent post ID
-    const posts = await fixtures.botState.channelPosts(nest, 10);
-    const parentPost = (posts ?? []).find(
-      (p: any) => p.authorId === fixtures.userShip && p.textContent?.includes(token),
-    ) as any;
-
-    if (!parentPost?.id) {
-      console.log(`[TEST] Could not find parent post, skipping channel reply test`);
-      return;
-    }
+    // Poll for the parent post to land instead of a fixed sleep.
+    const parentPost = await waitFor(async () => {
+      const posts = await fixtures.botState.channelPosts(nest, 10);
+      const found = (posts ?? []).find(
+        (p: any) => p.authorId === fixtures.userShip && p.textContent?.includes(token),
+      );
+      return found?.id ? (found as any) : undefined;
+    }, 10_000);
 
     console.log(`[TEST] Sending channel thread reply with file blob (parent: ${parentPost.id})...`);
     await fixtures.userState.sendReply({
