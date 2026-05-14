@@ -263,13 +263,17 @@ else
   done
 fi
 
-# Always dump bot container logs for debugging
-echo ""
-echo "==> OpenClaw container logs (last 200 lines):"
-docker compose $COMPOSE_FILES logs --tail=200 openclaw 2>/dev/null || true
+# Dump container logs only when tests failed; on green runs they're just noise.
+# Override with DUMP_LOGS=1 to force the dump (useful when debugging a passing
+# run that's behaving suspiciously).
+if [ "$TEST_EXIT" -ne 0 ] || [ "${DUMP_LOGS:-0}" = "1" ]; then
+  echo ""
+  echo "==> OpenClaw container logs (last 200 lines):"
+  docker compose $COMPOSE_FILES logs --tail=200 openclaw 2>/dev/null || true
 
-echo ""
-echo "==> fake-model container logs (last 100 lines):"
-docker compose $COMPOSE_FILES logs --tail=100 fake-model 2>/dev/null || true
+  echo ""
+  echo "==> fake-model container logs (last 100 lines):"
+  docker compose $COMPOSE_FILES logs --tail=100 fake-model 2>/dev/null || true
+fi
 
 exit $TEST_EXIT
