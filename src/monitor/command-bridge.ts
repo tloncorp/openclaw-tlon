@@ -9,8 +9,8 @@
 export interface ApprovalCommandBridge {
   /** Handle /allow, /reject, /ban. Returns response text. */
   handleAction(action: "approve" | "deny" | "block", id?: string): Promise<string>;
-  /** Get formatted pending approvals list. */
-  getPendingList(): Promise<string>;
+  /** Build the /pending command response. */
+  getPendingApprovalsReply(): Promise<{ text?: string; channelData?: Record<string, unknown> }>;
   /** Get formatted blocked ships list. */
   getBlockedList(): Promise<string>;
   /** Handle /unban ~ship. Returns response text. */

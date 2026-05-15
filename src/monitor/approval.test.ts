@@ -4,6 +4,7 @@ import {
   type DisplayContext,
   type PendingApproval,
   buildApprovalA2UIBlob,
+  buildPendingApprovalsA2UIBlob,
   formatApprovalRequestNotification,
   generateApprovalId,
   createPendingApproval,
@@ -325,6 +326,71 @@ describe("buildApprovalA2UIBlob", () => {
     expect(text).toContain("Let the bot join ~robin-dasler/private-garden?");
     expect(text).toContain("Group: ~robin-dasler/private-garden");
     expect(text).not.toContain("this group");
+  });
+});
+
+describe("buildPendingApprovalsA2UIBlob", () => {
+  it("builds a pending requests card with actions for each approval", () => {
+    const blob = buildPendingApprovalsA2UIBlob(
+      [
+        {
+          id: "da1b2",
+          type: "dm",
+          requestingShip: "~zod",
+          messagePreview: "Can you help me find the launch notes?",
+          timestamp: Date.now(),
+        },
+        {
+          id: "cc3d4",
+          type: "channel",
+          requestingShip: "~sampel-palnet",
+          channelNest: "chat/~host/general",
+          timestamp: Date.now(),
+        },
+      ],
+      ctx,
+    );
+
+    expect(blob).toBeDefined();
+    expect(A2UI.validateBlobEntry(blob)).toBe(true);
+    const text = JSON.stringify(blob);
+    expect(text).toContain("2 approval requests");
+    expect(text).toContain("DM from Zod");
+    expect(text).toContain("Sender: Zod (~zod)");
+    expect(text).toContain("Message: ");
+    expect(text).toContain("Channel access for Sam Palnet");
+    expect(text).toContain("Channel: General in Garden Club (chat/~host/general)");
+    expect(text).toContain("/allow da1b2");
+    expect(text).toContain("/reject cc3d4");
+    expect(text).toContain("/ban cc3d4");
+  });
+
+  it("omits the card when there are no active approvals", () => {
+    expect(buildPendingApprovalsA2UIBlob([], ctx)).toBeUndefined();
+    expect(
+      buildPendingApprovalsA2UIBlob(
+        [
+          {
+            id: "da1b2",
+            type: "dm",
+            requestingShip: "~zod",
+            timestamp: Date.now() - APPROVAL_TTL_MS - 1,
+          },
+        ],
+        ctx,
+      ),
+    ).toBeUndefined();
+  });
+
+  it("omits the card for five or more active approvals", () => {
+    const approvals = Array.from({ length: 5 }, (_, index) => ({
+      id: `d${index}`,
+      type: "dm" as const,
+      requestingShip: `~ship${index}`,
+      timestamp: Date.now(),
+    }));
+
+    expect(buildPendingApprovalsA2UIBlob(approvals, ctx)).toBeUndefined();
   });
 });
 

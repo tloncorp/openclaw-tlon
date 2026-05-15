@@ -92,6 +92,7 @@ import { UrbitSSEClient } from "../urbit/sse-client.js";
 import { markdownToStory } from "../urbit/story.js";
 import {
   buildApprovalA2UIBlob,
+  buildPendingApprovalsResponse,
   type PendingApproval,
   type DisplayContext,
   createPendingApproval,
@@ -101,7 +102,6 @@ import {
   removePendingApproval,
   pruneExpired,
   formatBlockedList,
-  formatPendingList,
   isExpired,
   emojiToApprovalAction,
   normalizeNotificationId,
@@ -1109,6 +1109,11 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     }
   }
 
+  function getReplyBlob(payload: ReplyPayload): string | undefined {
+    const blob = (payload.channelData?.tlon as { blob?: unknown } | undefined)?.blob;
+    return typeof blob === "string" ? blob : undefined;
+  }
+
   // Regex to match block directives in agent responses
   // Format: [BLOCK_USER: ~ship-name | reason for blocking]
   const blockDirectiveRegex = /\[BLOCK_USER:\s*(~[\w-]+)\s*\|\s*(.+?)\]/g;
@@ -1346,8 +1351,33 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       return executeApprovalAction(approval, action);
     },
 
-    async getPendingList() {
-      return formatPendingList(pendingApprovals, buildDisplayContext());
+    async getPendingApprovalsReply() {
+      pendingApprovals = pruneExpired(pendingApprovals);
+      await savePendingApprovals();
+
+      const pending = buildPendingApprovalsResponse(
+        pendingApprovals,
+        buildDisplayContext(),
+        (blob) => {
+          try {
+            return serializeBlobField(blob);
+          } catch (err) {
+            runtime.error?.(
+              `[tlon] Failed to serialize pending approvals A2UI blob: ${String(err)}`,
+            );
+            return undefined;
+          }
+        },
+      );
+
+      if (pending.mode === "ui") {
+        return {
+          text: "",
+          channelData: { tlon: { blob: pending.blob } },
+        };
+      }
+
+      return { text: pending.text };
     },
 
     async getBlockedList() {
@@ -2006,20 +2036,23 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
           humanDelay,
           typingCallbacks,
           deliver: async (payload: ReplyPayload) => {
-            let replyText = payload.text;
-            if (!replyText) {
+            const blob = getReplyBlob(payload);
+            let replyText = payload.text ?? "";
+            if (!replyText && !blob) {
               return;
             }
 
             // Process any block directives in the response (strips them from text)
-            replyText = await processBlockDirectives(replyText, senderShip);
-            if (!replyText) {
+            if (replyText) {
+              replyText = await processBlockDirectives(replyText, senderShip);
+            }
+            if (!replyText && !blob) {
               return;
             } // Response was only a directive
 
             // Use settings store value if set, otherwise fall back to file config
             const showSignature = effectiveShowModelSig;
-            if (showSignature) {
+            if (showSignature && replyText) {
               const modelCfg = cfg.agents?.defaults?.model;
               const modelInfo =
                 selectedModel ||
@@ -2046,6 +2079,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
                 fromShip: botShipName,
                 nest: groupChannel,
                 story: markdownToStory(replyText),
+                blob,
                 replyToId: deliverParentId ?? undefined,
               });
               // Track thread participation for future replies without mention
@@ -2059,6 +2093,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
                 fromShip: botShipName,
                 toShip: senderShip,
                 text: replyText,
+                blob,
                 replyToId: deliverParentId ? String(deliverParentId) : undefined,
               });
             }
