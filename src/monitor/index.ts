@@ -114,6 +114,7 @@ import {
   getChannelHistory,
   fetchChannelHistory,
   fetchThreadContextHistory,
+  renderHistoryContent,
 } from "./history.js";
 import {
   downloadMessageImages,
@@ -1627,7 +1628,8 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
             .slice(0, 20)
             .toReversed() // oldest first for natural reading order
             .map(
-              (msg) => `${formatShipWithNickname(msg.author)}: ${sanitizeMessageText(msg.content)}`,
+              (msg) =>
+                `${formatShipWithNickname(msg.author)}: ${sanitizeMessageText(renderHistoryContent(msg))}`,
             )
             .join("\n");
 
@@ -1674,7 +1676,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         const historyText = history
           .map(
             (msg) =>
-              `[${new Date(msg.timestamp).toLocaleString()}] ${msg.author}: ${sanitizeMessageText(msg.content)}`,
+              `[${new Date(msg.timestamp).toLocaleString()}] ${msg.author}: ${sanitizeMessageText(renderHistoryContent(msg))}`,
           )
           .join("\n");
 
@@ -2201,6 +2203,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         content: messageText,
         timestamp: content.sent || Date.now(),
         id: messageId,
+        blob: content.blob ?? null,
       });
 
       // Check if sender is a bot (BotProfile object has ship, nickname, avatar)
@@ -2577,12 +2580,14 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       // Cache DM messages (including bot's own) so reaction lookups have context
       const dmCacheKey = `dm/${whom}`;
       const rawCacheText = extractMessageText(dmContent.content);
-      if (rawCacheText.trim()) {
+      const hasDmBlob = Boolean(dmContent.blob);
+      if (rawCacheText.trim() || hasDmBlob) {
         cacheMessage(dmCacheKey, {
           author: authorShip,
           content: rawCacheText,
           timestamp: dmContent.sent || Date.now(),
           id: effectiveMessageId,
+          blob: dmContent.blob ?? null,
         });
       }
 

@@ -17,6 +17,7 @@ import {
   downloadBlobAttachments,
   downloadMedia,
   formatBlobAnnotations,
+  formatBlobForHistory,
   parseBlobData,
 } from "./media.js";
 
@@ -183,6 +184,56 @@ describe("formatBlobAnnotations", () => {
     expect(lines.length).toBeGreaterThanOrEqual(2);
     expect(lines[0]).toContain("📎");
     expect(lines[1]).toContain("🎙️");
+  });
+});
+
+describe("formatBlobForHistory", () => {
+  it("renders a file compactly", () => {
+    const text = formatBlobForHistory([
+      { type: "file", version: 1, name: "report.pdf", fileUri: "https://example.com/report.pdf", size: 245760 },
+    ]);
+    expect(text).toBe("[📎 report.pdf]");
+  });
+
+  it("renders a voice memo with transcription prominently", () => {
+    const text = formatBlobForHistory([
+      { type: "voicememo", version: 1, duration: 12.5, transcription: "Hey check this out", fileUri: "https://example.com/memo.m4a", size: 51200 },
+    ]);
+    expect(text).toBe('[🎙️ voice memo: "Hey check this out"]');
+  });
+
+  it("renders a voice memo without transcription", () => {
+    const text = formatBlobForHistory([
+      { type: "voicememo", version: 1, duration: 12.5, fileUri: "https://example.com/memo.m4a", size: 51200 },
+    ]);
+    expect(text).toBe("[🎙️ voice memo, 13s]");
+  });
+
+  it("renders a voice memo without duration or transcription", () => {
+    const text = formatBlobForHistory([
+      { type: "voicememo", version: 1, fileUri: "https://example.com/memo.m4a", size: 51200 },
+    ]);
+    expect(text).toBe("[🎙️ voice memo]");
+  });
+
+  it("renders a video compactly", () => {
+    const text = formatBlobForHistory([
+      { type: "video", version: 1, name: "clip.mp4", fileUri: "https://example.com/clip.mp4", size: 5242880 },
+    ]);
+    expect(text).toBe("[🎬 clip.mp4]");
+  });
+
+  it("skips unknown types", () => {
+    const text = formatBlobForHistory([{ type: "unknown" }]);
+    expect(text).toBe("");
+  });
+
+  it("renders multiple entries on separate lines", () => {
+    const text = formatBlobForHistory([
+      { type: "file", version: 1, name: "a.pdf", fileUri: "https://example.com/a.pdf", size: 1024 },
+      { type: "voicememo", version: 1, duration: 5, transcription: "Hello", fileUri: "https://example.com/b.m4a", size: 2048 },
+    ]);
+    expect(text).toBe('[📎 a.pdf]\n[🎙️ voice memo: "Hello"]');
   });
 });
 
