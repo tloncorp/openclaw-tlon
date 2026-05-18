@@ -16,6 +16,10 @@ import { markdownToStory, type Story } from "../../src/urbit/story.js";
 /** Matches the correlation tag format injected by prompt(). */
 const CORRELATION_TAG_RE = /\[ref-[a-f0-9]{8}\]/;
 
+function extractCorrelationTag(text: string): string | null {
+  return text.match(CORRELATION_TAG_RE)?.[0] ?? null;
+}
+
 function liveToolTraceEnabled(): boolean {
   const raw = process.env.TEST_LIVE_TOOL_TRACE ?? process.env.CI_LIVE_TOOL_TRACE ?? "";
   return /^(1|true|yes|on)$/i.test(raw);
@@ -197,8 +201,6 @@ export function createTlonClient(config: TlonClientConfig): TestClient {
     async prompt(text, opts = {}) {
       const timeoutMs = opts.timeoutMs ?? 90_000;
 
-      console.log(`\n[TEST] Sending prompt: ${JSON.stringify(text)}`);
-
       try {
         const botShipNorm = bot.shipName.startsWith("~") ? bot.shipName : `~${bot.shipName}`;
 
@@ -216,6 +218,10 @@ export function createTlonClient(config: TlonClientConfig): TestClient {
           tag = `[ref-${token}]`;
           textToSend = `${text}\n\n(Include reference: ${tag} in your reply.)`;
         }
+
+        console.log(
+          `\n[TEST] Sending prompt (${useToken ? `tag=${tag}` : "no-tag"}): ${JSON.stringify(text)}`,
+        );
 
         let sendBaselineSequence = -1;
         if (!useToken) {
@@ -304,7 +310,7 @@ export function createTlonClient(config: TlonClientConfig): TestClient {
                 if (attempts === 1 || attempts % 5 === 0) {
                   console.log(`[poll #${attempts}] mode=${mode} token=${tag} matched=${!!matched} botPosts=${allBotPosts.length}`);
                   if (allBotPosts.length > 0) {
-                    console.log(`[poll #${attempts}] last 3 bot posts: ${JSON.stringify(allBotPosts.slice(-3).map((p) => ({ sentAt: p.sentAt, text: p.text.slice(0, 40) })))}`);
+                    console.log(`[poll #${attempts}] last 3 bot posts: ${JSON.stringify(allBotPosts.slice(-3).map((p) => ({ sentAt: p.sentAt, refTag: extractCorrelationTag(p.text), text: p.text.slice(0, 40) })))}`);
                   }
                 }
 
@@ -329,7 +335,7 @@ export function createTlonClient(config: TlonClientConfig): TestClient {
                 if (attempts === 1 || attempts % 5 === 0) {
                   console.log(`[poll #${attempts}] mode=${mode} baselineSequence=${sendBaselineSequence} candidates=${candidates.length} skippedTagged=${skippedTagged} botPosts=${allBotPosts.length}`);
                   if (allBotPosts.length > 0) {
-                    console.log(`[poll #${attempts}] last 3 bot posts: ${JSON.stringify(allBotPosts.slice(-3).map((p) => ({ sequenceNum: p.sequenceNum, sentAt: p.sentAt, text: p.text.slice(0, 40) })))}`);
+                    console.log(`[poll #${attempts}] last 3 bot posts: ${JSON.stringify(allBotPosts.slice(-3).map((p) => ({ sequenceNum: p.sequenceNum, sentAt: p.sentAt, refTag: extractCorrelationTag(p.text), text: p.text.slice(0, 40) })))}`);
                   }
                 }
 

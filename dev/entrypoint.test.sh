@@ -4,6 +4,11 @@ set -e
 # Ensure HOME is set correctly
 export HOME=/root
 export OPENCLAW_STATE_DIR=/root/.openclaw
+
+# Shorten the plugin's re-engagement nudge tick interval so integration
+# tests can exercise the scheduler within a reasonable wall-clock budget.
+# Production still uses the 15-minute default.
+export TLON_NUDGE_TICK_INTERVAL_MS=${TLON_NUDGE_TICK_INTERVAL_MS:-30000}
 echo "==> HOME=$HOME"
 echo "==> OPENCLAW_STATE_DIR=$OPENCLAW_STATE_DIR"
 echo "==> User: $(whoami)"
@@ -47,13 +52,6 @@ cat > "$CONFIG_DIR/openclaw.json" << EOF
       "workspace": "/root/.openclaw/workspace",
       "model": {
         "primary": "${MODEL:-openrouter/minimax/minimax-m2.1}"
-      },
-      "heartbeat": {
-        "every": "1m",
-        "activeHours": {
-          "start": "00:00",
-          "end": "24:00"
-        }
       }
     },
     "list": [
@@ -132,7 +130,15 @@ cat > "$CONFIG_DIR/openclaw.json" << EOF
       "code": "lidlut-tabwed-pillex-ridrup",
       "ownerShip": "~ten",
       "dmAllowlist": ["~ten"],
-      "allowPrivateNetwork": true
+      "allowPrivateNetwork": true,
+      "reengagement": {
+        "enabled": true
+      },
+      "nudgeActiveHours": {
+        "start": "00:00",
+        "end": "24:00",
+        "timezone": "UTC"
+      }
     }
   }
 }
@@ -206,8 +212,8 @@ if [ "${VERBOSE:-0}" = "1" ]; then
   cat "$CONFIG_DIR/openclaw.json"
   echo "==> DEBUG: Agent config:"
   cat "$CONFIG_DIR/openclaw.json" | jq '.agents'
-  echo "==> DEBUG: Heartbeat config:"
-  cat "$CONFIG_DIR/openclaw.json" | jq '.agents.defaults.heartbeat'
+  echo "==> DEBUG: Re-engagement config (plugin scheduler):"
+  cat "$CONFIG_DIR/openclaw.json" | jq '.channels.tlon.reengagement'
   echo "==> DEBUG: Tlon channel config:"
   cat "$CONFIG_DIR/openclaw.json" | jq '.channels.tlon'
 fi
@@ -216,11 +222,16 @@ fi
 WORKSPACE_DIR=/root/.openclaw/workspace
 mkdir -p "$WORKSPACE_DIR"
 
-# Load tlonbot prompts - prefer mounted volume, fallback to GitHub fetch
+# Load tlonbot prompts - prefer mounted volume, fallback to GitHub fetch.
+# HEARTBEAT.md is intentionally excluded: the plugin-driven re-engagement
+# scheduler owns the nudge cadence in this harness, and the legacy LLM
+# heartbeat agent config has been removed above. Loading HEARTBEAT.md
+# would let the old LLM nudge path run alongside the plugin scheduler,
+# producing duplicate owner DMs and nondeterministic integration results.
 echo "==> Loading tlonbot prompts..."
 if [ -d "/workspace/tlonbot/prompts" ]; then
   echo "  (using mounted tlonbot volume)"
-  for f in SOUL.md TOOLS.md BOOTSTRAP.md USER.md AGENTS.md HEARTBEAT.md; do
+  for f in SOUL.md TOOLS.md BOOTSTRAP.md USER.md AGENTS.md; do
     if [ -f "/workspace/tlonbot/prompts/$f" ]; then
       cp "/workspace/tlonbot/prompts/$f" "$WORKSPACE_DIR/$f" && echo "  - $f" || echo "  - $f (failed)"
     fi
@@ -228,16 +239,21 @@ if [ -d "/workspace/tlonbot/prompts" ]; then
 elif [ -n "$TLONBOT_TOKEN" ]; then
   echo "  (fetching from GitHub with TLONBOT_TOKEN)"
   TLONBOT_RAW="https://raw.githubusercontent.com/tloncorp/tlonbot/main/prompts"
-  for f in SOUL.md TOOLS.md BOOTSTRAP.md USER.md AGENTS.md HEARTBEAT.md; do
+  for f in SOUL.md TOOLS.md BOOTSTRAP.md USER.md AGENTS.md; do
     curl -fsSL -H "Authorization: token $TLONBOT_TOKEN" "$TLONBOT_RAW/$f" -o "$WORKSPACE_DIR/$f" 2>/dev/null && echo "  - $f" || echo "  - $f (failed)"
   done
 else
   echo "  (no tlonbot mount or token, trying public GitHub access)"
   TLONBOT_RAW="https://raw.githubusercontent.com/tloncorp/tlonbot/main/prompts"
-  for f in SOUL.md TOOLS.md BOOTSTRAP.md USER.md AGENTS.md HEARTBEAT.md; do
+  for f in SOUL.md TOOLS.md BOOTSTRAP.md USER.md AGENTS.md; do
     curl -fsSL "$TLONBOT_RAW/$f" -o "$WORKSPACE_DIR/$f" 2>/dev/null && echo "  - $f" || true
   done
 fi
+
+# Defensive: if any prior run left HEARTBEAT.md in the workspace (e.g. a
+# mounted volume ships with a stale copy), remove it so the agent cannot
+# load the legacy nudge prompt alongside the plugin scheduler.
+rm -f "$WORKSPACE_DIR/HEARTBEAT.md"
 
 # Fallback SOUL.md if prompts weren't loaded
 if [ ! -f "$WORKSPACE_DIR/SOUL.md" ]; then
@@ -254,7 +270,7 @@ ls -la "$WORKSPACE_DIR/"
 
 if [ "${VERBOSE:-0}" = "1" ]; then
   echo "==> DEBUG: Prompt files content:"
-  for f in SOUL.md TOOLS.md AGENTS.md HEARTBEAT.md USER.md; do
+  for f in SOUL.md TOOLS.md AGENTS.md USER.md; do
     if [ -f "$WORKSPACE_DIR/$f" ]; then
       echo "--- BEGIN $WORKSPACE_DIR/$f ---"
       cat "$WORKSPACE_DIR/$f"

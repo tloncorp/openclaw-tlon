@@ -20,6 +20,31 @@ export const TlonTelemetrySchema = z.object({
   host: z.string().min(1).optional(),
 });
 
+/**
+ * Explicit opt-in for the plugin-driven owner re-engagement nudge scheduler.
+ *
+ * Default-off. The scheduler is hosted-only and requires `ownerShip` to
+ * target delivery, but `ownerShip` alone must not enable nudges (it also
+ * gates unrelated approval/admin DM flows). This flag is the authoritative
+ * enablement signal — see `tlonbot/entrypoint/tlawn.py` for the hosted
+ * generator that turns it on.
+ */
+export const TlonReengagementSchema = z.object({
+  enabled: z.boolean().optional(),
+});
+
+/**
+ * Static file-config override for the plugin scheduler's active-hours
+ * window. Takes precedence over `agents.defaults.heartbeat.activeHours`
+ * but defers to `%settings` keys (`nudgeActiveHoursStart/End/Timezone`)
+ * when those are present.
+ */
+export const TlonNudgeActiveHoursSchema = z.object({
+  start: z.string().min(1).optional(),
+  end: z.string().min(1).optional(),
+  timezone: z.string().min(1).optional(),
+});
+
 export const TlonAccountSchema = z.object({
   name: z.string().optional(),
   enabled: z.boolean().optional(),
@@ -29,6 +54,7 @@ export const TlonAccountSchema = z.object({
   allowPrivateNetwork: z.boolean().optional(),
   groupChannels: z.array(ChannelNestSchema).optional(),
   dmAllowlist: z.array(ShipSchema).optional(),
+  groupInviteAllowlist: z.array(ShipSchema).optional(),
   autoDiscoverChannels: z.boolean().optional(),
   showModelSignature: z.boolean().optional(),
   // Auto-accept settings
@@ -41,6 +67,13 @@ export const TlonAccountSchema = z.object({
   // Rate limiting for bot-to-bot responses
   maxConsecutiveBotResponses: z.number().int().min(0).optional(), // Max consecutive responses to another bot (default: 3)
   telemetry: TlonTelemetrySchema.optional(),
+  // Owner-listen: in channels hosted by the owner or the bot itself, engage
+  // on owner messages without requiring an @-mention. Default: enabled.
+  ownerListenEnabled: z.boolean().optional(),
+  // Channels (chat/heap/diary nests) opted out of owner-listen even when the
+  // global toggle is on. Owner messages in these channels still require an
+  // @-mention to engage the bot.
+  ownerListenDisabledChannels: z.array(ChannelNestSchema).optional(),
 });
 
 export const TlonConfigSchema = z.object({
@@ -52,6 +85,7 @@ export const TlonConfigSchema = z.object({
   allowPrivateNetwork: z.boolean().optional(),
   groupChannels: z.array(ChannelNestSchema).optional(),
   dmAllowlist: z.array(ShipSchema).optional(),
+  groupInviteAllowlist: z.array(ShipSchema).optional(),
   autoDiscoverChannels: z.boolean().optional(),
   showModelSignature: z.boolean().optional(),
   authorization: TlonAuthorizationSchema.optional(),
@@ -67,6 +101,26 @@ export const TlonConfigSchema = z.object({
   // Rate limiting for bot-to-bot responses
   maxConsecutiveBotResponses: z.number().int().min(0).optional(), // Max consecutive responses to another bot (default: 3)
   telemetry: TlonTelemetrySchema.optional(),
+  // Opt-in hosted-only re-engagement nudges; absent/false keeps the
+  // scheduler off even when ownerShip is configured.
+  reengagement: TlonReengagementSchema.optional(),
+  // Optional static file-config override for the plugin scheduler's
+  // active hours. See TlonNudgeActiveHoursSchema for precedence.
+  nudgeActiveHours: TlonNudgeActiveHoursSchema.optional(),
+  // Owner-listen: in channels hosted by the owner or the bot itself, engage
+  // on owner messages without requiring an @-mention. Default: enabled.
+  ownerListenEnabled: z.boolean().optional(),
+  // Channels (chat/heap/diary nests) opted out of owner-listen even when the
+  // global toggle is on. Owner messages in these channels still require an
+  // @-mention to engage the bot.
+  ownerListenDisabledChannels: z.array(ChannelNestSchema).optional(),
 });
 
-export const tlonChannelConfigSchema = buildChannelConfigSchema(TlonConfigSchema);
+// Cast bridges a type-only mismatch: this repo's zod and openclaw's bundled
+// zod can resolve to different minors (e.g. under pnpm 9, which doesn't dedup
+// across openclaw's nested postinstall). The two copies are runtime-compatible
+// — only zod's literal `version.minor` narrowing differs. Cast to the
+// function's declared parameter type so we adopt whichever zod openclaw uses.
+export const tlonChannelConfigSchema = buildChannelConfigSchema(
+  TlonConfigSchema as unknown as Parameters<typeof buildChannelConfigSchema>[0],
+);

@@ -1,47 +1,31 @@
+import { gatewayStop } from "@tloncorp/api";
 import { spawn } from "node:child_process";
-import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineChannelPluginEntry } from "openclaw/plugin-sdk/core";
 import { tlonPlugin } from "./src/channel.js";
+import { createGatewayStatusManager, setGatewayStatusManager } from "./src/gateway-status.js";
 import { resolveBridgeForCommand } from "./src/monitor/command-auth.js";
+import { handleOwnerListenCommand } from "./src/owner-listen-command.js";
 import { setTlonRuntime } from "./src/runtime.js";
 import { getSessionRole } from "./src/session-roles.js";
 import { recordToolCall } from "./src/telemetry.js";
 import { resolveTlonBinary } from "./src/tlon-binary.js";
+import { checkBlockedSendOperation } from "./src/tlon-tool-guard.js";
 import {
   formatToolTraceEvent,
   liveToolTraceContentsEnabled,
   shouldLogAfterToolTrace,
 } from "./src/tool-trace.js";
-import { checkBlockedSendOperation } from "./src/tlon-tool-guard.js";
 import { resolveTlonAccount, listTlonAccountIds } from "./src/types.js";
-import {
-  createGatewayStatusManager,
-  setGatewayStatusManager,
-} from "./src/gateway-status.js";
-import { gatewayStop } from "@tloncorp/api";
+import { PLUGIN_COMMIT, PLUGIN_VERSION } from "./src/version.generated.js";
 
 export { tlonPlugin } from "./src/channel.js";
 export { setTlonRuntime } from "./src/runtime.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
-
-function readPluginVersion(): string {
-  try {
-    const { version } = require("./package.json") as { version: string };
-    return version;
-  } catch {
-    try {
-      const raw = readFileSync(new URL("./package.json", import.meta.url), "utf-8");
-      return (JSON.parse(raw) as { version: string }).version;
-    } catch {
-      return "unknown";
-    }
-  }
-}
 
 // Whitelist of allowed tlon subcommands
 const ALLOWED_TLON_COMMANDS = new Set([
@@ -58,17 +42,11 @@ const ALLOWED_TLON_COMMANDS = new Set([
   "settings",
   "upload",
   "help",
-  "version"
+  "version",
 ]);
 
 /** Credential flags that the tlon skill binary accepts before the subcommand. */
-const CREDENTIAL_FLAGS_WITH_VALUE = new Set([
-  "--config",
-  "--url",
-  "--ship",
-  "--code",
-  "--cookie",
-]);
+const CREDENTIAL_FLAGS_WITH_VALUE = new Set(["--config", "--url", "--ship", "--code", "--cookie"]);
 
 /**
  * Find the first positional argument (subcommand) by skipping credential flags
@@ -134,7 +112,9 @@ function shellSplit(str: string): string[] {
     }
     cur += ch;
   }
-  if (cur) args.push(cur);
+  if (cur) {
+    args.push(cur);
+  }
   return args;
 }
 
@@ -188,17 +168,6 @@ export default defineChannelPluginEntry({
   plugin: tlonPlugin,
   setRuntime: setTlonRuntime,
   registerFull(api) {
-    // Import version info lazily
-    const PLUGIN_VERSION = readPluginVersion();
-    let PLUGIN_COMMIT = "unknown";
-    try {
-      PLUGIN_COMMIT = (
-        require("./src/version.generated.js") as { PLUGIN_COMMIT: string }
-      ).PLUGIN_COMMIT;
-    } catch {
-      // version.generated.js may not exist in all environments
-    }
-
     // ── Gateway-status liveness integration ───────────────────
     //
     // v1 requires exactly one Tlon account. With multiple accounts, multiple
@@ -238,9 +207,7 @@ export default defineChannelPluginEntry({
             bootId: gsManager.bootId,
             reason: event.reason ?? "shutdown",
           });
-          api.logger.info(
-            `[gateway-status] stopped (reason=${event.reason ?? "shutdown"})`,
-          );
+          api.logger.info(`[gateway-status] stopped (reason=${event.reason ?? "shutdown"})`);
         } catch (err) {
           api.logger.warn(`[gateway-status] stop poke failed: ${String(err)}`);
         }
@@ -275,9 +242,7 @@ export default defineChannelPluginEntry({
     if (credentials) {
       api.logger.info(`[tlon] Credentials available for ${account.ship}`);
     } else {
-      api.logger.warn(
-        `[tlon] No credentials configured - tlon tool will rely on env vars`,
-      );
+      api.logger.warn(`[tlon] No credentials configured - tlon tool will rely on env vars`);
     }
 
     api.registerTool({
@@ -333,8 +298,7 @@ export default defineChannelPluginEntry({
             details: undefined,
           };
         } catch (error: unknown) {
-          const message =
-            error instanceof Error ? error.message : String(error);
+          const message = error instanceof Error ? error.message : String(error);
           return {
             content: [{ type: "text" as const, text: `Error: ${message}` }],
             details: { error: true },
@@ -423,12 +387,11 @@ export default defineChannelPluginEntry({
       acceptsArgs: true,
       handler: async (ctx) => {
         const result = resolveBridgeForCommand(ctx);
-        if ("error" in result) return { text: result.error };
+        if ("error" in result) {
+          return { text: result.error };
+        }
         return {
-          text: await result.bridge.handleAction(
-            "approve",
-            ctx.args?.trim() || undefined,
-          ),
+          text: await result.bridge.handleAction("approve", ctx.args?.trim() || undefined),
         };
       },
     });
@@ -439,12 +402,11 @@ export default defineChannelPluginEntry({
       acceptsArgs: true,
       handler: async (ctx) => {
         const result = resolveBridgeForCommand(ctx);
-        if ("error" in result) return { text: result.error };
+        if ("error" in result) {
+          return { text: result.error };
+        }
         return {
-          text: await result.bridge.handleAction(
-            "deny",
-            ctx.args?.trim() || undefined,
-          ),
+          text: await result.bridge.handleAction("deny", ctx.args?.trim() || undefined),
         };
       },
     });
@@ -455,12 +417,11 @@ export default defineChannelPluginEntry({
       acceptsArgs: true,
       handler: async (ctx) => {
         const result = resolveBridgeForCommand(ctx);
-        if ("error" in result) return { text: result.error };
+        if ("error" in result) {
+          return { text: result.error };
+        }
         return {
-          text: await result.bridge.handleAction(
-            "block",
-            ctx.args?.trim() || undefined,
-          ),
+          text: await result.bridge.handleAction("block", ctx.args?.trim() || undefined),
         };
       },
     });
@@ -470,7 +431,9 @@ export default defineChannelPluginEntry({
       description: "List pending approval requests",
       handler: async (ctx) => {
         const result = resolveBridgeForCommand(ctx);
-        if ("error" in result) return { text: result.error };
+        if ("error" in result) {
+          return { text: result.error };
+        }
         return { text: await result.bridge.getPendingList() };
       },
     });
@@ -480,7 +443,9 @@ export default defineChannelPluginEntry({
       description: "List banned ships",
       handler: async (ctx) => {
         const result = resolveBridgeForCommand(ctx);
-        if ("error" in result) return { text: result.error };
+        if ("error" in result) {
+          return { text: result.error };
+        }
         return { text: await result.bridge.getBlockedList() };
       },
     });
@@ -491,12 +456,31 @@ export default defineChannelPluginEntry({
       acceptsArgs: true,
       handler: async (ctx) => {
         const result = resolveBridgeForCommand(ctx);
-        if ("error" in result) return { text: result.error };
+        if ("error" in result) {
+          return { text: result.error };
+        }
         const ship = ctx.args?.trim();
         if (!ship) {
           return { text: "Usage: /unban ~ship-name" };
         }
         return { text: await result.bridge.handleUnblock(ship) };
+      },
+    });
+
+    api.registerCommand({
+      name: "owner-listen",
+      description:
+        "Control whether the bot listens for the owner without @-mention in owned channels. " +
+        "Usage: /owner-listen [on|off|status|list] [<channel-nest>]; " +
+        "/owner-listen all [on|off] for the global kill switch.",
+      acceptsArgs: true,
+      handler: async (ctx) => {
+        const result = resolveBridgeForCommand(ctx);
+        if ("error" in result) {
+          return { text: result.error };
+        }
+        const text = await handleOwnerListenCommand(result.bridge, ctx.args, ctx.from);
+        return { text };
       },
     });
   },
