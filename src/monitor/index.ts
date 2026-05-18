@@ -2,6 +2,7 @@ import type { Story } from "@tloncorp/api";
 import type { ReplyPayload, OpenClawConfig } from "openclaw/plugin-sdk/core";
 import type { RuntimeEnv } from "openclaw/plugin-sdk/runtime";
 import { createTypingCallbacks } from "openclaw/plugin-sdk/channel-runtime";
+import { createContextLensRegistry, type ContextLensTrigger } from "../context-lens.js";
 
 // Local structural types — @tloncorp/api defines these internally but
 // does not export them from its public entrypoint.
@@ -395,6 +396,13 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
   // catches all of those and runs cleanup unconditionally.
   try {
   const computingPresence = createComputingPresenceTracker({ runtime });
+  const contextLenses = createContextLensRegistry();
+  const logContextLens = (lensId: string, phase: string) => {
+    const snapshot = contextLenses.get(lensId);
+    if (snapshot) {
+      runtime.log?.(`[tlon] ContextLens ${JSON.stringify({ phase, ...snapshot })}`);
+    }
+  };
 
   const processedTracker = createProcessedMessageTracker(2000);
   let groupChannels: string[] = [];
@@ -1320,6 +1328,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
               messageId: approval.originalMessage.messageId,
               senderShip: approval.requestingShip,
               messageText: approval.originalMessage.messageText,
+              trigger: "dm",
               messageContent: approval.originalMessage.messageContent,
               isGroup: false,
               timestamp: approval.originalMessage.timestamp,
@@ -1340,6 +1349,8 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
                 messageId: approval.originalMessage.messageId,
                 senderShip: approval.requestingShip,
                 messageText: approval.originalMessage.messageText,
+                trigger: approval.originalMessage.isThreadReply ? "thread" : "mention",
+                cachesHistory: true,
                 messageContent: approval.originalMessage.messageContent,
                 isGroup: true,
                 channelNest: approval.channelNest,
@@ -1555,6 +1566,8 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     messageId: string;
     senderShip: string;
     messageText: string;
+    trigger?: ContextLensTrigger;
+    cachesHistory?: boolean;
     messageContent?: unknown; // Raw Tlon content for media extraction
     blobField?: string | null; // Raw blob JSON from post/reply
     isGroup: boolean;
@@ -1594,6 +1607,33 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       messageText = stripBotMention(messageText, botShipName);
     }
 
+    const route = core.channel.routing.resolveAgentRoute({
+      cfg,
+      channel: "tlon",
+      accountId: opts.accountId ?? undefined,
+      peer: {
+        kind: isGroup ? "group" : "direct",
+        id: isGroup ? (groupChannel ?? senderShip) : senderShip,
+      },
+    });
+
+    const lens = contextLenses.create({
+      messageId,
+      chatType: isGroup ? "channel" : "dm",
+      trigger: params.trigger ?? "unknown",
+      sessionKey: route.sessionKey,
+    });
+    contextLenses.recordPersistence(lens.lensId, {
+      cachesHistory: Boolean(params.cachesHistory),
+      emitsTelemetry: Boolean(telemetry),
+    });
+    if (messageContent) {
+      contextLenses.recordContext(lens.lensId, {
+        citedPosts: extractCites(messageContent as Story).length,
+      });
+    }
+    logContextLens(lens.lensId, "created");
+
     // Track owner interaction timestamp for the nudge scheduler.
     // The shadows update synchronously; the durable %settings writes happen
     // in the background via an ordered queue so the owner-DM hot path never
@@ -1629,6 +1669,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         date: isoDate,
         clearStage: willClearStage,
       });
+      contextLenses.recordPersistence(lens.lensId, { updatesSettings: true });
 
       if (pending) {
         if (isNudgeEligible(pending, timestamp)) {
@@ -1662,6 +1703,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       // the verbatim nudge `content` — would leak that context into an
       // unrelated public conversation.
       if (pending && isNudgeEligible(pending, timestamp) && !isGroup) {
+        contextLenses.recordContext(lens.lensId, { pendingNudge: true });
         const sentIso = new Date(pending.sentAt).toISOString();
         const contentBlock = pending.content ? `Message content:\n\n${pending.content}\n\n` : "";
         messageText =
@@ -1678,6 +1720,8 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       try {
         attachments = await downloadMessageImages(messageContent);
         if (attachments.length > 0) {
+          contextLenses.recordContext(lens.lensId, { attachments: attachments.length });
+          contextLenses.recordPersistence(lens.lensId, { writesMedia: true });
           runtime.log?.(`[tlon] Downloaded ${attachments.length} image(s) from message`);
         }
       } catch (error: any) {
@@ -1707,6 +1751,8 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         }
         if (blobAttachments.length > 0) {
           attachments = attachments.concat(blobAttachments);
+          contextLenses.recordContext(lens.lensId, { attachments: attachments.length });
+          contextLenses.recordPersistence(lens.lensId, { writesMedia: true });
           runtime.log?.(`[tlon] Downloaded blob attachment(s) ${JSON.stringify(blobAttachments)}`);
         }
       } catch (error: any) {
@@ -1727,6 +1773,9 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
           runtime,
         );
         if (threadContextHistory.length > 0) {
+          contextLenses.recordContext(lens.lensId, {
+            threadMessages: threadContextHistory.length,
+          });
           const threadContextMessage = buildThreadContextMessage(
             threadContextHistory,
             messageText,
@@ -1754,6 +1803,9 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       try {
         const recentHistory = await fetchChannelHistory(api, groupChannel, 20, runtime);
         if (recentHistory.length > 0) {
+          contextLenses.recordContext(lens.lensId, {
+            channelMessages: recentHistory.filter((msg) => msg.id !== params.messageId).length,
+          });
           // Filter out the current message itself (avoid duplication)
           const contextMessages = recentHistory
             .filter((msg) => msg.id !== params.messageId)
@@ -1784,6 +1836,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     if (isGroup && groupChannel && isSummarizationRequest(messageText)) {
       try {
         const history = await getChannelHistory(api, groupChannel, 50, runtime);
+        contextLenses.recordContext(lens.lensId, { channelMessages: history.length });
         if (history.length === 0) {
           const noHistoryMsg =
             "I couldn't fetch any messages for this channel. It might be empty or there might be a permissions issue.";
@@ -1840,16 +1893,6 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       }
     }
 
-    const route = core.channel.routing.resolveAgentRoute({
-      cfg,
-      channel: "tlon",
-      accountId: opts.accountId ?? undefined,
-      peer: {
-        kind: isGroup ? "group" : "direct",
-        id: isGroup ? (groupChannel ?? senderShip) : senderShip,
-      },
-    });
-
     // Warn if multiple users share a DM session (insecure dmScope configuration)
     if (!isGroup) {
       const sessionKey = route.sessionKey;
@@ -1889,6 +1932,11 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     }
 
     const senderRole = isOwner(senderShip) ? "owner" : "user";
+    if (senderRole === "owner") {
+      contextLenses.update(lens.lensId, {
+        tools: { ownerOnlyAvailable: ["tlon", "cron", "read"], called: [] },
+      });
+    }
     // Store role for before_tool_call hook (tool access control)
     setSessionRole(route.sessionKey, senderRole);
     runtime.log?.(`[tlon] Stored session role: sessionKey=${route.sessionKey}, role=${senderRole}`);
@@ -2052,24 +2100,31 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         selectedProvider = provider;
         selectedModel = model;
         selectedThinkLevel = thinkLevel ?? null;
+        contextLenses.update(lens.lensId, {
+          provider,
+          model,
+        });
       },
-      ...(presenceConversationId
-        ? {
-            onAssistantMessageStart: async () => {
-              await computingPresence.clearToolCalls({
-                conversationId: presenceConversationId,
-                runId: presenceRunId,
-              });
-            },
-            onToolStart: async (payload) => {
-              await computingPresence.addToolCall({
-                conversationId: presenceConversationId,
-                runId: presenceRunId,
-                toolName: payload.name,
-              });
-            },
-          }
-        : {}),
+      onAssistantMessageStart: async () => {
+        if (presenceConversationId) {
+          await computingPresence.clearToolCalls({
+            conversationId: presenceConversationId,
+            runId: presenceRunId,
+          });
+        }
+      },
+      onToolStart: async (payload) => {
+        const toolName = payload.name ?? "unknown";
+        contextLenses.recordToolCall(lens.lensId, toolName);
+        logContextLens(lens.lensId, "tool_start");
+        if (presenceConversationId) {
+          await computingPresence.addToolCall({
+            conversationId: presenceConversationId,
+            runId: presenceRunId,
+            toolName,
+          });
+        }
+      },
     };
 
     let dispatchResult:
@@ -2081,6 +2136,8 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     let dispatchError: unknown;
 
     try {
+      contextLenses.setStatus(lens.lensId, "dispatching");
+      logContextLens(lens.lensId, "dispatching");
       dispatchResult = await core.channel.reply.dispatchReplyWithBufferedBlockDispatcher({
         ctx: ctxPayload,
         cfg,
@@ -2090,6 +2147,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
           humanDelay,
           typingCallbacks,
           deliver: async (payload: ReplyPayload) => {
+            contextLenses.setStatus(lens.lensId, "delivering");
             let replyText = payload.text;
             if (!replyText) {
               return;
@@ -2155,6 +2213,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
             }
 
             deliveredMessageCount += 1;
+            contextLenses.recordPersistence(lens.lensId, { postsReply: true });
             replyCharCount += replyText.length;
             replyWordCount += replyText.trim() ? replyText.trim().split(/\s+/).length : 0;
             replyMediaCount += Array.isArray(payload.mediaUrls)
@@ -2173,6 +2232,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       });
     } catch (error) {
       dispatchError = error;
+      contextLenses.setStatus(lens.lensId, "error", error);
       throw error;
     } finally {
       await replyTelemetry?.capture({
@@ -2189,6 +2249,13 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         thinkLevel: selectedThinkLevel,
         dispatchError,
       });
+      if (!dispatchError) {
+        contextLenses.setStatus(lens.lensId, "done");
+      }
+      const finalLens = contextLenses.get(lens.lensId);
+      if (finalLens) {
+        logContextLens(lens.lensId, "final");
+      }
     }
   };
 
@@ -2278,6 +2345,8 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
                 messageId: `react-${postId}-${ship}-${Date.now()}`,
                 senderShip: ship,
                 messageText: reactText,
+                trigger: "reaction",
+                cachesHistory: true,
                 isGroup: true,
                 channelNest: nest,
                 hostShip: parsed?.hostShip,
@@ -2414,6 +2483,16 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         return;
       }
 
+      const trigger: ContextLensTrigger = mentioned
+        ? "mention"
+        : inParticipatedThread
+          ? "thread"
+          : isOwnerBlob
+            ? "owner-blob"
+            : engageDecision.reason === "owner-owned"
+              ? "owner-listen"
+              : "unknown";
+
       // Log why we're responding
       if (engageDecision.reason === "owner-owned") {
         runtime.log?.(`[tlon] Owner ${senderShip} heard without mention in owned channel ${nest}`);
@@ -2488,6 +2567,8 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         messageId: messageId ?? "",
         senderShip,
         messageText,
+        trigger,
+        cachesHistory: true,
         messageContent: content.content, // Pass raw content for media extraction
         blobField: content.blob,
         isGroup: true,
@@ -2651,6 +2732,8 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
                 messageId: `react-${messageId}-${reactAuthor}-${Date.now()}`,
                 senderShip: reactAuthor,
                 messageText: reactText,
+                trigger: "reaction",
+                cachesHistory: true,
                 isGroup: false,
                 timestamp: Date.now(),
                 replyParentId: messageId, // Thread reply for delivery only
@@ -2756,6 +2839,8 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
           messageId: effectiveMessageId ?? "",
           senderShip,
           messageText,
+          trigger: "dm",
+          cachesHistory: Boolean(rawCacheText.trim()),
           messageContent: dmContent.content,
           blobField: dmContent.blob,
           isGroup: false,
@@ -2796,6 +2881,8 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         messageId: effectiveMessageId ?? "",
         senderShip,
         messageText,
+        trigger: "dm",
+        cachesHistory: Boolean(rawCacheText.trim()),
         messageContent: dmContent.content, // Pass raw content for media extraction
         blobField: dmContent.blob,
         isGroup: false,

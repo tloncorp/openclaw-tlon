@@ -22,7 +22,7 @@ find /workspace/openclaw-tlon -not -path '*/.git/*' -exec chown root:root {} \; 
 
 echo "==> Installing plugin dependencies..."
 cd /workspace/openclaw-tlon
-pnpm install
+pnpm install --no-frozen-lockfile --prefer-offline
 pnpm build
 
 # Expose tlon CLI to PATH
@@ -97,7 +97,8 @@ cat > "$CONFIG_DIR/openclaw.json" << EOF
       "token": "ci-test-token"
     },
     "controlUi": {
-      "dangerouslyAllowHostHeaderOriginFallback": true
+      "dangerouslyAllowHostHeaderOriginFallback": true,
+      "dangerouslyDisableDeviceAuth": true
     }
   },
   "plugins": {
