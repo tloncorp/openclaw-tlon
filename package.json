@@ -1,8 +1,9 @@
 {
   "name": "@tloncorp/openclaw",
-  "version": "0.4.0",
+  "version": "0.4.3",
   "description": "OpenClaw Tlon/Urbit channel plugin",
   "license": "MIT",
+  "packageManager": "pnpm@9.15.9",
   "repository": {
     "type": "git",
     "url": "https://github.com/tloncorp/openclaw-tlon.git"
@@ -27,14 +28,18 @@
   },
   "scripts": {
     "build": "tsc",
+    "postbuild": "node scripts/generate-channel-configs.mjs",
     "clean": "rm -rf dist",
     "dev": "./dev/run.sh",
     "dev:api:link": "./dev/link-local-api.sh",
     "dev:api:unlink": "./dev/unlink-local-api.sh",
+    "dev:skill:link": "./dev/link-local-skill.sh",
+    "dev:skill:unlink": "./dev/unlink-local-skill.sh",
     "format": "oxfmt --check",
     "format:fix": "oxfmt --write",
     "lint": "oxlint --type-aware",
     "lint:fix": "pnpm format:fix && oxlint --type-aware --fix",
+    "postinstall": "node scripts/generate-version.js",
     "prebuild": "node scripts/generate-version.js",
     "test": "vitest run src/",
     "test:all": "vitest run",
@@ -43,25 +48,37 @@
     "test:integration:watch": "./test/run-dev.sh --watch",
     "test:manual": "bash ./test/run-manual.sh",
     "test:security": "vitest run src/security.test.ts",
-    "test:watch": "vitest src/"
+    "test:watch": "vitest src/",
+    "prepare:publish": "npm run build && node scripts/prepare-publish-package.js",
+    "pack:publish": "npm run prepare:publish && npm pack .publish",
+    "publish:clean": "npm run prepare:publish && npm publish .publish --access public"
   },
   "dependencies": {
     "@tloncorp/api": "presence",
-    "@tloncorp/tlon-skill": "^0.3.4",
+    "@tloncorp/tlon-skill": "^0.3.6",
     "@urbit/aura": "^3.0.0",
     "posthog-node": "^5.28.9",
-    "zod": "^4.3.6"
+    "zod": "^4.4.1"
   },
   "devDependencies": {
+    "@grammyjs/runner": "^2.0.3",
+    "@grammyjs/transformer-throttler": "^1.2.1",
+    "@slack/bolt": "^4.7.2",
+    "@slack/logger": "^4.0.1",
+    "@slack/oauth": "^3.0.5",
+    "@slack/socket-mode": "^2.0.7",
+    "@slack/types": "^2.21.1",
+    "@slack/web-api": "^7.15.2",
     "@types/node": "^25.4.0",
     "dotenv": "^17.2.4",
+    "grammy": "^1.42.0",
     "openclaw": "2026.4.2",
     "oxfmt": "0.27.0",
     "oxlint": "^1.42.0",
     "oxlint-tsgolint": "^0.16.0",
     "typescript": "^5.7.0",
     "vitest": "^4.0.0",
-    "zod": "^4.3.6"
+    "zod": "^4.4.1"
   },
   "peerDependencies": {
     "openclaw": ">=2026.3.22"

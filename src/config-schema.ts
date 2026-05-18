@@ -54,6 +54,7 @@ export const TlonAccountSchema = z.object({
   allowPrivateNetwork: z.boolean().optional(),
   groupChannels: z.array(ChannelNestSchema).optional(),
   dmAllowlist: z.array(ShipSchema).optional(),
+  groupInviteAllowlist: z.array(ShipSchema).optional(),
   autoDiscoverChannels: z.boolean().optional(),
   showModelSignature: z.boolean().optional(),
   // Auto-accept settings
@@ -66,6 +67,13 @@ export const TlonAccountSchema = z.object({
   // Rate limiting for bot-to-bot responses
   maxConsecutiveBotResponses: z.number().int().min(0).optional(), // Max consecutive responses to another bot (default: 3)
   telemetry: TlonTelemetrySchema.optional(),
+  // Owner-listen: in channels hosted by the owner or the bot itself, engage
+  // on owner messages without requiring an @-mention. Default: enabled.
+  ownerListenEnabled: z.boolean().optional(),
+  // Channels (chat/heap/diary nests) opted out of owner-listen even when the
+  // global toggle is on. Owner messages in these channels still require an
+  // @-mention to engage the bot.
+  ownerListenDisabledChannels: z.array(ChannelNestSchema).optional(),
 });
 
 export const TlonConfigSchema = z.object({
@@ -77,6 +85,7 @@ export const TlonConfigSchema = z.object({
   allowPrivateNetwork: z.boolean().optional(),
   groupChannels: z.array(ChannelNestSchema).optional(),
   dmAllowlist: z.array(ShipSchema).optional(),
+  groupInviteAllowlist: z.array(ShipSchema).optional(),
   autoDiscoverChannels: z.boolean().optional(),
   showModelSignature: z.boolean().optional(),
   authorization: TlonAuthorizationSchema.optional(),
@@ -98,6 +107,13 @@ export const TlonConfigSchema = z.object({
   // Optional static file-config override for the plugin scheduler's
   // active hours. See TlonNudgeActiveHoursSchema for precedence.
   nudgeActiveHours: TlonNudgeActiveHoursSchema.optional(),
+  // Owner-listen: in channels hosted by the owner or the bot itself, engage
+  // on owner messages without requiring an @-mention. Default: enabled.
+  ownerListenEnabled: z.boolean().optional(),
+  // Channels (chat/heap/diary nests) opted out of owner-listen even when the
+  // global toggle is on. Owner messages in these channels still require an
+  // @-mention to engage the bot.
+  ownerListenDisabledChannels: z.array(ChannelNestSchema).optional(),
 });
 
 // Cast bridges a type-only mismatch: this repo's zod and openclaw's bundled
