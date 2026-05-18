@@ -53,6 +53,28 @@ describe("Tlon config schema", () => {
     expect(parsed.accounts?.hosted?.telemetry?.apiKey).toBe("phc_account");
   });
 
+  it("accepts lifecycle timeout configuration", () => {
+    const parsed = TlonConfigSchema.parse({
+      lifecycle: {
+        runTimeoutMs: 120_000,
+        toolTimeoutMs: 45_000,
+      },
+      accounts: {
+        hosted: {
+          ship: "~zod",
+          url: "https://example.com",
+          code: "code-123",
+          lifecycle: {
+            runTimeoutMs: 90_000,
+          },
+        },
+      },
+    });
+
+    expect(parsed.lifecycle?.toolTimeoutMs).toBe(45_000);
+    expect(parsed.accounts?.hosted?.lifecycle?.runTimeoutMs).toBe(90_000);
+  });
+
   it("accepts an opt-in reengagement.enabled flag", () => {
     const parsed = TlonConfigSchema.parse({
       ship: "~zod",

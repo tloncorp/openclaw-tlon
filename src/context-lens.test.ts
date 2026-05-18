@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-
 import { createContextLensRegistry, hashSessionKey } from "./context-lens.js";
 
 describe("context lens registry", () => {
@@ -52,6 +51,10 @@ describe("context lens registry", () => {
       emitsTelemetry: true,
     });
     registry.setStatus(lens.lensId, "dispatching");
+    registry.recordLifecycle(lens.lensId, {
+      dispatchStartedAt: 123,
+      timeoutMs: 90_000,
+    });
     registry.recordToolCall(lens.lensId, "tlon");
     registry.recordToolCall(lens.lensId, "tlon");
 
@@ -75,6 +78,52 @@ describe("context lens registry", () => {
       tools: {
         ownerOnlyAvailable: [],
         called: ["tlon"],
+        callCount: 2,
+      },
+      lifecycle: {
+        dispatchStartedAt: 123,
+        timeoutMs: 90_000,
+        deliveredMessageCount: 0,
+        queuedFinal: false,
+      },
+    });
+  });
+
+  it("records no-reply and timeout lifecycle outcomes without raw content", () => {
+    const registry = createContextLensRegistry();
+    const noReply = registry.create({ messageId: "message-3", chatType: "dm" });
+    const timedOut = registry.create({ messageId: "message-4", chatType: "dm" });
+
+    registry.recordLifecycle(noReply.lensId, {
+      completedAt: 500,
+      durationMs: 250,
+      deliveredMessageCount: 0,
+    });
+    registry.setStatus(noReply.lensId, "no_reply");
+
+    registry.recordLifecycle(timedOut.lensId, {
+      completedAt: 1_000,
+      durationMs: 120_000,
+      timeoutMs: 120_000,
+      timedOut: true,
+    });
+    registry.setStatus(timedOut.lensId, "timed_out", new Error("dispatch timed out"));
+
+    expect(registry.get(noReply.lensId)).toMatchObject({
+      status: "no_reply",
+      lifecycle: {
+        durationMs: 250,
+        deliveredMessageCount: 0,
+        timedOut: false,
+      },
+    });
+    expect(registry.get(timedOut.lensId)).toMatchObject({
+      status: "timed_out",
+      error: "dispatch timed out",
+      lifecycle: {
+        durationMs: 120_000,
+        timeoutMs: 120_000,
+        timedOut: true,
       },
     });
   });

@@ -6,6 +6,11 @@ export type TlonTelemetryConfig = {
   host: string | null;
 };
 
+export type TlonLifecycleConfig = {
+  runTimeoutMs: number | null;
+  toolTimeoutMs: number | null;
+};
+
 export type TlonResolvedAccount = {
   accountId: string;
   name: string | null;
@@ -31,6 +36,7 @@ export type TlonResolvedAccount = {
   /** Max consecutive responses to another bot before stopping (default: 3) */
   maxConsecutiveBotResponses: number | null;
   telemetry: TlonTelemetryConfig;
+  lifecycle: TlonLifecycleConfig;
   /** Global owner-listen toggle (default true). */
   ownerListenEnabled: boolean | null;
   /** Channels opted out of owner-listen even when the global toggle is on. */
@@ -43,6 +49,11 @@ type TlonTelemetryInput = {
   host?: string;
 };
 
+type TlonLifecycleInput = {
+  runTimeoutMs?: number;
+  toolTimeoutMs?: number;
+};
+
 function resolveTelemetryConfig(
   base: TlonTelemetryInput | null | undefined,
   account: TlonTelemetryInput | null | undefined,
@@ -51,6 +62,16 @@ function resolveTelemetryConfig(
     enabled: account?.enabled ?? base?.enabled ?? false,
     apiKey: account?.apiKey ?? base?.apiKey ?? null,
     host: account?.host ?? base?.host ?? null,
+  };
+}
+
+function resolveLifecycleConfig(
+  base: TlonLifecycleInput | null | undefined,
+  account: TlonLifecycleInput | null | undefined,
+): TlonLifecycleConfig {
+  return {
+    runTimeoutMs: account?.runTimeoutMs ?? base?.runTimeoutMs ?? null,
+    toolTimeoutMs: account?.toolTimeoutMs ?? base?.toolTimeoutMs ?? null,
   };
 }
 
@@ -79,6 +100,7 @@ export function resolveTlonAccount(
         reactionLevel?: string;
         maxConsecutiveBotResponses?: number;
         telemetry?: TlonTelemetryInput;
+        lifecycle?: TlonLifecycleInput;
         ownerListenEnabled?: boolean;
         ownerListenDisabledChannels?: string[];
         accounts?: Record<string, Record<string, unknown>>;
@@ -110,6 +132,10 @@ export function resolveTlonAccount(
         enabled: false,
         apiKey: null,
         host: null,
+      },
+      lifecycle: {
+        runTimeoutMs: null,
+        toolTimeoutMs: null,
       },
       ownerListenEnabled: null,
       ownerListenDisabledChannels: [],
@@ -158,6 +184,10 @@ export function resolveTlonAccount(
     base.telemetry,
     (account as { telemetry?: TlonTelemetryInput } | undefined)?.telemetry,
   );
+  const lifecycle = resolveLifecycleConfig(
+    base.lifecycle,
+    (account as { lifecycle?: TlonLifecycleInput } | undefined)?.lifecycle,
+  );
   const defaultAuthorizedShips = ((account as Record<string, unknown>)?.defaultAuthorizedShips ??
     (base as Record<string, unknown>)?.defaultAuthorizedShips ??
     []) as string[];
@@ -191,6 +221,7 @@ export function resolveTlonAccount(
     reactionLevel,
     maxConsecutiveBotResponses,
     telemetry,
+    lifecycle,
     ownerListenEnabled,
     ownerListenDisabledChannels,
   };

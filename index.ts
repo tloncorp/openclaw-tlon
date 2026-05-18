@@ -47,6 +47,7 @@ const ALLOWED_TLON_COMMANDS = new Set([
 
 /** Credential flags that the tlon skill binary accepts before the subcommand. */
 const CREDENTIAL_FLAGS_WITH_VALUE = new Set(["--config", "--url", "--ship", "--code", "--cookie"]);
+const DEFAULT_TLON_TOOL_TIMEOUT_MS = 45_000;
 
 /**
  * Find the first positional argument (subcommand) by skipping credential flags
@@ -125,6 +126,7 @@ function runTlonCommand(
   binary: string,
   args: string[],
   credentials?: { url: string; ship: string; code: string },
+  timeoutMs = DEFAULT_TLON_TOOL_TIMEOUT_MS,
 ): Promise<string> {
   return new Promise((resolve, reject) => {
     const env = { ...process.env };
@@ -135,6 +137,17 @@ function runTlonCommand(
     }
 
     const child = spawn(binary, args, { env });
+    let settled = false;
+    let killTimer: NodeJS.Timeout | null = null;
+    const timeout = setTimeout(() => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      child.kill("SIGTERM");
+      killTimer = setTimeout(() => child.kill("SIGKILL"), 2_000);
+      reject(new Error(`tlon command timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
 
     let stdout = "";
     let stderr = "";
@@ -148,10 +161,22 @@ function runTlonCommand(
     });
 
     child.on("error", (err) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearTimeout(timeout);
+      if (killTimer) clearTimeout(killTimer);
       reject(new Error(`Failed to run tlon: ${err.message}`));
     });
 
     child.on("close", (code) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearTimeout(timeout);
+      if (killTimer) clearTimeout(killTimer);
       if (code !== 0) {
         reject(new Error(stderr || `tlon exited with code ${code}`));
       } else {
@@ -265,6 +290,7 @@ export default defineChannelPluginEntry({
       account.configured && account.url && account.ship && account.code
         ? { url: account.url, ship: account.ship, code: account.code }
         : undefined;
+    const toolTimeoutMs = account.lifecycle.toolTimeoutMs ?? DEFAULT_TLON_TOOL_TIMEOUT_MS;
 
     if (credentials) {
       api.logger.info(`[tlon] Credentials available for ${account.ship}`);
@@ -319,7 +345,7 @@ export default defineChannelPluginEntry({
             };
           }
 
-          const output = await runTlonCommand(tlonBinary, args, credentials);
+          const output = await runTlonCommand(tlonBinary, args, credentials, toolTimeoutMs);
           return {
             content: [{ type: "text" as const, text: output }],
             details: undefined,

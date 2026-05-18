@@ -165,3 +165,53 @@ describe("resolveTlonAccount allowPrivateNetwork", () => {
     expect(account.allowPrivateNetwork).toBe(false);
   });
 });
+
+describe("resolveTlonAccount lifecycle", () => {
+  it("defaults lifecycle timeouts to null", () => {
+    const account = resolveTlonAccount({
+      channels: {
+        tlon: {
+          ship: "~zod",
+          url: "https://example.com",
+          code: "code-123",
+        },
+      },
+    } as OpenClawConfig);
+
+    expect(account.lifecycle).toEqual({
+      runTimeoutMs: null,
+      toolTimeoutMs: null,
+    });
+  });
+
+  it("merges base and account lifecycle settings", () => {
+    const account = resolveTlonAccount(
+      {
+        channels: {
+          tlon: {
+            lifecycle: {
+              runTimeoutMs: 120_000,
+              toolTimeoutMs: 45_000,
+            },
+            accounts: {
+              hosted: {
+                ship: "~zod",
+                url: "https://example.com",
+                code: "code-123",
+                lifecycle: {
+                  runTimeoutMs: 90_000,
+                },
+              },
+            },
+          },
+        },
+      } as OpenClawConfig,
+      "hosted",
+    );
+
+    expect(account.lifecycle).toEqual({
+      runTimeoutMs: 90_000,
+      toolTimeoutMs: 45_000,
+    });
+  });
+});

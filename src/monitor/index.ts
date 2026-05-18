@@ -59,6 +59,14 @@ type WritResponseDelta =
       "add-react"?: never;
     };
 type WritResponse = { whom: string; id: string; response: WritResponseDelta };
+const DEFAULT_CONTEXT_LENS_RUN_TIMEOUT_MS = 120_000;
+
+function normalizeRunTimeoutMs(value: number | null | undefined): number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 1_000
+    ? Math.floor(value)
+    : DEFAULT_CONTEXT_LENS_RUN_TIMEOUT_MS;
+}
+
 import { configureGatewayStatus, gatewayStart } from "@tloncorp/api";
 import { format } from "node:util";
 import type { Foreigns, DmInvite } from "../urbit/foreigns.js";
@@ -397,10 +405,50 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
   try {
   const computingPresence = createComputingPresenceTracker({ runtime });
   const contextLenses = createContextLensRegistry();
+  const sessionDispatches = new Map<string, Promise<void>>();
   const logContextLens = (lensId: string, phase: string) => {
     const snapshot = contextLenses.get(lensId);
     if (snapshot) {
       runtime.log?.(`[tlon] ContextLens ${JSON.stringify({ phase, ...snapshot })}`);
+    }
+  };
+  const runInSessionDispatchSlot = async <T>(
+    sessionKey: string,
+    lensId: string,
+    run: () => Promise<T>,
+  ): Promise<T> => {
+    const previous = sessionDispatches.get(sessionKey);
+    let releaseCurrent: () => void = () => {};
+    const current = (previous ?? Promise.resolve())
+      .catch(() => undefined)
+      .then(
+        () =>
+          new Promise<void>((resolve) => {
+            releaseCurrent = resolve;
+          }),
+      );
+
+    const stored = current.finally(() => {
+      if (sessionDispatches.get(sessionKey) === stored) {
+        sessionDispatches.delete(sessionKey);
+      }
+    });
+    sessionDispatches.set(sessionKey, stored);
+
+    if (previous) {
+      const queuedAt = Date.now();
+      contextLenses.setStatus(lensId, "queued");
+      contextLenses.recordLifecycle(lensId, { queuedAt });
+      logContextLens(lensId, "queued");
+      await previous.catch(() => undefined);
+      contextLenses.recordLifecycle(lensId, { queuedMs: Date.now() - queuedAt });
+    }
+
+    await Promise.resolve();
+    try {
+      return await run();
+    } finally {
+      releaseCurrent();
     }
   };
 
@@ -1934,7 +1982,12 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     const senderRole = isOwner(senderShip) ? "owner" : "user";
     if (senderRole === "owner") {
       contextLenses.update(lens.lensId, {
-        tools: { ownerOnlyAvailable: ["tlon", "cron", "read"], called: [] },
+        tools: {
+          ownerOnlyAvailable: ["tlon", "cron", "read"],
+          called: [],
+          callCount: 0,
+          lastStartedAt: null,
+        },
       });
     }
     // Store role for before_tool_call hook (tool access control)
@@ -2034,6 +2087,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     });
 
     const dispatchStartTime = Date.now();
+    const dispatchTimeoutMs = normalizeRunTimeoutMs(account.lifecycle.runTimeoutMs);
     const replyTelemetry = telemetry?.startReply({
       sessionKey: route.sessionKey,
       ownerShip: effectiveOwnerShip,
@@ -2050,6 +2104,16 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     let replyCharCount = 0;
     let replyWordCount = 0;
     let replyMediaCount = 0;
+    let dispatchTimedOut = false;
+    const dispatchAbortController = new AbortController();
+    const abortFromMonitor = () => {
+      if (!dispatchAbortController.signal.aborted) {
+        dispatchAbortController.abort(
+          opts.abortSignal?.reason ?? new Error("Tlon monitor aborted"),
+        );
+      }
+    };
+    opts.abortSignal?.addEventListener("abort", abortFromMonitor, { once: true });
 
     const responsePrefix = core.channel.reply.resolveEffectiveMessagesConfig(
       cfg,
@@ -2096,6 +2160,8 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         typeof core.channel.reply.dispatchReplyWithBufferedBlockDispatcher
       >[0]["replyOptions"]
     > = {
+      abortSignal: dispatchAbortController.signal,
+      timeoutOverrideSeconds: Math.ceil(dispatchTimeoutMs / 1000),
       onModelSelected: ({ provider, model, thinkLevel }) => {
         selectedProvider = provider;
         selectedModel = model;
@@ -2116,6 +2182,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       onToolStart: async (payload) => {
         const toolName = payload.name ?? "unknown";
         contextLenses.recordToolCall(lens.lensId, toolName);
+        contextLenses.setStatus(lens.lensId, "tool_running");
         logContextLens(lens.lensId, "tool_start");
         if (presenceConversationId) {
           await computingPresence.addToolCall({
@@ -2136,111 +2203,149 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     let dispatchError: unknown;
 
     try {
-      contextLenses.setStatus(lens.lensId, "dispatching");
-      logContextLens(lens.lensId, "dispatching");
-      dispatchResult = await core.channel.reply.dispatchReplyWithBufferedBlockDispatcher({
-        ctx: ctxPayload,
-        cfg,
-        replyOptions,
-        dispatcherOptions: {
-          responsePrefix,
-          humanDelay,
-          typingCallbacks,
-          deliver: async (payload: ReplyPayload) => {
-            contextLenses.setStatus(lens.lensId, "delivering");
-            let replyText = payload.text;
-            if (!replyText) {
-              return;
+      await runInSessionDispatchSlot(route.sessionKey, lens.lensId, async () => {
+        let timeoutId: NodeJS.Timeout | null = null;
+        try {
+          contextLenses.setStatus(lens.lensId, "dispatching");
+          contextLenses.recordLifecycle(lens.lensId, {
+            dispatchStartedAt: Date.now(),
+            timeoutMs: dispatchTimeoutMs,
+          });
+          logContextLens(lens.lensId, "dispatching");
+          timeoutId = setTimeout(() => {
+            dispatchTimedOut = true;
+            if (!dispatchAbortController.signal.aborted) {
+              dispatchAbortController.abort(
+                new Error(`Tlon dispatch timed out after ${dispatchTimeoutMs}ms`),
+              );
             }
+          }, dispatchTimeoutMs);
+          dispatchResult = await core.channel.reply.dispatchReplyWithBufferedBlockDispatcher({
+            ctx: ctxPayload,
+            cfg,
+            replyOptions,
+            dispatcherOptions: {
+              responsePrefix,
+              humanDelay,
+              typingCallbacks,
+              deliver: async (payload: ReplyPayload) => {
+                contextLenses.setStatus(lens.lensId, "delivering");
+                let replyText = payload.text;
+                if (!replyText) {
+                  return;
+                }
 
-            // Process any block directives in the response (strips them from text)
-            replyText = await processBlockDirectives(replyText, senderShip);
-            if (!replyText) {
-              return;
-            } // Response was only a directive
+                // Process any block directives in the response (strips them from text)
+                replyText = await processBlockDirectives(replyText, senderShip);
+                if (!replyText) {
+                  return;
+                } // Response was only a directive
 
-            // Use settings store value if set, otherwise fall back to file config
-            const showSignature = effectiveShowModelSig;
-            if (showSignature) {
-              const modelCfg = cfg.agents?.defaults?.model;
-              const modelInfo =
-                selectedModel ||
-                (payload as { metadata?: { model?: string } }).metadata?.model ||
-                (payload as { model?: string }).model ||
-                (route as { model?: string }).model ||
-                (typeof modelCfg === "string" ? modelCfg : modelCfg?.primary);
-              replyText = `${replyText}\n\n_[Generated by ${formatModelName(modelInfo)}]_`;
-            }
+                // Use settings store value if set, otherwise fall back to file config
+                const showSignature = effectiveShowModelSig;
+                if (showSignature) {
+                  const modelCfg = cfg.agents?.defaults?.model;
+                  const modelInfo =
+                    selectedModel ||
+                    (payload as { metadata?: { model?: string } }).metadata?.model ||
+                    (payload as { model?: string }).model ||
+                    (route as { model?: string }).model ||
+                    (typeof modelCfg === "string" ? modelCfg : modelCfg?.primary);
+                  replyText = `${replyText}\n\n_[Generated by ${formatModelName(modelInfo)}]_`;
+                }
 
-            // Add addendum if this is the last response before bot rate limit
-            if (isGroup && groupChannel && knownBotShips.has(senderShip)) {
-              const count = consecutiveBotMessages.get(groupChannel) ?? 0;
-              if (maxBotResponses > 0 && count === maxBotResponses) {
-                const otherBot = formatShipWithNickname(senderShip);
-                replyText += `\n\n---\n_This is my last response to ${otherBot} for now. To continue our conversation, someone will need to mention me._`;
-              }
-            }
+                // Add addendum if this is the last response before bot rate limit
+                if (isGroup && groupChannel && knownBotShips.has(senderShip)) {
+                  const count = consecutiveBotMessages.get(groupChannel) ?? 0;
+                  if (maxBotResponses > 0 && count === maxBotResponses) {
+                    const otherBot = formatShipWithNickname(senderShip);
+                    replyText += `\n\n---\n_This is my last response to ${otherBot} for now. To continue our conversation, someone will need to mention me._`;
+                  }
+                }
 
-            if (isGroup && groupChannel) {
-              // Send to any channel type (chat, heap, diary) using the nest directly
-              await sendChannelPost({
-                botProfile: getBotProfile(),
-                fromShip: botShipName,
-                nest: groupChannel,
-                story: markdownToStory(replyText),
-                replyToId: deliverParentId ?? undefined,
-              });
-              // Track thread participation for future replies without mention
-              if (deliverParentId) {
-                participatedThreads.add(String(deliverParentId));
-                runtime.log?.(`[tlon] Now tracking thread for future replies: ${deliverParentId}`);
-              }
-            } else {
-              await sendDm({
-                botProfile: getBotProfile(),
-                fromShip: botShipName,
-                toShip: senderShip,
-                text: replyText,
-                replyToId: deliverParentId ? String(deliverParentId) : undefined,
-              });
-            }
+                if (isGroup && groupChannel) {
+                  // Send to any channel type (chat, heap, diary) using the nest directly
+                  await sendChannelPost({
+                    botProfile: getBotProfile(),
+                    fromShip: botShipName,
+                    nest: groupChannel,
+                    story: markdownToStory(replyText),
+                    replyToId: deliverParentId ?? undefined,
+                  });
+                  // Track thread participation for future replies without mention
+                  if (deliverParentId) {
+                    participatedThreads.add(String(deliverParentId));
+                    runtime.log?.(
+                      `[tlon] Now tracking thread for future replies: ${deliverParentId}`,
+                    );
+                  }
+                } else {
+                  await sendDm({
+                    botProfile: getBotProfile(),
+                    fromShip: botShipName,
+                    toShip: senderShip,
+                    text: replyText,
+                    replyToId: deliverParentId ? String(deliverParentId) : undefined,
+                  });
+                }
 
-            if (presenceConversationId) {
-              await computingPresence.stopRun({
-                conversationId: presenceConversationId,
-                runId: presenceRunId,
-              });
-            }
+                if (presenceConversationId) {
+                  await computingPresence.stopRun({
+                    conversationId: presenceConversationId,
+                    runId: presenceRunId,
+                  });
+                }
 
-            deliveredMessageCount += 1;
-            contextLenses.recordPersistence(lens.lensId, { postsReply: true });
-            replyCharCount += replyText.length;
-            replyWordCount += replyText.trim() ? replyText.trim().split(/\s+/).length : 0;
-            replyMediaCount += Array.isArray(payload.mediaUrls)
-              ? payload.mediaUrls.length
-              : payload.mediaUrl
-                ? 1
-                : 0;
-          },
-          onError: (err, info) => {
-            const dispatchDuration = Date.now() - dispatchStartTime;
-            runtime.error?.(
-              `[tlon] ${info.kind} reply failed after ${dispatchDuration}ms: ${String(err)}`,
-            );
-          },
-        },
+                deliveredMessageCount += 1;
+                contextLenses.recordPersistence(lens.lensId, { postsReply: true });
+                replyCharCount += replyText.length;
+                replyWordCount += replyText.trim() ? replyText.trim().split(/\s+/).length : 0;
+                replyMediaCount += Array.isArray(payload.mediaUrls)
+                  ? payload.mediaUrls.length
+                  : payload.mediaUrl
+                    ? 1
+                    : 0;
+              },
+              onError: (err, info) => {
+                const dispatchDuration = Date.now() - dispatchStartTime;
+                runtime.error?.(
+                  `[tlon] ${info.kind} reply failed after ${dispatchDuration}ms: ${String(err)}`,
+                );
+              },
+            },
+          });
+        } finally {
+          if (timeoutId) {
+            clearTimeout(timeoutId);
+          }
+        }
       });
     } catch (error) {
       dispatchError = error;
-      contextLenses.setStatus(lens.lensId, "error", error);
-      throw error;
+      if (dispatchTimedOut) {
+        contextLenses.setStatus(lens.lensId, "timed_out", error);
+      } else {
+        contextLenses.setStatus(lens.lensId, "error", error);
+        throw error;
+      }
     } finally {
+      opts.abortSignal?.removeEventListener("abort", abortFromMonitor);
+      const dispatchDurationMs = Date.now() - dispatchStartTime;
+      contextLenses.recordLifecycle(lens.lensId, {
+        completedAt: Date.now(),
+        durationMs: dispatchDurationMs,
+        timedOut: dispatchTimedOut,
+        deliveredMessageCount,
+        queuedFinal: dispatchResult?.queuedFinal ?? false,
+        queuedFinalCount: dispatchResult?.counts.final ?? 0,
+        queuedBlockCount: dispatchResult?.counts.block ?? 0,
+      });
       await replyTelemetry?.capture({
         deliveredMessageCount,
         replyCharCount,
         replyWordCount,
         replyMediaCount,
-        dispatchDurationMs: Date.now() - dispatchStartTime,
+        dispatchDurationMs,
         queuedFinal: dispatchResult?.queuedFinal ?? false,
         queuedFinalCount: dispatchResult?.counts.final ?? 0,
         queuedBlockCount: dispatchResult?.counts.block ?? 0,
@@ -2250,7 +2355,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         dispatchError,
       });
       if (!dispatchError) {
-        contextLenses.setStatus(lens.lensId, "done");
+        contextLenses.setStatus(lens.lensId, deliveredMessageCount > 0 ? "completed" : "no_reply");
       }
       const finalLens = contextLenses.get(lens.lensId);
       if (finalLens) {

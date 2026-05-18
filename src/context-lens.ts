@@ -12,9 +12,13 @@ export type ContextLensTrigger =
 
 export type ContextLensStatus =
   | "assembling"
+  | "queued"
   | "dispatching"
+  | "tool_running"
   | "delivering"
-  | "done"
+  | "completed"
+  | "no_reply"
+  | "timed_out"
   | "error";
 
 export type ContextLens = {
@@ -43,6 +47,22 @@ export type ContextLens = {
   tools: {
     ownerOnlyAvailable: string[];
     called: string[];
+    callCount: number;
+    lastStartedAt: number | null;
+  };
+  lifecycle: {
+    queuedAt: number | null;
+    queuedMs: number;
+    dispatchStartedAt: number | null;
+    firstToolStartedAt: number | null;
+    completedAt: number | null;
+    durationMs: number | null;
+    timeoutMs: number | null;
+    timedOut: boolean;
+    deliveredMessageCount: number;
+    queuedFinal: boolean;
+    queuedFinalCount: number;
+    queuedBlockCount: number;
   };
   status: ContextLensStatus;
   error: string | null;
@@ -77,7 +97,10 @@ function cloneLens(lens: ContextLens): ContextLens {
     tools: {
       ownerOnlyAvailable: [...lens.tools.ownerOnlyAvailable],
       called: [...lens.tools.called],
+      callCount: lens.tools.callCount,
+      lastStartedAt: lens.tools.lastStartedAt,
     },
+    lifecycle: { ...lens.lifecycle },
   };
 }
 
@@ -137,6 +160,22 @@ export function createContextLensRegistry(opts: { ttlMs?: number; maxEntries?: n
       tools: {
         ownerOnlyAvailable: [],
         called: [],
+        callCount: 0,
+        lastStartedAt: null,
+      },
+      lifecycle: {
+        queuedAt: null,
+        queuedMs: 0,
+        dispatchStartedAt: null,
+        firstToolStartedAt: null,
+        completedAt: null,
+        durationMs: null,
+        timeoutMs: null,
+        timedOut: false,
+        deliveredMessageCount: 0,
+        queuedFinal: false,
+        queuedFinalCount: 0,
+        queuedBlockCount: 0,
       },
       status: "assembling",
       error: null,
@@ -161,6 +200,7 @@ export function createContextLensRegistry(opts: { ttlMs?: number; maxEntries?: n
       context: { ...existing.context, ...patch.context },
       persistence: { ...existing.persistence, ...patch.persistence },
       tools: { ...existing.tools, ...patch.tools },
+      lifecycle: { ...existing.lifecycle, ...patch.lifecycle },
       updatedAt: patch.updatedAt ?? Date.now(),
     };
     lenses.set(lensId, next);
@@ -187,14 +227,31 @@ export function createContextLensRegistry(opts: { ttlMs?: number; maxEntries?: n
     patch: Partial<ContextLens["persistence"]>,
   ) => update(lensId, { persistence: patch as ContextLens["persistence"] });
 
+  const recordLifecycle = (
+    lensId: string | null | undefined,
+    patch: Partial<ContextLens["lifecycle"]>,
+  ) => update(lensId, { lifecycle: patch as ContextLens["lifecycle"] });
+
   const recordToolCall = (lensId: string | null | undefined, toolName: string) => {
     if (!lensId || !toolName) return null;
     const existing = lenses.get(lensId);
     if (!existing) return null;
+    const now = Date.now();
     const called = existing.tools.called.includes(toolName)
       ? existing.tools.called
       : [...existing.tools.called, toolName];
-    return update(lensId, { tools: { ...existing.tools, called } });
+    return update(lensId, {
+      tools: {
+        ...existing.tools,
+        called,
+        callCount: existing.tools.callCount + 1,
+        lastStartedAt: now,
+      },
+      lifecycle: {
+        ...existing.lifecycle,
+        firstToolStartedAt: existing.lifecycle.firstToolStartedAt ?? now,
+      },
+    });
   };
 
   return {
@@ -203,6 +260,7 @@ export function createContextLensRegistry(opts: { ttlMs?: number; maxEntries?: n
     setStatus,
     recordContext,
     recordPersistence,
+    recordLifecycle,
     recordToolCall,
     get: (lensId: string) => {
       prune();
@@ -211,9 +269,7 @@ export function createContextLensRegistry(opts: { ttlMs?: number; maxEntries?: n
     },
     listRecent: () => {
       prune();
-      return [...lenses.values()]
-        .sort((a, b) => b.createdAt - a.createdAt)
-        .map(cloneLens);
+      return [...lenses.values()].sort((a, b) => b.createdAt - a.createdAt).map(cloneLens);
     },
     destroy: (lensId: string) => lenses.delete(lensId),
     clear: () => lenses.clear(),

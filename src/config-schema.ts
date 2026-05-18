@@ -20,6 +20,11 @@ export const TlonTelemetrySchema = z.object({
   host: z.string().min(1).optional(),
 });
 
+export const TlonLifecycleSchema = z.object({
+  runTimeoutMs: z.number().int().min(1_000).optional(),
+  toolTimeoutMs: z.number().int().min(1_000).optional(),
+});
+
 /**
  * Canonical private-network opt-in. The flat top-level
  * `allowPrivateNetwork` field below is kept as a deprecated alias; new
@@ -79,6 +84,7 @@ export const TlonAccountSchema = z.object({
   // Rate limiting for bot-to-bot responses
   maxConsecutiveBotResponses: z.number().int().min(0).optional(), // Max consecutive responses to another bot (default: 3)
   telemetry: TlonTelemetrySchema.optional(),
+  lifecycle: TlonLifecycleSchema.optional(),
   // Owner-listen: in channels hosted by the owner or the bot itself, engage
   // on owner messages without requiring an @-mention. Default: enabled.
   ownerListenEnabled: z.boolean().optional(),
@@ -115,6 +121,7 @@ export const TlonConfigSchema = z.object({
   // Rate limiting for bot-to-bot responses
   maxConsecutiveBotResponses: z.number().int().min(0).optional(), // Max consecutive responses to another bot (default: 3)
   telemetry: TlonTelemetrySchema.optional(),
+  lifecycle: TlonLifecycleSchema.optional(),
   // Opt-in hosted-only re-engagement nudges; absent/false keeps the
   // scheduler off even when ownerShip is configured.
   reengagement: TlonReengagementSchema.optional(),

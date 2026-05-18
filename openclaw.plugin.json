@@ -220,6 +220,22 @@
                   },
                   "additionalProperties": false
                 },
+                "lifecycle": {
+                  "type": "object",
+                  "properties": {
+                    "runTimeoutMs": {
+                      "type": "integer",
+                      "minimum": 1000,
+                      "maximum": 9007199254740991
+                    },
+                    "toolTimeoutMs": {
+                      "type": "integer",
+                      "minimum": 1000,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "additionalProperties": false
+                },
                 "ownerListenEnabled": {
                   "type": "boolean"
                 },
@@ -271,6 +287,22 @@
               "host": {
                 "type": "string",
                 "minLength": 1
+              }
+            },
+            "additionalProperties": false
+          },
+          "lifecycle": {
+            "type": "object",
+            "properties": {
+              "runTimeoutMs": {
+                "type": "integer",
+                "minimum": 1000,
+                "maximum": 9007199254740991
+              },
+              "toolTimeoutMs": {
+                "type": "integer",
+                "minimum": 1000,
+                "maximum": 9007199254740991
               }
             },
             "additionalProperties": false
