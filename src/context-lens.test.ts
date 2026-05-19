@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { createContextLensRegistry, hashSessionKey } from "./context-lens.js";
+import {
+  findRecentContextLensByOutputMessageId,
+  publishContextLensEvent,
+} from "./context-lens-events.js";
 
 describe("context lens registry", () => {
   it("creates redacted receipts without storing raw session keys or prompt text", () => {
@@ -38,6 +42,10 @@ describe("context lens registry", () => {
       chatType: "channel",
       trigger: "mention",
       sessionKey: "session-2",
+      senderShip: "~ten",
+      conversationId: "chat/~ten/test",
+      receivedAt: 123,
+      preview: "hello bot",
     });
 
     registry.recordContext(lens.lensId, {
@@ -45,21 +53,53 @@ describe("context lens registry", () => {
       citedPosts: 2,
       attachments: 1,
     });
+    registry.recordContextSource(lens.lensId, {
+      kind: "message",
+      label: "Recent channel activity",
+      sourceId: "chat/~ten/test",
+      included: true,
+      reason: "12 recent channel messages",
+    });
     registry.recordPersistence(lens.lensId, {
       cachesHistory: true,
       writesMedia: true,
       emitsTelemetry: true,
+    });
+    registry.recordPersistenceEvent(lens.lensId, {
+      kind: "conversation_state",
+      action: "read",
+      location: "openclaw",
+      status: "ok",
+      key: "session:abc",
+      at: 456,
     });
     registry.setStatus(lens.lensId, "dispatching");
     registry.recordLifecycle(lens.lensId, {
       dispatchStartedAt: 123,
       timeoutMs: 90_000,
     });
+    registry.recordToolCall(lens.lensId, "tlon", { phase: "start" });
     registry.recordToolCall(lens.lensId, "tlon");
-    registry.recordToolCall(lens.lensId, "tlon");
+    registry.completeOpenToolRuns(lens.lensId);
+    registry.recordOutput(lens.lensId, {
+      messageId: "~zod/170.141.184",
+      conversationId: "chat/~ten/test",
+      kind: "channel",
+      sentAt: 789,
+      preview: "reply",
+      chunkIndex: 0,
+    });
 
     expect(registry.get(lens.lensId)).toMatchObject({
       status: "dispatching",
+      triggerDetails: {
+        type: "mention",
+        messageId: "message-2",
+        authorShip: "~ten",
+        conversationId: "chat/~ten/test",
+        receivedAt: 123,
+        preview: "hello bot",
+      },
       context: {
         currentMessage: true,
         threadMessages: 0,
@@ -67,6 +107,17 @@ describe("context lens registry", () => {
         citedPosts: 2,
         attachments: 1,
         pendingNudge: false,
+        sources: expect.arrayContaining([
+          expect.objectContaining({
+            label: "Current message",
+            included: true,
+            preview: "hello bot",
+          }),
+          expect.objectContaining({
+            label: "Recent channel activity",
+            included: true,
+          }),
+        ]),
       },
       persistence: {
         postsReply: false,
@@ -74,12 +125,39 @@ describe("context lens registry", () => {
         writesMedia: true,
         emitsTelemetry: true,
         cachesHistory: true,
+        events: [
+          expect.objectContaining({
+            kind: "conversation_state",
+            action: "read",
+            location: "openclaw",
+          }),
+        ],
       },
       tools: {
         ownerOnlyAvailable: [],
         called: ["tlon"],
         callCount: 2,
+        runs: [
+          expect.objectContaining({
+            callIndex: 1,
+            name: "tlon",
+            phase: "start",
+            status: "completed",
+          }),
+          expect.objectContaining({
+            callIndex: 2,
+            name: "tlon",
+            status: "completed",
+          }),
+        ],
       },
+      outputs: [
+        expect.objectContaining({
+          messageId: "~zod/170.141.184",
+          kind: "channel",
+          preview: "reply",
+        }),
+      ],
       lifecycle: {
         dispatchStartedAt: 123,
         timeoutMs: 90_000,
@@ -87,6 +165,7 @@ describe("context lens registry", () => {
         queuedFinal: false,
       },
     });
+    expect(registry.findByOutputMessageId("~zod/170.141.184")?.lensId).toBe(lens.lensId);
   });
 
   it("records no-reply and timeout lifecycle outcomes without raw content", () => {
@@ -142,5 +221,26 @@ describe("context lens registry", () => {
     registry.prune(now + 1_000_006);
     expect(registry.get(second.lensId)).toBeNull();
     expect(registry.get(third.lensId)).toBeNull();
+  });
+
+  it("finds recent lenses by outbound message ids", () => {
+    const registry = createContextLensRegistry();
+    const lens = registry.create({ messageId: "inbound", chatType: "dm" });
+    registry.recordOutput(lens.lensId, {
+      messageId: "~nec/170.141.184",
+      conversationId: "~ten",
+      kind: "dm",
+      sentAt: Date.now(),
+    });
+    const snapshot = registry.get(lens.lensId)!;
+    publishContextLensEvent("final", snapshot);
+
+    expect(
+      findRecentContextLensByOutputMessageId("~nec/170.141.184")?.lensId,
+    ).toBe(lens.lensId);
+    expect(findRecentContextLensByOutputMessageId("170.141.184")?.lensId).toBe(
+      lens.lensId,
+    );
+    expect(findRecentContextLensByOutputMessageId("~nec/not-this-message")).toBeNull();
   });
 });

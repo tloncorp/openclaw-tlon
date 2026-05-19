@@ -1655,6 +1655,43 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     const groupChannel = channelNest; // For compatibility
     let messageText = sanitizeMessageText(params.messageText);
     const rawMessageText = messageText; // Preserve original before any modifications
+    const previewText = (text: string, max = 180) => {
+      const compact = sanitizeMessageText(text).replace(/\s+/g, " ").trim();
+      return compact.length > max ? `${compact.slice(0, max - 1)}…` : compact;
+    };
+    const normalizeOutputText = (text: string) =>
+      sanitizeMessageText(text).replace(/\s+/g, " ").trim();
+    const resolveChannelOutputMessageId = async (
+      channelNestForLookup: string,
+      fallbackMessageId: string,
+      replyText: string,
+    ) => {
+      const expected = normalizeOutputText(replyText);
+      const expectedPrefix = expected.slice(0, 80);
+      for (const delayMs of [200, 600, 1_200]) {
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+        const history = await fetchChannelHistory(api, channelNestForLookup, 8, runtime);
+        const match = history.find((entry) => {
+          if (entry.author !== botShipName || !entry.id) {
+            return false;
+          }
+          const actual = normalizeOutputText(entry.content);
+          const actualPrefix = actual.slice(0, 80);
+          return (
+            actual === expected ||
+            actual.startsWith(expectedPrefix) ||
+            expected.startsWith(actualPrefix)
+          );
+        });
+        if (match?.id) {
+          return `${botShipName}/${match.id}`;
+        }
+      }
+      runtime.log?.(
+        `[tlon] ContextLens: could not resolve channel output id for ${fallbackMessageId}; using send-time fallback`,
+      );
+      return fallbackMessageId;
+    };
 
     // Strip bot mention EARLY, before thread context is prepended.
     // This ensures [Current message] in thread context won't contain the bot ship name,
@@ -1678,15 +1715,46 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       chatType: isGroup ? "channel" : "dm",
       trigger: params.trigger ?? "unknown",
       sessionKey: route.sessionKey,
+      senderShip,
+      conversationId: isGroup ? (groupChannel ?? "") : senderShip,
+      receivedAt: timestamp,
+      preview: previewText(messageText),
     });
     contextLenses.recordPersistence(lens.lensId, {
       cachesHistory: Boolean(params.cachesHistory),
       emitsTelemetry: Boolean(telemetry),
     });
-    if (messageContent) {
-      contextLenses.recordContext(lens.lensId, {
-        citedPosts: extractCites(messageContent as Story).length,
+    if (params.cachesHistory) {
+      contextLenses.recordPersistenceEvent(lens.lensId, {
+        kind: "conversation_state",
+        action: "read",
+        location: "openclaw",
+        status: "ok",
+        key: `session:${lens.sessionKeyHash ?? "unknown"}`,
+        reason: "history available for routing/session context",
       });
+    }
+    if (telemetry) {
+      contextLenses.recordPersistenceEvent(lens.lensId, {
+        kind: "other",
+        action: "created",
+        location: "external",
+        status: "ok",
+        key: "telemetry",
+      });
+    }
+    if (messageContent) {
+      const citedPosts = extractCites(messageContent as Story).length;
+      contextLenses.recordContext(lens.lensId, { citedPosts });
+      if (citedPosts) {
+        contextLenses.recordContextSource(lens.lensId, {
+          kind: "message",
+          label: "Cited posts",
+          sourceId: messageId,
+          included: true,
+          reason: "explicit citation",
+        });
+      }
     }
     logContextLens(lens.lensId, "created");
 
@@ -1726,6 +1794,14 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         clearStage: willClearStage,
       });
       contextLenses.recordPersistence(lens.lensId, { updatesSettings: true });
+      contextLenses.recordPersistenceEvent(lens.lensId, {
+        kind: "conversation_state",
+        action: "updated",
+        location: "urbit",
+        status: "ok",
+        key: "owner-activity",
+        reason: willClearStage ? "owner reply cleared pending nudge stage" : "owner activity",
+      });
 
       if (pending) {
         if (isNudgeEligible(pending, timestamp)) {
@@ -1760,6 +1836,14 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       // unrelated public conversation.
       if (pending && isNudgeEligible(pending, timestamp) && !isGroup) {
         contextLenses.recordContext(lens.lensId, { pendingNudge: true });
+        contextLenses.recordContextSource(lens.lensId, {
+          kind: "message",
+          label: "Pending nudge",
+          sourceId: `nudge:${pending.stage}`,
+          included: true,
+          reason: "owner reply matched recent nudge",
+          preview: pending.content ? previewText(pending.content) : undefined,
+        });
         const sentIso = new Date(pending.sentAt).toISOString();
         const contentBlock = pending.content ? `Message content:\n\n${pending.content}\n\n` : "";
         messageText =
@@ -1778,6 +1862,21 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         if (attachments.length > 0) {
           contextLenses.recordContext(lens.lensId, { attachments: attachments.length });
           contextLenses.recordPersistence(lens.lensId, { writesMedia: true });
+          contextLenses.recordContextSource(lens.lensId, {
+            kind: "message",
+            label: "Image attachments",
+            sourceId: messageId,
+            included: true,
+            reason: `${attachments.length} downloaded for model input`,
+          });
+          contextLenses.recordPersistenceEvent(lens.lensId, {
+            kind: "artifact",
+            action: "created",
+            location: "openclaw",
+            status: "ok",
+            key: "message-images",
+            reason: `${attachments.length} image attachment(s) cached for run`,
+          });
           runtime.log?.(`[tlon] Downloaded ${attachments.length} image(s) from message`);
         }
       } catch (error: any) {
@@ -1801,6 +1900,14 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
           await downloadBlobAttachments(blobData);
         if (blobDownloadNotices.length > 0) {
           messageText = blobDownloadNotices.join("\n") + "\n" + messageText;
+          contextLenses.recordContextSource(lens.lensId, {
+            kind: "message",
+            label: "Oversized blob attachments",
+            sourceId: messageId,
+            included: false,
+            reason: "size limit",
+            preview: previewText(blobDownloadNotices.join(" ")),
+          });
           runtime.log?.(
             `[tlon] Skipped oversized blob attachment(s): ${blobDownloadNotices.join(" | ")}`,
           );
@@ -1809,6 +1916,21 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
           attachments = attachments.concat(blobAttachments);
           contextLenses.recordContext(lens.lensId, { attachments: attachments.length });
           contextLenses.recordPersistence(lens.lensId, { writesMedia: true });
+          contextLenses.recordContextSource(lens.lensId, {
+            kind: "message",
+            label: "Blob attachments",
+            sourceId: messageId,
+            included: true,
+            reason: `${blobAttachments.length} downloaded for model input`,
+          });
+          contextLenses.recordPersistenceEvent(lens.lensId, {
+            kind: "artifact",
+            action: "created",
+            location: "openclaw",
+            status: "ok",
+            key: "blob-attachments",
+            reason: `${blobAttachments.length} blob attachment(s) cached for run`,
+          });
           runtime.log?.(`[tlon] Downloaded blob attachment(s) ${JSON.stringify(blobAttachments)}`);
         }
       } catch (error: any) {
@@ -1831,6 +1953,13 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         if (threadContextHistory.length > 0) {
           contextLenses.recordContext(lens.lensId, {
             threadMessages: threadContextHistory.length,
+          });
+          contextLenses.recordContextSource(lens.lensId, {
+            kind: "message",
+            label: "Thread context",
+            sourceId: parentId,
+            included: true,
+            reason: `${threadContextHistory.length} recent thread message(s)`,
           });
           const threadContextMessage = buildThreadContextMessage(
             threadContextHistory,
@@ -1861,6 +1990,13 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         if (recentHistory.length > 0) {
           contextLenses.recordContext(lens.lensId, {
             channelMessages: recentHistory.filter((msg) => msg.id !== params.messageId).length,
+          });
+          contextLenses.recordContextSource(lens.lensId, {
+            kind: "message",
+            label: "Recent channel activity",
+            sourceId: groupChannel,
+            included: true,
+            reason: `${recentHistory.length} recent channel message(s) fetched`,
           });
           // Filter out the current message itself (avoid duplication)
           const contextMessages = recentHistory
@@ -1893,25 +2029,57 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       try {
         const history = await getChannelHistory(api, groupChannel, 50, runtime);
         contextLenses.recordContext(lens.lensId, { channelMessages: history.length });
+        contextLenses.recordContextSource(lens.lensId, {
+          kind: "message",
+          label: "Channel summary history",
+          sourceId: groupChannel,
+          included: history.length > 0,
+          reason: history.length > 0 ? `${history.length} messages for summarization` : "empty history",
+        });
         if (history.length === 0) {
           const noHistoryMsg =
             "I couldn't fetch any messages for this channel. It might be empty or there might be a permissions issue.";
+          let outputMessageId: string | null = null;
           if (isGroup && groupChannel) {
-            await sendChannelPost({
+            const result = await sendChannelPost({
               botProfile: getBotProfile(),
               fromShip: botShipName,
               nest: groupChannel,
               story: markdownToStory(noHistoryMsg),
             });
+            outputMessageId = await resolveChannelOutputMessageId(
+              groupChannel,
+              result.messageId,
+              noHistoryMsg,
+            );
           } else {
-            await sendDm({
+            const result = await sendDm({
               botProfile: getBotProfile(),
               fromShip: botShipName,
               toShip: senderShip,
               text: noHistoryMsg,
             });
+            outputMessageId = result.messageId;
           }
           contextLenses.recordPersistence(lens.lensId, { postsReply: true });
+          if (outputMessageId) {
+            contextLenses.recordOutput(lens.lensId, {
+              messageId: outputMessageId,
+              conversationId: isGroup ? (groupChannel ?? "") : senderShip,
+              kind: isGroup ? "channel" : "dm",
+              sentAt: Date.now(),
+              preview: previewText(noHistoryMsg),
+              chunkIndex: 0,
+            });
+          }
+          contextLenses.recordPersistenceEvent(lens.lensId, {
+            kind: "conversation_state",
+            action: "created",
+            location: "urbit",
+            status: "ok",
+            key: "reply",
+            reason: "posted no-history summary response",
+          });
           contextLenses.recordLifecycle(lens.lensId, {
             completedAt: Date.now(),
             durationMs: Date.now() - lens.createdAt,
@@ -1938,22 +2106,47 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
           "4. Notable participants";
       } catch (error: any) {
         const errorMsg = `Sorry, I encountered an error while fetching the channel history: ${error?.message ?? String(error)}`;
+        let outputMessageId: string | null = null;
         if (isGroup && groupChannel) {
-          await sendChannelPost({
+          const result = await sendChannelPost({
             botProfile: getBotProfile(),
             fromShip: botShipName,
             nest: groupChannel,
             story: markdownToStory(errorMsg),
           });
+          outputMessageId = await resolveChannelOutputMessageId(
+            groupChannel,
+            result.messageId,
+            errorMsg,
+          );
         } else {
-          await sendDm({
+          const result = await sendDm({
             botProfile: getBotProfile(),
             fromShip: botShipName,
             toShip: senderShip,
             text: errorMsg,
           });
+          outputMessageId = result.messageId;
         }
         contextLenses.recordPersistence(lens.lensId, { postsReply: true });
+        if (outputMessageId) {
+          contextLenses.recordOutput(lens.lensId, {
+            messageId: outputMessageId,
+            conversationId: isGroup ? (groupChannel ?? "") : senderShip,
+            kind: isGroup ? "channel" : "dm",
+            sentAt: Date.now(),
+            preview: previewText(errorMsg),
+            chunkIndex: 0,
+          });
+        }
+        contextLenses.recordPersistenceEvent(lens.lensId, {
+          kind: "conversation_state",
+          action: "created",
+          location: "urbit",
+          status: "ok",
+          key: "reply",
+          reason: "posted summary error response",
+        });
         contextLenses.recordLifecycle(lens.lensId, {
           completedAt: Date.now(),
           durationMs: Date.now() - lens.createdAt,
@@ -2005,12 +2198,14 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
 
     const senderRole = isOwner(senderShip) ? "owner" : "user";
     if (senderRole === "owner") {
+      const currentLens = contextLenses.get(lens.lensId);
       contextLenses.update(lens.lensId, {
         tools: {
           ownerOnlyAvailable: ["tlon", "cron", "read"],
-          called: [],
-          callCount: 0,
-          lastStartedAt: null,
+          called: currentLens?.tools.called ?? [],
+          callCount: currentLens?.tools.callCount ?? 0,
+          lastStartedAt: currentLens?.tools.lastStartedAt ?? null,
+          runs: currentLens?.tools.runs ?? [],
         },
       });
     }
@@ -2063,6 +2258,13 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       const groupFlag = channelToGroup.get(channelNest);
       if (groupFlag) {
         bodyWithAttachments += `\n[Group members available via: tlon groups info ${groupFlag}]`;
+        contextLenses.recordContextSource(lens.lensId, {
+          kind: "system",
+          label: "Group member lookup hint",
+          sourceId: groupFlag,
+          included: true,
+          reason: "member list available through tlon tool, not injected raw",
+        });
       }
     }
 
@@ -2206,7 +2408,9 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       },
       onToolStart: async (payload) => {
         const toolName = payload.name ?? "unknown";
-        const toolLens = contextLenses.recordToolCall(lens.lensId, toolName);
+        const toolLens = contextLenses.recordToolCall(lens.lensId, toolName, {
+          phase: payload.phase,
+        });
         contextLenses.setStatus(lens.lensId, "tool_running");
         logContextLens(lens.lensId, "tool_start", {
           toolName,
@@ -2292,15 +2496,21 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
                   }
                 }
 
+                let outputMessageId: string | null = null;
                 if (isGroup && groupChannel) {
                   // Send to any channel type (chat, heap, diary) using the nest directly
-                  await sendChannelPost({
+                  const result = await sendChannelPost({
                     botProfile: getBotProfile(),
                     fromShip: botShipName,
                     nest: groupChannel,
                     story: markdownToStory(replyText),
                     replyToId: deliverParentId ?? undefined,
                   });
+                  outputMessageId = await resolveChannelOutputMessageId(
+                    groupChannel,
+                    result.messageId,
+                    replyText,
+                  );
                   // Track thread participation for future replies without mention
                   if (deliverParentId) {
                     participatedThreads.add(String(deliverParentId));
@@ -2309,13 +2519,14 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
                     );
                   }
                 } else {
-                  await sendDm({
+                  const result = await sendDm({
                     botProfile: getBotProfile(),
                     fromShip: botShipName,
                     toShip: senderShip,
                     text: replyText,
                     replyToId: deliverParentId ? String(deliverParentId) : undefined,
                   });
+                  outputMessageId = result.messageId;
                 }
 
                 if (presenceConversationId) {
@@ -2327,6 +2538,24 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
 
                 deliveredMessageCount += 1;
                 contextLenses.recordPersistence(lens.lensId, { postsReply: true });
+                if (outputMessageId) {
+                  contextLenses.recordOutput(lens.lensId, {
+                    messageId: outputMessageId,
+                    conversationId: isGroup ? (groupChannel ?? "") : senderShip,
+                    kind: isGroup ? "channel" : "dm",
+                    sentAt: Date.now(),
+                    preview: previewText(replyText),
+                    chunkIndex: deliveredMessageCount - 1,
+                  });
+                }
+                contextLenses.recordPersistenceEvent(lens.lensId, {
+                  kind: "conversation_state",
+                  action: "created",
+                  location: "urbit",
+                  status: "ok",
+                  key: "reply",
+                  reason: "posted bot response",
+                });
                 replyCharCount += replyText.length;
                 replyWordCount += replyText.trim() ? replyText.trim().split(/\s+/).length : 0;
                 replyMediaCount += Array.isArray(payload.mediaUrls)
@@ -2360,6 +2589,11 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     } finally {
       opts.abortSignal?.removeEventListener("abort", abortFromMonitor);
       const dispatchDurationMs = Date.now() - dispatchStartTime;
+      contextLenses.completeOpenToolRuns(
+        lens.lensId,
+        dispatchError ? "error" : "completed",
+        dispatchError,
+      );
       contextLenses.recordLifecycle(lens.lensId, {
         completedAt: Date.now(),
         durationMs: dispatchDurationMs,

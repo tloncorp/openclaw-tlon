@@ -158,7 +158,10 @@ export async function sendChannelPost({
       authorId: fromShip,
       botProfile,
     });
-    return { channel: "tlon", messageId: `${fromShip}/${sentAt}` };
+    return {
+      channel: "tlon",
+      messageId: `${fromShip}/${formatSentAt(sentAt)}`,
+    };
   }
 
   await apiSendPost({
@@ -169,7 +172,10 @@ export async function sendChannelPost({
     metadata: title ? { title } : undefined,
     botProfile,
   });
-  return { channel: "tlon", messageId: `${fromShip}/${sentAt}` };
+  return {
+    channel: "tlon",
+    messageId: `${fromShip}/${formatSentAt(sentAt)}`,
+  };
 }
 
 // --- Utilities ---

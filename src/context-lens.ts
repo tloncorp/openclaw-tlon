@@ -21,12 +21,74 @@ export type ContextLensStatus =
   | "timed_out"
   | "error";
 
+export type ContextLensTriggerDetails = {
+  type: ContextLensTrigger;
+  messageId: string;
+  authorShip?: string;
+  conversationId?: string;
+  conversationKind: "dm" | "channel";
+  receivedAt?: number;
+  preview?: string;
+};
+
+export type ContextLensSourceKind =
+  | "message"
+  | "memory"
+  | "identity"
+  | "system"
+  | "tool_result"
+  | "other";
+
+export type ContextLensSource = {
+  kind: ContextLensSourceKind;
+  label: string;
+  sourceId?: string;
+  included: boolean;
+  reason?: string;
+  tokenEstimate?: number;
+  preview?: string;
+};
+
+export type ContextLensToolRun = {
+  id: string;
+  callIndex: number;
+  name: string;
+  phase?: string;
+  startedAt: number;
+  completedAt: number | null;
+  durationMs: number | null;
+  status: "running" | "completed" | "error";
+  argumentSummary?: string;
+  resultSummary?: string;
+  error?: string;
+};
+
+export type ContextLensOutput = {
+  messageId: string;
+  conversationId: string;
+  kind: "dm" | "channel";
+  sentAt: number;
+  preview?: string;
+  chunkIndex?: number;
+};
+
+export type ContextLensPersistenceEvent = {
+  kind: "memory" | "conversation_state" | "tool_cache" | "artifact" | "other";
+  action: "read" | "created" | "updated" | "skipped" | "deleted";
+  location: "openclaw" | "urbit" | "tlon-desk" | "external";
+  status: "ok" | "failed" | "skipped";
+  key?: string;
+  reason?: string;
+  at: number;
+};
+
 export type ContextLens = {
   lensId: string;
   messageId: string;
   sessionKeyHash: string | null;
   chatType: "dm" | "channel";
   trigger: ContextLensTrigger;
+  triggerDetails: ContextLensTriggerDetails;
   model: string | null;
   provider: string | null;
   context: {
@@ -36,6 +98,7 @@ export type ContextLens = {
     citedPosts: number;
     attachments: number;
     pendingNudge: boolean;
+    sources: ContextLensSource[];
   };
   persistence: {
     postsReply: boolean;
@@ -43,13 +106,16 @@ export type ContextLens = {
     writesMedia: boolean;
     emitsTelemetry: boolean;
     cachesHistory: boolean;
+    events: ContextLensPersistenceEvent[];
   };
   tools: {
     ownerOnlyAvailable: string[];
     called: string[];
     callCount: number;
     lastStartedAt: number | null;
+    runs: ContextLensToolRun[];
   };
+  outputs: ContextLensOutput[];
   lifecycle: {
     queuedAt: number | null;
     queuedMs: number;
@@ -76,6 +142,10 @@ export type CreateContextLensInput = {
   chatType: ContextLens["chatType"];
   trigger?: ContextLensTrigger;
   sessionKey?: string | null;
+  senderShip?: string;
+  conversationId?: string;
+  receivedAt?: number;
+  preview?: string;
   now?: number;
   ttlMs?: number;
 };
@@ -92,15 +162,24 @@ export function hashSessionKey(sessionKey: string): string {
 function cloneLens(lens: ContextLens): ContextLens {
   return {
     ...lens,
-    context: { ...lens.context },
-    persistence: { ...lens.persistence },
+    context: {
+      ...lens.context,
+      sources: lens.context.sources.map((source) => ({ ...source })),
+    },
+    persistence: {
+      ...lens.persistence,
+      events: lens.persistence.events.map((event) => ({ ...event })),
+    },
     tools: {
       ownerOnlyAvailable: [...lens.tools.ownerOnlyAvailable],
       called: [...lens.tools.called],
       callCount: lens.tools.callCount,
       lastStartedAt: lens.tools.lastStartedAt,
+      runs: lens.tools.runs.map((run) => ({ ...run })),
     },
+    outputs: lens.outputs.map((output) => ({ ...output })),
     lifecycle: { ...lens.lifecycle },
+    triggerDetails: { ...lens.triggerDetails },
   };
 }
 
@@ -140,6 +219,15 @@ export function createContextLensRegistry(opts: { ttlMs?: number; maxEntries?: n
       sessionKeyHash: input.sessionKey ? hashSessionKey(input.sessionKey) : null,
       chatType: input.chatType,
       trigger: input.trigger ?? "unknown",
+      triggerDetails: {
+        type: input.trigger ?? "unknown",
+        messageId: input.messageId,
+        ...(input.senderShip ? { authorShip: input.senderShip } : {}),
+        ...(input.conversationId ? { conversationId: input.conversationId } : {}),
+        conversationKind: input.chatType,
+        ...(input.receivedAt ? { receivedAt: input.receivedAt } : {}),
+        ...(input.preview ? { preview: input.preview } : {}),
+      },
       model: null,
       provider: null,
       context: {
@@ -149,6 +237,16 @@ export function createContextLensRegistry(opts: { ttlMs?: number; maxEntries?: n
         citedPosts: 0,
         attachments: 0,
         pendingNudge: false,
+        sources: [
+          {
+            kind: "message",
+            label: "Current message",
+            sourceId: input.messageId,
+            included: true,
+            reason: "trigger",
+            ...(input.preview ? { preview: input.preview } : {}),
+          },
+        ],
       },
       persistence: {
         postsReply: false,
@@ -156,13 +254,16 @@ export function createContextLensRegistry(opts: { ttlMs?: number; maxEntries?: n
         writesMedia: false,
         emitsTelemetry: false,
         cachesHistory: false,
+        events: [],
       },
       tools: {
         ownerOnlyAvailable: [],
         called: [],
         callCount: 0,
         lastStartedAt: null,
+        runs: [],
       },
+      outputs: [],
       lifecycle: {
         queuedAt: null,
         queuedMs: 0,
@@ -200,6 +301,8 @@ export function createContextLensRegistry(opts: { ttlMs?: number; maxEntries?: n
       context: { ...existing.context, ...patch.context },
       persistence: { ...existing.persistence, ...patch.persistence },
       tools: { ...existing.tools, ...patch.tools },
+      outputs: patch.outputs ?? existing.outputs,
+      triggerDetails: { ...existing.triggerDetails, ...patch.triggerDetails },
       lifecycle: { ...existing.lifecycle, ...patch.lifecycle },
       updatedAt: patch.updatedAt ?? Date.now(),
     };
@@ -227,12 +330,58 @@ export function createContextLensRegistry(opts: { ttlMs?: number; maxEntries?: n
     patch: Partial<ContextLens["persistence"]>,
   ) => update(lensId, { persistence: patch as ContextLens["persistence"] });
 
+  const recordContextSource = (
+    lensId: string | null | undefined,
+    source: ContextLensSource,
+  ) => {
+    if (!lensId) return null;
+    const existing = lenses.get(lensId);
+    if (!existing) return null;
+    const existingIndex = existing.context.sources.findIndex(
+      (item) =>
+        item.kind === source.kind &&
+        item.label === source.label &&
+        (item.sourceId ?? "") === (source.sourceId ?? ""),
+    );
+    const sources =
+      existingIndex >= 0
+        ? existing.context.sources.map((item, index) =>
+            index === existingIndex ? { ...item, ...source } : item,
+          )
+        : [...existing.context.sources, source];
+    return update(lensId, {
+      context: {
+        ...existing.context,
+        sources,
+      },
+    });
+  };
+
+  const recordPersistenceEvent = (
+    lensId: string | null | undefined,
+    event: Omit<ContextLensPersistenceEvent, "at"> & { at?: number },
+  ) => {
+    if (!lensId) return null;
+    const existing = lenses.get(lensId);
+    if (!existing) return null;
+    return update(lensId, {
+      persistence: {
+        ...existing.persistence,
+        events: [...existing.persistence.events, { ...event, at: event.at ?? Date.now() }],
+      },
+    });
+  };
+
   const recordLifecycle = (
     lensId: string | null | undefined,
     patch: Partial<ContextLens["lifecycle"]>,
   ) => update(lensId, { lifecycle: patch as ContextLens["lifecycle"] });
 
-  const recordToolCall = (lensId: string | null | undefined, toolName: string) => {
+  const recordToolCall = (
+    lensId: string | null | undefined,
+    toolName: string,
+    detail: { phase?: string; argumentSummary?: string } = {},
+  ) => {
     if (!lensId || !toolName) return null;
     const existing = lenses.get(lensId);
     if (!existing) return null;
@@ -240,12 +389,27 @@ export function createContextLensRegistry(opts: { ttlMs?: number; maxEntries?: n
     const called = existing.tools.called.includes(toolName)
       ? existing.tools.called
       : [...existing.tools.called, toolName];
+    const callIndex = existing.tools.callCount + 1;
     return update(lensId, {
       tools: {
         ...existing.tools,
         called,
-        callCount: existing.tools.callCount + 1,
+        callCount: callIndex,
         lastStartedAt: now,
+        runs: [
+          ...existing.tools.runs,
+          {
+            id: `${toolName}-${callIndex}`,
+            callIndex,
+            name: toolName,
+            ...(detail.phase ? { phase: detail.phase } : {}),
+            startedAt: now,
+            completedAt: null,
+            durationMs: null,
+            status: "running",
+            ...(detail.argumentSummary ? { argumentSummary: detail.argumentSummary } : {}),
+          },
+        ],
       },
       lifecycle: {
         ...existing.lifecycle,
@@ -254,14 +418,68 @@ export function createContextLensRegistry(opts: { ttlMs?: number; maxEntries?: n
     });
   };
 
+  const completeOpenToolRuns = (
+    lensId: string | null | undefined,
+    status: ContextLensToolRun["status"] = "completed",
+    error?: unknown,
+  ) => {
+    if (!lensId) return null;
+    const existing = lenses.get(lensId);
+    if (!existing) return null;
+    const now = Date.now();
+    return update(lensId, {
+      tools: {
+        ...existing.tools,
+        runs: existing.tools.runs.map((run) =>
+          run.completedAt
+            ? run
+            : {
+                ...run,
+                completedAt: now,
+                durationMs: now - run.startedAt,
+                status,
+                ...(error === undefined ? {} : { error: serializeError(error) }),
+              },
+        ),
+      },
+    });
+  };
+
+  const recordOutput = (
+    lensId: string | null | undefined,
+    output: ContextLensOutput,
+  ) => {
+    if (!lensId) return null;
+    const existing = lenses.get(lensId);
+    if (!existing) return null;
+    return update(lensId, {
+      outputs: [...existing.outputs, output],
+    });
+  };
+
+  const findByOutputMessageId = (messageId: string) => {
+    prune();
+    for (const lens of lenses.values()) {
+      if (lens.outputs.some((output) => output.messageId === messageId)) {
+        return cloneLens(lens);
+      }
+    }
+    return null;
+  };
+
   return {
     create,
     update,
     setStatus,
     recordContext,
+    recordContextSource,
     recordPersistence,
+    recordPersistenceEvent,
     recordLifecycle,
     recordToolCall,
+    completeOpenToolRuns,
+    recordOutput,
+    findByOutputMessageId,
     get: (lensId: string) => {
       prune();
       const lens = lenses.get(lensId);

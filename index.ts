@@ -14,6 +14,8 @@ import { recordToolCall } from "./src/telemetry.js";
 import { resolveTlonBinary } from "./src/tlon-binary.js";
 import { checkBlockedSendOperation } from "./src/tlon-tool-guard.js";
 import {
+  findRecentContextLensById,
+  findRecentContextLensByOutputMessageId,
   listRecentContextLensEvents,
   subscribeToContextLensEvents,
   type ContextLensEvent,
@@ -55,6 +57,8 @@ const CREDENTIAL_FLAGS_WITH_VALUE = new Set(["--config", "--url", "--ship", "--c
 const DEFAULT_TLON_TOOL_TIMEOUT_MS = 45_000;
 const CONTEXT_LENS_RECENT_ROUTE = "/tlon/context-lens/recent";
 const CONTEXT_LENS_EVENTS_ROUTE = "/tlon/context-lens/events";
+const CONTEXT_LENS_RUN_ROUTE = "/tlon/context-lens/run";
+const CONTEXT_LENS_BY_MESSAGE_ROUTE = "/tlon/context-lens/by-message";
 
 /**
  * Find the first positional argument (subcommand) by skipping credential flags
@@ -215,6 +219,48 @@ function writeSseEvent(res: any, event: ContextLensEvent) {
   res.write(`data: ${JSON.stringify(event)}\n\n`);
 }
 
+function readRouteQuery(req: any, key: string): string {
+  const rawUrl = typeof req.url === "string" ? req.url : "";
+  const parsed = new URL(rawUrl, "http://localhost");
+  return parsed.searchParams.get(key)?.trim() ?? "";
+}
+
+function registerContextLensLookupRoute(
+  api: any,
+  path: string,
+  queryKey: string,
+  lookup: (value: string) => unknown,
+) {
+  api.registerHttpRoute({
+    path,
+    auth: "plugin",
+    replaceExisting: true,
+    handler: async (req: any, res: any) => {
+      setContextLensCorsHeaders(req, res);
+      if (req.method === "OPTIONS") {
+        res.statusCode = 204;
+        res.end();
+        return;
+      }
+      if (req.method !== "GET") {
+        writeJson(res, 405, { error: "method_not_allowed" });
+        return;
+      }
+      const value = readRouteQuery(req, queryKey);
+      if (!value) {
+        writeJson(res, 400, { error: `missing_${queryKey}` });
+        return;
+      }
+      const lens = lookup(value);
+      if (!lens) {
+        writeJson(res, 404, { error: "not_found" });
+        return;
+      }
+      writeJson(res, 200, { lens });
+    },
+  });
+}
+
 export default defineChannelPluginEntry({
   id: "tlon",
   name: "Tlon",
@@ -360,6 +406,19 @@ export default defineChannelPluginEntry({
         req.on?.("aborted", cleanup);
       },
     });
+
+    registerContextLensLookupRoute(
+      api,
+      CONTEXT_LENS_RUN_ROUTE,
+      "lensId",
+      findRecentContextLensById,
+    );
+    registerContextLensLookupRoute(
+      api,
+      CONTEXT_LENS_BY_MESSAGE_ROUTE,
+      "messageId",
+      findRecentContextLensByOutputMessageId,
+    );
 
     // Register the tlon tool
     const tlonBinary = resolveTlonBinary({
