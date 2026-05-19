@@ -7,7 +7,6 @@
 
 import { describe, test, expect, beforeAll } from "vitest";
 import { createStateClient, getTestConfig, type StateClient } from "../lib/index.js";
-import { getLatestSequenceForAuthor, isPostNewerThanSequence } from "../lib/post-baseline.js";
 
 describe("connectivity", () => {
   let botState: StateClient;
@@ -52,7 +51,9 @@ describe("connectivity", () => {
   test("scries contacts from test user ship", async () => {
     console.log(`Scrying contacts from test user ship...`);
     const contacts = await userState.contacts();
-    console.log(`✓ Got ${Array.isArray(contacts) ? contacts.length : 0} contacts from test user ship`);
+    console.log(
+      `✓ Got ${Array.isArray(contacts) ? contacts.length : 0} contacts from test user ship`,
+    );
     expect(Array.isArray(contacts)).toBe(true);
   });
 
@@ -101,57 +102,26 @@ describe("connectivity", () => {
     console.log(`Sending test DM from ${userShip} to ${botShip}...`);
     const { markdownToStory } = await import("../../src/urbit/story.js");
 
-    try {
-      const testMessage = `connectivity-test-${Date.now()}`;
-      const story = markdownToStory(testMessage);
+    const testMessage = `connectivity-test-${Date.now()}`;
+    const story = markdownToStory(testMessage);
 
-      await userState.sendPost({ channelId: botShip, content: story });
-      console.log(`✓ Sent DM: "${testMessage}"`);
+    await userState.sendPost({ channelId: botShip, content: story });
+    console.log(`✓ Sent DM: "${testMessage}"`);
 
-      // Wait a bit for the message to propagate
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+    // Wait a bit for the message to propagate
+    await new Promise((resolve) => setTimeout(resolve, 2000));
 
-      // Check if the message appears in the DM channel
-      const posts = await userState.channelPosts(botShip, 10);
-      const found = (posts ?? []).some((post) => {
-        const p = post as { textContent?: string };
-        return p.textContent?.includes(testMessage);
-      });
-      console.log(`✓ Message found in DM channel: ${found}`);
-      expect(found).toBe(true);
+    // Check if the message appears in the DM channel
+    const posts = await userState.channelPosts(botShip, 10);
+    const found = (posts ?? []).some((post) => {
+      const p = post as { textContent?: string };
+      return p.textContent?.includes(testMessage);
+    });
+    console.log(`✓ Message found in DM channel: ${found}`);
+    expect(found).toBe(true);
 
-      // Wait for the bot to process and respond so subsequent tests have a clean baseline.
-      // This prevents the bot's response from bleeding into later tests.
-      console.log(`Waiting for bot to respond (to clear queue for subsequent tests)...`);
-      const maxWaitMs = 30_000;
-      const startTime = Date.now();
-      let botResponded = false;
-      while (Date.now() - startTime < maxWaitMs) {
-        await new Promise((resolve) => setTimeout(resolve, 2000));
-        const laterPosts = await userState.channelPosts(botShip, 30);
-        const ourMsgPost = (laterPosts ?? []).find((post) => {
-          const p = post as { textContent?: string; sequenceNum?: number | null };
-          return p.textContent?.includes(testMessage);
-        }) as { sequenceNum?: number | null } | undefined;
-        const ourMsgSequence = typeof ourMsgPost?.sequenceNum === "number"
-          ? ourMsgPost.sequenceNum
-          : await getLatestSequenceForAuthor(userState, botShip, botShip, 30);
-        const newerBotPost = (laterPosts ?? []).find((post) => {
-          const p = post as { authorId?: string; sequenceNum?: number | null };
-          return p.authorId === botShip && isPostNewerThanSequence(p, ourMsgSequence);
-        });
-        if (newerBotPost) {
-          console.log(`✓ Bot responded - queue cleared for subsequent tests`);
-          botResponded = true;
-          break;
-        }
-      }
-      if (!botResponded) {
-        console.log(`⚠ Bot did not respond within ${maxWaitMs}ms - subsequent tests may be affected`);
-      }
-    } catch (err) {
-      console.log(`✗ DM send failed:`, err);
-      throw err;
-    }
+    // Note: deliberately do NOT wait for the bot to auto-reply here.
+    // Bot behavior under the scripted fake model is verified in later
+    // suites (03-messages, etc.); this suite is for connectivity only.
   });
 });

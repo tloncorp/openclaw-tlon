@@ -108,7 +108,9 @@ describe("re-engagement nudges", () => {
         },
       }),
     ]);
-    console.log(`Seeded lastOwnerMessageDate=${offsetDate} (${Math.round(daysMs / (24 * 60 * 60 * 1000))} days ago)`);
+    console.log(
+      `Seeded lastOwnerMessageDate=${offsetDate} (${Math.round(daysMs / (24 * 60 * 60 * 1000))} days ago)`,
+    );
   }
 
   async function readLastNudgeStage(): Promise<number | null> {
@@ -138,13 +140,17 @@ describe("re-engagement nudges", () => {
         pollCount++;
         const newBotPosts = await readBotPostsSince(ownerState, botShip, baselineSequence);
         if (pollCount % 6 === 1) {
-          console.log(`[poll ${pollCount}] newBot=${newBotPosts.length} baseline=${baselineSequence}`);
+          console.log(
+            `[poll ${pollCount}] newBot=${newBotPosts.length} baseline=${baselineSequence}`,
+          );
         }
         const match = newBotPosts.filter((p) => p.text.includes(STAGE_1_MARKER));
         return match.length > 0 ? match[0] : null;
       },
-      300_000,
-      5_000,
+      // Tick interval is 5s in the test env; one tick should fire within
+      // 5-10s and produce the nudge. 30s gives generous headroom.
+      30_000,
+      1_000,
     );
 
     expect(nudgePost).not.toBeNull();
@@ -176,19 +182,19 @@ describe("re-engagement nudges", () => {
     expect(clearedStage).toBe(true);
     console.log(`lastNudgeStage cleared after owner reply`);
 
-    // Phase 3: across the next ~75 seconds (more than one scheduler tick
-    // if the interval is 1m), no additional nudge DM should be delivered.
-    // The owner is now "active" from the plugin's perspective, so the
+    // Phase 3: spans ~3 scheduler tick intervals (tick is 5s in the test
+    // env; window is 15s) to confirm the next tick does not send a duplicate
+    // nudge. The owner is now "active" from the plugin's perspective, so the
     // scheduler's daysIdle check short-circuits before any send.
     const postNudgeSequence = nudgePost!.sequenceNum;
     const startWait = Date.now();
-    const duplicateWindow = 75_000;
+    const duplicateWindow = 15_000;
     while (Date.now() - startWait < duplicateWindow) {
       const newBotPosts = await readBotPostsSince(ownerState, botShip, postNudgeSequence);
       const duplicates = newBotPosts.filter((p) => p.text.includes(STAGE_1_MARKER));
       expect(duplicates.length).toBe(0);
-      await new Promise((r) => setTimeout(r, 5_000));
+      await new Promise((r) => setTimeout(r, 2_500));
     }
     console.log(`Confirmed no duplicate nudge across a ${duplicateWindow / 1000}s window.`);
-  }, 480_000);
+  }, 120_000);
 });

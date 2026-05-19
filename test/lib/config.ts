@@ -6,41 +6,32 @@
  */
 
 import { existsSync } from "node:fs";
-import type { TestMode, TestClientConfig, ShipCredentials } from "./client.js";
+import type { TestClientConfig, ShipCredentials } from "./client.js";
 
 export interface TestEnvConfig {
-  mode: TestMode;
   /** Test user credentials (for sending prompts) */
   testUser: ShipCredentials;
   /** Bot credentials (for checking state after processing) */
   bot: ShipCredentials;
   /** Third-party ship credentials (non-owner, for security tests) */
   thirdParty?: ShipCredentials;
-  /** Direct mode options */
-  gatewayUrl?: string;
-  sessionKey?: string;
-  gatewayToken?: string;
 }
 
 /**
  * Get test configuration from environment variables.
  *
- * For tlon mode, you need TWO ships:
- * 1. Test user ship (to send DMs from) - TEST_USER_SHIP, TEST_USER_CODE
- * 2. Bot ship (to send DMs to and check state) - TLON_SHIP, TLON_CODE
+ * Two ships are needed:
+ *   1. Test user ship (to send DMs from) — TEST_USER_SHIP, TEST_USER_CODE
+ *   2. Bot ship (to send DMs to and check state) — TLON_SHIP, TLON_CODE
  *
  * Environment variables:
  * - TLON_URL: Ship URL (converted from host.docker.internal to localhost)
  * - TLON_SHIP: Bot ship name
  * - TLON_CODE: Bot access code (for state checks)
- * - TEST_USER_SHIP: Test user ship name (for sending DMs)
- * - TEST_USER_CODE: Test user access code
- * - TEST_MODE: "direct" or "tlon" (default: "tlon")
- * - TEST_GATEWAY_URL: Gateway URL (default: http://localhost:18789)
+ * - TEST_USER_URL/SHIP/CODE: Test user ship (default: bot)
+ * - TEST_THIRD_PARTY_URL/SHIP/CODE: Optional third-party ship for security tests
  */
 export function getTestConfig(): TestClientConfig {
-  // Default to tlon mode (direct mode not yet implemented)
-  const mode = (process.env.TEST_MODE ?? "tlon") as TestMode;
   const runningInDocker = existsSync("/.dockerenv");
 
   // Bot ship credentials (for receiving DMs and checking state)
@@ -69,8 +60,7 @@ export function getTestConfig(): TestClientConfig {
     };
   }
 
-  const config: TestClientConfig = {
-    mode,
+  return {
     testUser: {
       shipUrl: testUserUrl,
       shipName: testUserShip,
@@ -83,15 +73,6 @@ export function getTestConfig(): TestClientConfig {
     },
     thirdParty,
   };
-
-  if (mode === "direct") {
-    // Default to docker-exposed gateway port
-    config.gatewayUrl = process.env.TEST_GATEWAY_URL ?? "http://localhost:18789";
-    config.sessionKey = process.env.TEST_SESSION_KEY ?? "main";
-    config.gatewayToken = process.env.OPENCLAW_GATEWAY_TOKEN;
-  }
-
-  return config;
 }
 
 function normalizeShipUrl(url: string, runningInDocker: boolean): string {
