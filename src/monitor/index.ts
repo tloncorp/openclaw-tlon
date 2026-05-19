@@ -407,11 +407,17 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
   const computingPresence = createComputingPresenceTracker({ runtime });
   const contextLenses = createContextLensRegistry();
   const sessionDispatches = new Map<string, Promise<void>>();
-  const logContextLens = (lensId: string, phase: string) => {
+  const logContextLens = (
+    lensId: string,
+    phase: string,
+    detail?: Parameters<typeof publishContextLensEvent>[2],
+  ) => {
     const snapshot = contextLenses.get(lensId);
     if (snapshot) {
-      runtime.log?.(`[tlon] ContextLens ${JSON.stringify({ phase, ...snapshot })}`);
-      publishContextLensEvent(phase, snapshot);
+      runtime.log?.(
+        `[tlon] ContextLens ${JSON.stringify({ phase, detail, ...snapshot })}`,
+      );
+      publishContextLensEvent(phase, snapshot, detail);
     }
   };
   const runInSessionDispatchSlot = async <T>(
@@ -2200,9 +2206,13 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       },
       onToolStart: async (payload) => {
         const toolName = payload.name ?? "unknown";
-        contextLenses.recordToolCall(lens.lensId, toolName);
+        const toolLens = contextLenses.recordToolCall(lens.lensId, toolName);
         contextLenses.setStatus(lens.lensId, "tool_running");
-        logContextLens(lens.lensId, "tool_start");
+        logContextLens(lens.lensId, "tool_start", {
+          toolName,
+          toolPhase: payload.phase,
+          toolCallCount: toolLens?.tools.callCount,
+        });
         if (presenceConversationId) {
           await computingPresence.addToolCall({
             conversationId: presenceConversationId,

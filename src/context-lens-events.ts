@@ -5,6 +5,11 @@ export type ContextLensEvent = {
   at: number;
   phase: string;
   lens: ContextLens;
+  detail?: {
+    toolName?: string;
+    toolPhase?: string;
+    toolCallCount?: number;
+  };
 };
 
 type ContextLensListener = (event: ContextLensEvent) => void;
@@ -14,12 +19,17 @@ const listeners = new Set<ContextLensListener>();
 const recentEvents: ContextLensEvent[] = [];
 let nextSeq = 1;
 
-export function publishContextLensEvent(phase: string, lens: ContextLens) {
+export function publishContextLensEvent(
+  phase: string,
+  lens: ContextLens,
+  detail?: ContextLensEvent["detail"],
+) {
   const event: ContextLensEvent = {
     seq: nextSeq++,
     at: Date.now(),
     phase,
     lens,
+    ...(detail ? { detail } : {}),
   };
 
   recentEvents.push(event);
