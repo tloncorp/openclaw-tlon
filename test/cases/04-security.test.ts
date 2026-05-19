@@ -11,7 +11,7 @@
  *   ~ten = test user (configured as ownerShip)
  *   ~mug = third-party ship (non-owner, for security tests)
  */
-import { describe, test, expect, beforeAll } from "vitest";
+import { describe, test, expect, beforeAll, beforeEach } from "vitest";
 import {
   getFixtures,
   waitFor,
@@ -19,6 +19,32 @@ import {
   ensureThirdPartyDmAccess,
   type TestFixtures,
 } from "../lib/index.js";
+import { getLatestSequenceForAuthor } from "../lib/post-baseline.js";
+import { fakeModel } from "../support/fake-model/client.js";
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Verify the bot did NOT post a new DM to `viewerState`'s view of the bot's
+ * DM channel since `baselineSeq`. Local-docker SSE round-trip is <100ms;
+ * 2s is plenty of headroom to catch a stray reply.
+ */
+async function expectNoNewBotDm(
+  viewerState: TestFixtures["botState"],
+  botShip: string,
+  baselineSeq: number,
+  settleMs = 2_000,
+): Promise<void> {
+  await sleep(settleMs);
+  const after = await getLatestSequenceForAuthor(viewerState, botShip, botShip, 30);
+  if (after > baselineSeq) {
+    throw new Error(
+      `Bot posted unexpectedly: latest sequence ${after} > baseline ${baselineSeq}`,
+    );
+  }
+}
 
 describe("security", () => {
   let fixtures: TestFixtures;
@@ -26,6 +52,10 @@ describe("security", () => {
   beforeAll(async () => {
     fixtures = await getFixtures();
   }, 180_000);
+
+  beforeEach(async () => {
+    await fakeModel.reset();
+  });
 
   /**
    * Extract nickname from a contacts /v1/self scry result.
@@ -64,7 +94,7 @@ describe("security", () => {
         mark: "chat-unblock-ship",
         json: { ship: fixtures.thirdPartyShip },
       });
-      await new Promise((resolve) => setTimeout(resolve, 3000));
+      await new Promise((resolve) => setTimeout(resolve, 1500));
     }
   }
 
@@ -74,20 +104,26 @@ describe("security", () => {
 
   describe("tool access control", () => {
     test("owner can use the tlon tool", async () => {
-      // Owner (~ten) asks the bot to update its profile nickname via the tlon tool.
-      // If before_tool_call blocked the owner, the tool wouldn't execute and
-      // the nickname would never change on the bot ship.
+      // Owner (~ten) asks the bot to use the tlon tool to update nickname.
+      // before_tool_call should let the owner through → nickname changes.
       const nicknameToken = `sec-${Date.now().toString(36)}`;
-      const prompt = `Use the tlon tool to update your profile nickname to exactly "${nicknameToken}" and confirm when done.`;
+      const key = "sec-owner-tool";
+      await fakeModel.script(key, [
+        {
+          kind: "tool_call",
+          name: "tlon",
+          args: { command: `contacts update-profile --nickname "${nicknameToken}"` },
+        },
+        { kind: "text", content: "Nickname updated." },
+        // Trailing pad: agent makes one extra call after final text on tool flows.
+        { kind: "text", content: "Nickname updated." },
+      ]);
 
-      const response = await fixtures.client.prompt(prompt);
+      const response = await fixtures.client.prompt(
+        `[tlon-test:${key}] Update your profile nickname to "${nicknameToken}" via the tlon tool.`,
+      );
+      if (!response.success) {throw new Error(response.error ?? "Prompt failed");}
 
-      if (!response.success) {
-        throw new Error(response.error ?? "Prompt failed");
-      }
-
-      // Verify the nickname actually changed on the bot ship via scry.
-      // This proves the tlon tool was invoked, not just that the LLM replied.
       console.log(`[TEST] Waiting for bot nickname to be "${nicknameToken}"...`);
       const updated = await waitFor(async () => {
         const selfProfile = await fixtures.botState.scry<Record<string, unknown>>(
@@ -106,7 +142,7 @@ describe("security", () => {
       requireThirdParty(fixtures);
       await ensureThirdPartyDmAccess(fixtures);
 
-      // Snapshot current bot nickname via scry
+      // Snapshot current bot nickname via scry.
       const beforeProfile = await fixtures.botState.scry<Record<string, unknown>>(
         "contacts",
         "/v1/self",
@@ -114,20 +150,27 @@ describe("security", () => {
       const beforeNickname = extractNickname(beforeProfile);
       console.log(`\n[TEST] Bot nickname before: "${beforeNickname}"`);
 
-      // ~mug (non-owner) asks bot to update nickname via tlon tool.
-      // before_tool_call should block the tlon tool for non-owners.
+      // Script the model to try the same tool call as the owner test, only
+      // this time from ~mug. The plugin's before_tool_call gate should
+      // reject. Agent will likely emit a text refusal on the next turn.
       const token = `mug-${Date.now().toString(36)}`;
-      const prompt = `Use the tlon tool to update your profile nickname to exactly "${token}" and confirm when done.`;
-      console.log(`[TEST] Sending prompt as ${fixtures.thirdPartyShip}: "${prompt}"`);
+      const key = "sec-nonowner-tool";
+      await fakeModel.script(key, [
+        {
+          kind: "tool_call",
+          name: "tlon",
+          args: { command: `contacts update-profile --nickname "${token}"` },
+        },
+        { kind: "text", content: "Tool rejected by policy." },
+        { kind: "text", content: "Tool rejected by policy." },
+      ]);
 
-      // LLM processing for non-owner can be slow (tool attempt, blocked, retry/explain)
-      const response = await fixtures.thirdPartyClient.prompt(prompt, { timeoutMs: 90_000 });
-
-      // Bot should respond (DMs work). We don't assert on the response text because
-      // the LLM's phrasing is non-deterministic — the real test is the scry below.
+      const response = await fixtures.thirdPartyClient.prompt(
+        `[tlon-test:${key}] Update your profile nickname to "${token}" via the tlon tool.`,
+        { timeoutMs: 90_000 },
+      );
       expect(response.success).toBe(true);
 
-      // Verify nickname did NOT change (proves tool was actually blocked)
       const afterProfile = await fixtures.botState.scry<Record<string, unknown>>(
         "contacts",
         "/v1/self",
@@ -151,7 +194,7 @@ describe("security", () => {
         mark: "chat-block-ship",
         json: { ship: "~nec" },
       });
-      await new Promise((resolve) => setTimeout(resolve, 3000));
+      await new Promise((resolve) => setTimeout(resolve, 1500));
 
       try {
         const response = await fixtures.client.prompt("/banned");
@@ -170,7 +213,7 @@ describe("security", () => {
           mark: "chat-unblock-ship",
           json: { ship: "~nec" },
         });
-        await new Promise((resolve) => setTimeout(resolve, 3000));
+        await new Promise((resolve) => setTimeout(resolve, 1500));
       }
     });
 
@@ -182,7 +225,7 @@ describe("security", () => {
         mark: "chat-block-ship",
         json: { ship: "~nec" },
       });
-      await new Promise((resolve) => setTimeout(resolve, 3000));
+      await new Promise((resolve) => setTimeout(resolve, 1500));
 
       // Verify block is active via scry
       const blockedBefore = await getBlockedShips();
@@ -239,29 +282,29 @@ describe("security", () => {
         mark: "chat-block-ship",
         json: { ship: fixtures.thirdPartyShip },
       });
-      await new Promise((resolve) => setTimeout(resolve, 3000));
+      await sleep(1500);
 
       try {
-        // ~mug sends DM — the Urbit chat agent should silently drop it
-        console.log(`[TEST] Sending DM as blocked ${fixtures.thirdPartyShip}...`);
-        const response = await fixtures.thirdPartyClient.prompt(
-          "Are you there? Please respond.",
-          { timeoutMs: 20_000 },
+        const baselineSeq = await getLatestSequenceForAuthor(
+          fixtures.thirdPartyState,
+          fixtures.botShip,
+          fixtures.botShip,
+          30,
         );
+        console.log(`[TEST] Sending DM as blocked ${fixtures.thirdPartyShip}...`);
+        await fixtures.thirdPartyClient.sendDm("Are you there? Please respond.");
 
-                console.log(`[TEST] Response error: ${response.error}`);
-
-        // Bot should NOT respond — message never reached the SSE stream
-        expect(response.success).toBe(false);
+        // Urbit's chat agent drops the message before SSE → no bot reply
+        // should appear. 2s wait is plenty given local docker latency.
+        await expectNoNewBotDm(fixtures.thirdPartyState, fixtures.botShip, baselineSeq);
       } finally {
-        // Always unblock to restore DM access for subsequent tests
         console.log(`[TEST] Unblocking ${fixtures.thirdPartyShip}...`);
         await fixtures.botState.poke({
           app: "chat",
           mark: "chat-unblock-ship",
           json: { ship: fixtures.thirdPartyShip },
         });
-        await new Promise((resolve) => setTimeout(resolve, 3000));
+        await sleep(1500);
       }
     });
 
@@ -293,7 +336,7 @@ describe("security", () => {
         },
       });
       // Give the settings subscription time to propagate
-      await new Promise((resolve) => setTimeout(resolve, 3000));
+      await new Promise((resolve) => setTimeout(resolve, 1500));
     }
 
     /**
@@ -337,28 +380,30 @@ describe("security", () => {
         mark: "chat-block-ship",
         json: { ship: fixtures.thirdPartyShip },
       });
-      await new Promise((resolve) => setTimeout(resolve, 3000));
+      await new Promise((resolve) => setTimeout(resolve, 1500));
 
       try {
-        // Third party sends DM — Urbit drops it before it reaches the bot
+        const baselineSeq = await getLatestSequenceForAuthor(
+          fixtures.thirdPartyState,
+          fixtures.botShip,
+          fixtures.botShip,
+          30,
+        );
         console.log(`[TEST] Sending DM as blocked+allowlisted ${fixtures.thirdPartyShip}...`);
-        const response = await fixtures.thirdPartyClient.prompt(
+        await fixtures.thirdPartyClient.sendDm(
           "Testing blocked ship on allowlist. Please respond.",
-          { timeoutMs: 20_000 },
         );
 
-                console.log(`[TEST] Response error: ${response.error}`);
-
-        expect(response.success).toBe(false);
+        // Urbit-level block beats allowlist — no bot reply should appear.
+        await expectNoNewBotDm(fixtures.thirdPartyState, fixtures.botShip, baselineSeq);
       } finally {
-        // Clean up: unblock the ship
         console.log(`[TEST] Unblocking ${fixtures.thirdPartyShip}...`);
         await fixtures.botState.poke({
           app: "chat",
           mark: "chat-unblock-ship",
           json: { ship: fixtures.thirdPartyShip },
         });
-        await new Promise((resolve) => setTimeout(resolve, 3000));
+        await sleep(1500);
       }
     });
 
@@ -370,34 +415,40 @@ describe("security", () => {
       await ensureThirdPartyOffAllowlist();
       console.log(`\n[TEST] Removed ${fixtures.thirdPartyShip} from DM allowlist`);
 
-      // 2. Third party sends DM — should trigger an approval request to owner
+      // 2. Third party sends DM — should trigger an approval request to owner.
+      // Fire-and-forget (sendDm, not prompt) because the test asserts on
+      // settings-store state, not on a bot reply.
       console.log(`[TEST] ${fixtures.thirdPartyShip} sending DM to trigger approval...`);
-      const dmPromise = fixtures.thirdPartyClient.prompt(
-        "Hello, requesting to message.",
-        { timeoutMs: 90_000 },
-      );
+      await fixtures.thirdPartyClient.sendDm("Hello, requesting to message.");
 
       // 3. Wait for pending approval with notificationMessageId to appear
       console.log("[TEST] Waiting for pending approval with notification message ID...");
-      const approval = await waitFor(async () => {
-        const settings = await fixtures.botState.scry<{
-          all?: Record<string, Record<string, { pendingApprovals?: string }>>;
-        }>("settings", "/all");
-        const raw = settings?.all?.moltbot?.tlon?.pendingApprovals;
-        if (!raw) return undefined;
-        const approvals = JSON.parse(raw) as Array<{
-          id: string;
-          requestingShip: string;
-          notificationMessageId?: string;
-        }>;
-        const match = approvals.find(
-          (a) => a.requestingShip === fixtures.thirdPartyShip && a.notificationMessageId,
-        );
-        if (match) {
-          console.log(`[TEST] Found pending approval #${match.id} with notif ID: ${match.notificationMessageId}`);
-        }
-        return match;
-      }, 30_000, 2000, "pending approval with notificationMessageId");
+      await waitFor(
+        async () => {
+          const settings = await fixtures.botState.scry<{
+            all?: Record<string, Record<string, { pendingApprovals?: string }>>;
+          }>("settings", "/all");
+          const raw = settings?.all?.moltbot?.tlon?.pendingApprovals;
+          if (!raw) {return undefined;}
+          const approvals = JSON.parse(raw) as Array<{
+            id: string;
+            requestingShip: string;
+            notificationMessageId?: string;
+          }>;
+          const match = approvals.find(
+            (a) => a.requestingShip === fixtures.thirdPartyShip && a.notificationMessageId,
+          );
+          if (match) {
+            console.log(
+              `[TEST] Found pending approval #${match.id} with notif ID: ${match.notificationMessageId}`,
+            );
+          }
+          return match;
+        },
+        30_000,
+        2000,
+        "pending approval with notificationMessageId",
+      );
 
       // 4. Find the notification message in owner's DM channel with the bot
       // We need the post in writ-id format (~ship/ud-timestamp) for the react poke
@@ -408,7 +459,7 @@ describe("security", () => {
           const authorId = p.authorId ?? p.author;
           return authorId === fixtures.botShip;
         })
-        .sort((a: any, b: any) => (b.sentAt ?? 0) - (a.sentAt ?? 0));
+        .toSorted((a: any, b: any) => (b.sentAt ?? 0) - (a.sentAt ?? 0));
 
       // The most recent bot post should be the approval notification
       const notifPost = botPosts[0] as { id?: string; sentAt?: number } | undefined;
@@ -441,35 +492,33 @@ describe("security", () => {
 
       // 6. Wait for the approval to be processed (removed from pending)
       // Give ames time to relay the reaction from ~ten → ~zod
-      await new Promise((resolve) => setTimeout(resolve, 3000));
+      await new Promise((resolve) => setTimeout(resolve, 1500));
       console.log("[TEST] Waiting for approval to be processed...");
-      await waitFor(async () => {
-        const settings = await fixtures.botState.scry<{
-          all?: Record<string, Record<string, { pendingApprovals?: string }>>;
-        }>("settings", "/all");
-        const raw = settings?.all?.moltbot?.tlon?.pendingApprovals;
-        if (!raw) return true; // No approvals = processed
-        const approvals = JSON.parse(raw) as Array<{ requestingShip: string }>;
-        const still = approvals.find((a) => a.requestingShip === fixtures.thirdPartyShip);
-        if (!still) {
-          console.log("[TEST] Approval processed — no longer pending");
-          return true;
-        }
-        return undefined;
-      }, 40_000, 2000, "approval to be processed");
+      await waitFor(
+        async () => {
+          const settings = await fixtures.botState.scry<{
+            all?: Record<string, Record<string, { pendingApprovals?: string }>>;
+          }>("settings", "/all");
+          const raw = settings?.all?.moltbot?.tlon?.pendingApprovals;
+          if (!raw) {return true;} // No approvals = processed
+          const approvals = JSON.parse(raw) as Array<{ requestingShip: string }>;
+          const still = approvals.find((a) => a.requestingShip === fixtures.thirdPartyShip);
+          if (!still) {
+            console.log("[TEST] Approval processed — no longer pending");
+            return true;
+          }
+          return undefined;
+        },
+        40_000,
+        2000,
+        "approval to be processed",
+      );
 
       // 7. Verify the third party is now on the DM allowlist
       const updatedList = await getDmAllowlist();
       console.log(`[TEST] DM allowlist after reaction: ${JSON.stringify(updatedList)}`);
       expect(updatedList).toContain(fixtures.thirdPartyShip);
-
-      // Wait for the third party's original DM to complete
-      try {
-        await dmPromise;
-      } catch {
-        // OK if it times out — the approval replay might not produce a response
-      }
-    }, 180_000);
+    }, 60_000);
 
     test("deny reaction removes pending approval without allowlisting or blocking", async () => {
       requireThirdParty(fixtures);
@@ -479,30 +528,34 @@ describe("security", () => {
       await ensureThirdPartyOffAllowlist();
       console.log(`\n[TEST] Removed ${fixtures.thirdPartyShip} from DM allowlist`);
 
-      // 2. Third party sends DM — should trigger an approval request to owner
+      // 2. Third party sends DM — should trigger an approval request to owner.
+      // Fire-and-forget — the test asserts on settings state, not a bot reply
+      // (deny path means there should be NO reply).
       console.log(`[TEST] ${fixtures.thirdPartyShip} sending DM to trigger deny reaction...`);
-      const dmPromise = fixtures.thirdPartyClient.prompt(
-        "Hello, requesting to message.",
-        { timeoutMs: 90_000 },
-      );
+      await fixtures.thirdPartyClient.sendDm("Hello, requesting to message.");
 
       // 3. Wait for pending approval with notificationMessageId
       console.log("[TEST] Waiting for pending approval with notification message ID...");
-      await waitFor(async () => {
-        const settings = await fixtures.botState.scry<{
-          all?: Record<string, Record<string, { pendingApprovals?: string }>>;
-        }>("settings", "/all");
-        const raw = settings?.all?.moltbot?.tlon?.pendingApprovals;
-        if (!raw) return undefined;
-        const approvals = JSON.parse(raw) as Array<{
-          id: string;
-          requestingShip: string;
-          notificationMessageId?: string;
-        }>;
-        return approvals.find(
-          (a) => a.requestingShip === fixtures.thirdPartyShip && a.notificationMessageId,
-        );
-      }, 30_000, 2000, "pending approval with notificationMessageId");
+      await waitFor(
+        async () => {
+          const settings = await fixtures.botState.scry<{
+            all?: Record<string, Record<string, { pendingApprovals?: string }>>;
+          }>("settings", "/all");
+          const raw = settings?.all?.moltbot?.tlon?.pendingApprovals;
+          if (!raw) {return undefined;}
+          const approvals = JSON.parse(raw) as Array<{
+            id: string;
+            requestingShip: string;
+            notificationMessageId?: string;
+          }>;
+          return approvals.find(
+            (a) => a.requestingShip === fixtures.thirdPartyShip && a.notificationMessageId,
+          );
+        },
+        30_000,
+        2000,
+        "pending approval with notificationMessageId",
+      );
 
       // 4. Find notification message and react 👎
       console.log("[TEST] Looking up notification message in owner's DMs...");
@@ -512,7 +565,7 @@ describe("security", () => {
           const authorId = p.authorId ?? p.author;
           return authorId === fixtures.botShip;
         })
-        .sort((a: any, b: any) => (b.sentAt ?? 0) - (a.sentAt ?? 0));
+        .toSorted((a: any, b: any) => (b.sentAt ?? 0) - (a.sentAt ?? 0));
 
       const notifPost = botPosts[0] as { id?: string; sentAt?: number } | undefined;
       expect(notifPost).toBeDefined();
@@ -540,17 +593,24 @@ describe("security", () => {
       });
 
       // 5. Wait for approval to be processed (removed from pending)
-      await new Promise((resolve) => setTimeout(resolve, 3000));
+      await new Promise((resolve) => setTimeout(resolve, 1500));
       console.log("[TEST] Waiting for denial to be processed...");
-      await waitFor(async () => {
-        const settings = await fixtures.botState.scry<{
-          all?: Record<string, Record<string, { pendingApprovals?: string }>>;
-        }>("settings", "/all");
-        const raw = settings?.all?.moltbot?.tlon?.pendingApprovals;
-        if (!raw) return true;
-        const approvals = JSON.parse(raw) as Array<{ requestingShip: string }>;
-        return approvals.find((a) => a.requestingShip === fixtures.thirdPartyShip) ? undefined : true;
-      }, 40_000, 2000, "deny approval to be processed");
+      await waitFor(
+        async () => {
+          const settings = await fixtures.botState.scry<{
+            all?: Record<string, Record<string, { pendingApprovals?: string }>>;
+          }>("settings", "/all");
+          const raw = settings?.all?.moltbot?.tlon?.pendingApprovals;
+          if (!raw) {return true;}
+          const approvals = JSON.parse(raw) as Array<{ requestingShip: string }>;
+          return approvals.find((a) => a.requestingShip === fixtures.thirdPartyShip)
+            ? undefined
+            : true;
+        },
+        40_000,
+        2000,
+        "deny approval to be processed",
+      );
 
       // 6. Verify ship was not allowlisted
       const updatedList = await getDmAllowlist();
@@ -562,17 +622,10 @@ describe("security", () => {
       console.log(`[TEST] Blocked ships after deny: ${JSON.stringify(blockedList)}`);
       expect(Array.isArray(blockedList) ? blockedList : []).not.toContain(fixtures.thirdPartyShip);
 
-      // 8. Original DM should not be replayed
-      try {
-        await dmPromise;
-      } catch {
-        // Timeout is expected: deny should remove pending approval without sending a response
-      }
-
       // Clean up: restore allowlist baseline for later tests
       await ensureThirdPartyOnAllowlist();
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-    }, 180_000);
+      await sleep(1000);
+    }, 60_000);
 
     test("removing ship from allowlist triggers approval instead of response", async () => {
       requireThirdParty(fixtures);
@@ -586,33 +639,37 @@ describe("security", () => {
       await ensureThirdPartyOffAllowlist();
       console.log(`[TEST] Removed ${fixtures.thirdPartyShip} from DM allowlist`);
 
-      // 3. Third party sends DM — should trigger approval, not a bot response
+      // 3. Third party sends DM — should trigger approval, not a bot response.
+      // Fire-and-forget — the assertion is "pending approval was created".
       console.log(`[TEST] ${fixtures.thirdPartyShip} sending DM (should trigger approval)...`);
-      const dmPromise = fixtures.thirdPartyClient.prompt(
-        "Hello after allowlist removal test.",
-        { timeoutMs: 30_000 },
-      );
+      await fixtures.thirdPartyClient.sendDm("Hello after allowlist removal test.");
 
       // 4. Wait for a pending approval to appear for this ship
-      const approval = await waitFor(async () => {
-        const settings = await fixtures.botState.scry<{
-          all?: Record<string, Record<string, { pendingApprovals?: string }>>;
-        }>("settings", "/all");
-        const raw = settings?.all?.moltbot?.tlon?.pendingApprovals;
-        if (!raw) return undefined;
-        const approvals = JSON.parse(raw) as Array<{
-          id: string;
-          requestingShip: string;
-        }>;
-        return approvals.find((a) => a.requestingShip === fixtures.thirdPartyShip);
-      }, 30_000, 2000, "pending approval after allowlist removal");
+      const approval = await waitFor(
+        async () => {
+          const settings = await fixtures.botState.scry<{
+            all?: Record<string, Record<string, { pendingApprovals?: string }>>;
+          }>("settings", "/all");
+          const raw = settings?.all?.moltbot?.tlon?.pendingApprovals;
+          if (!raw) {return undefined;}
+          const approvals = JSON.parse(raw) as Array<{
+            id: string;
+            requestingShip: string;
+          }>;
+          return approvals.find((a) => a.requestingShip === fixtures.thirdPartyShip);
+        },
+        30_000,
+        2000,
+        "pending approval after allowlist removal",
+      );
 
       expect(approval).toBeDefined();
-      console.log(`[TEST] Approval created: #${approval!.id} — allowlist removal propagated correctly`);
+      console.log(
+        `[TEST] Approval created: #${approval.id} — allowlist removal propagated correctly`,
+      );
 
       // Clean up: re-add to allowlist and clear pending approvals
       await ensureThirdPartyOnAllowlist();
-      // Clear the pending approval so it doesn't interfere with later tests
       await fixtures.botState.poke({
         app: "settings",
         mark: "settings-event",
@@ -625,10 +682,8 @@ describe("security", () => {
           },
         },
       });
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-
-      try { await dmPromise; } catch { /* timeout OK */ }
-    }, 90_000);
+      await sleep(1000);
+    }, 30_000);
 
     test("block reaction removes ship from allowlist", async () => {
       requireThirdParty(fixtures);
@@ -642,29 +697,32 @@ describe("security", () => {
       await ensureThirdPartyOffAllowlist();
       console.log(`[TEST] Removed ${fixtures.thirdPartyShip} from allowlist to trigger approval`);
 
-      // 3. Third party sends DM — triggers approval
+      // 3. Third party sends DM — triggers approval. Fire-and-forget — the
+      // assertions are on allowlist and blocked-ship state, not on bot reply.
       console.log(`[TEST] ${fixtures.thirdPartyShip} sending DM to trigger approval...`);
-      const dmPromise = fixtures.thirdPartyClient.prompt(
-        "Hello, testing block reaction.",
-        { timeoutMs: 90_000 },
-      );
+      await fixtures.thirdPartyClient.sendDm("Hello, testing block reaction.");
 
       // 4. Wait for pending approval with notificationMessageId
-      await waitFor(async () => {
-        const settings = await fixtures.botState.scry<{
-          all?: Record<string, Record<string, { pendingApprovals?: string }>>;
-        }>("settings", "/all");
-        const raw = settings?.all?.moltbot?.tlon?.pendingApprovals;
-        if (!raw) return undefined;
-        const approvals = JSON.parse(raw) as Array<{
-          id: string;
-          requestingShip: string;
-          notificationMessageId?: string;
-        }>;
-        return approvals.find(
-          (a) => a.requestingShip === fixtures.thirdPartyShip && a.notificationMessageId,
-        );
-      }, 30_000, 2000, "pending approval with notificationMessageId");
+      await waitFor(
+        async () => {
+          const settings = await fixtures.botState.scry<{
+            all?: Record<string, Record<string, { pendingApprovals?: string }>>;
+          }>("settings", "/all");
+          const raw = settings?.all?.moltbot?.tlon?.pendingApprovals;
+          if (!raw) {return undefined;}
+          const approvals = JSON.parse(raw) as Array<{
+            id: string;
+            requestingShip: string;
+            notificationMessageId?: string;
+          }>;
+          return approvals.find(
+            (a) => a.requestingShip === fixtures.thirdPartyShip && a.notificationMessageId,
+          );
+        },
+        30_000,
+        2000,
+        "pending approval with notificationMessageId",
+      );
 
       // 5. Find notification message and react 🛑 (block)
       const posts = await fixtures.userState.channelPosts(fixtures.botShip, 10);
@@ -673,7 +731,7 @@ describe("security", () => {
           const authorId = p.authorId ?? p.author;
           return authorId === fixtures.botShip;
         })
-        .sort((a: any, b: any) => (b.sentAt ?? 0) - (a.sentAt ?? 0));
+        .toSorted((a: any, b: any) => (b.sentAt ?? 0) - (a.sentAt ?? 0));
 
       const notifPost = botPosts[0] as { id?: string } | undefined;
       expect(notifPost).toBeDefined();
@@ -701,16 +759,23 @@ describe("security", () => {
 
       // 6. Wait for approval to be processed
       // Give ames time to relay the reaction from ~ten → ~zod
-      await new Promise((resolve) => setTimeout(resolve, 3000));
-      await waitFor(async () => {
-        const settings = await fixtures.botState.scry<{
-          all?: Record<string, Record<string, { pendingApprovals?: string }>>;
-        }>("settings", "/all");
-        const raw = settings?.all?.moltbot?.tlon?.pendingApprovals;
-        if (!raw) return true;
-        const approvals = JSON.parse(raw) as Array<{ requestingShip: string }>;
-        return approvals.find((a) => a.requestingShip === fixtures.thirdPartyShip) ? undefined : true;
-      }, 40_000, 2000, "block approval to be processed");
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      await waitFor(
+        async () => {
+          const settings = await fixtures.botState.scry<{
+            all?: Record<string, Record<string, { pendingApprovals?: string }>>;
+          }>("settings", "/all");
+          const raw = settings?.all?.moltbot?.tlon?.pendingApprovals;
+          if (!raw) {return true;}
+          const approvals = JSON.parse(raw) as Array<{ requestingShip: string }>;
+          return approvals.find((a) => a.requestingShip === fixtures.thirdPartyShip)
+            ? undefined
+            : true;
+        },
+        40_000,
+        2000,
+        "block approval to be processed",
+      );
 
       // 7. Verify ship was removed from allowlist
       const updatedList = await getDmAllowlist();
@@ -718,13 +783,20 @@ describe("security", () => {
       expect(updatedList).not.toContain(fixtures.thirdPartyShip);
 
       // 8. Verify ship is blocked
-      const blocked = await waitFor(async () => {
-        try {
-          const list = await fixtures.botState.scry<string[]>("chat", "/blocked");
-          if (Array.isArray(list) && list.includes(fixtures.thirdPartyShip!)) return list;
-        } catch { /* scry may fail transiently */ }
-        return undefined;
-      }, 30_000, 2000, "ship to appear in blocked list");
+      const blocked = await waitFor(
+        async () => {
+          try {
+            const list = await fixtures.botState.scry<string[]>("chat", "/blocked");
+            if (Array.isArray(list) && list.includes(fixtures.thirdPartyShip)) {return list;}
+          } catch {
+            /* scry may fail transiently */
+          }
+          return undefined;
+        },
+        30_000,
+        2000,
+        "ship to appear in blocked list",
+      );
       console.log(`[TEST] Blocked ships: ${JSON.stringify(blocked)}`);
       expect(blocked).toContain(fixtures.thirdPartyShip);
 
@@ -735,9 +807,7 @@ describe("security", () => {
         json: { ship: fixtures.thirdPartyShip },
       });
       await ensureThirdPartyOnAllowlist();
-      await new Promise((resolve) => setTimeout(resolve, 3000));
-
-      try { await dmPromise; } catch { /* timeout OK */ }
-    }, 120_000);
+      await sleep(1500);
+    }, 60_000);
   });
 });
