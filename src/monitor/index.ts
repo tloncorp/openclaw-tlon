@@ -129,6 +129,7 @@ import {
 } from "./approval.js";
 import { setBridge, removeBridge, type ApprovalCommandBridge } from "./command-bridge.js";
 import { createComputingPresenceTracker } from "./computing-presence.js";
+import { publishContextLensEvent } from "../context-lens-events.js";
 import { fetchAllChannels, fetchInitData } from "./discovery.js";
 import {
   cacheMessage,
@@ -410,6 +411,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     const snapshot = contextLenses.get(lensId);
     if (snapshot) {
       runtime.log?.(`[tlon] ContextLens ${JSON.stringify({ phase, ...snapshot })}`);
+      publishContextLensEvent(phase, snapshot);
     }
   };
   const runInSessionDispatchSlot = async <T>(
@@ -1903,6 +1905,14 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
               text: noHistoryMsg,
             });
           }
+          contextLenses.recordPersistence(lens.lensId, { postsReply: true });
+          contextLenses.recordLifecycle(lens.lensId, {
+            completedAt: Date.now(),
+            durationMs: Date.now() - lens.createdAt,
+            deliveredMessageCount: 1,
+          });
+          contextLenses.setStatus(lens.lensId, "completed");
+          logContextLens(lens.lensId, "final");
           return;
         }
 
@@ -1937,6 +1947,14 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
             text: errorMsg,
           });
         }
+        contextLenses.recordPersistence(lens.lensId, { postsReply: true });
+        contextLenses.recordLifecycle(lens.lensId, {
+          completedAt: Date.now(),
+          durationMs: Date.now() - lens.createdAt,
+          deliveredMessageCount: 1,
+        });
+        contextLenses.setStatus(lens.lensId, "completed");
+        logContextLens(lens.lensId, "final");
         return;
       }
     }
@@ -2170,6 +2188,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
           provider,
           model,
         });
+        logContextLens(lens.lensId, "model_selected");
       },
       onAssistantMessageStart: async () => {
         if (presenceConversationId) {

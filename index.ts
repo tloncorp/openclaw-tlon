@@ -14,6 +14,11 @@ import { recordToolCall } from "./src/telemetry.js";
 import { resolveTlonBinary } from "./src/tlon-binary.js";
 import { checkBlockedSendOperation } from "./src/tlon-tool-guard.js";
 import {
+  listRecentContextLensEvents,
+  subscribeToContextLensEvents,
+  type ContextLensEvent,
+} from "./src/context-lens-events.js";
+import {
   formatToolTraceEvent,
   liveToolTraceContentsEnabled,
   shouldLogAfterToolTrace,
@@ -48,6 +53,8 @@ const ALLOWED_TLON_COMMANDS = new Set([
 /** Credential flags that the tlon skill binary accepts before the subcommand. */
 const CREDENTIAL_FLAGS_WITH_VALUE = new Set(["--config", "--url", "--ship", "--code", "--cookie"]);
 const DEFAULT_TLON_TOOL_TIMEOUT_MS = 45_000;
+const CONTEXT_LENS_RECENT_ROUTE = "/tlon/context-lens/recent";
+const CONTEXT_LENS_EVENTS_ROUTE = "/tlon/context-lens/events";
 
 /**
  * Find the first positional argument (subcommand) by skipping credential flags
@@ -186,6 +193,28 @@ function runTlonCommand(
   });
 }
 
+function setContextLensCorsHeaders(req: any, res: any) {
+  const origin = typeof req.headers?.origin === "string" ? req.headers.origin : "";
+  if (/^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(?::\d+)?$/.test(origin)) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Vary", "Origin");
+  }
+  res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+}
+
+function writeJson(res: any, statusCode: number, payload: unknown) {
+  res.statusCode = statusCode;
+  res.setHeader("Content-Type", "application/json; charset=utf-8");
+  res.end(JSON.stringify(payload));
+}
+
+function writeSseEvent(res: any, event: ContextLensEvent) {
+  res.write(`id: ${event.seq}\n`);
+  res.write("event: context-lens\n");
+  res.write(`data: ${JSON.stringify(event)}\n\n`);
+}
+
 export default defineChannelPluginEntry({
   id: "tlon",
   name: "Tlon",
@@ -273,6 +302,62 @@ export default defineChannelPluginEntry({
       description: "Show Tlon plugin version.",
       handler: async () => {
         return { text: `Tlon plugin v${PLUGIN_VERSION} (${PLUGIN_COMMIT})` };
+      },
+    });
+
+    api.registerHttpRoute({
+      path: CONTEXT_LENS_RECENT_ROUTE,
+      auth: "plugin",
+      replaceExisting: true,
+      handler: async (req, res) => {
+        setContextLensCorsHeaders(req, res);
+        if (req.method === "OPTIONS") {
+          res.statusCode = 204;
+          res.end();
+          return;
+        }
+        if (req.method !== "GET") {
+          writeJson(res, 405, { error: "method_not_allowed" });
+          return;
+        }
+        writeJson(res, 200, { events: listRecentContextLensEvents() });
+      },
+    });
+
+    api.registerHttpRoute({
+      path: CONTEXT_LENS_EVENTS_ROUTE,
+      auth: "plugin",
+      replaceExisting: true,
+      handler: async (req, res) => {
+        setContextLensCorsHeaders(req, res);
+        if (req.method === "OPTIONS") {
+          res.statusCode = 204;
+          res.end();
+          return;
+        }
+        if (req.method !== "GET") {
+          writeJson(res, 405, { error: "method_not_allowed" });
+          return;
+        }
+
+        res.statusCode = 200;
+        res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
+        res.setHeader("Cache-Control", "no-cache, no-transform");
+        res.setHeader("Connection", "keep-alive");
+        res.write(": connected\n\n");
+
+        for (const event of listRecentContextLensEvents().slice(-25)) {
+          writeSseEvent(res, event);
+        }
+
+        const unsubscribe = subscribeToContextLensEvents((event) => {
+          writeSseEvent(res, event);
+        });
+        const cleanup = () => {
+          unsubscribe();
+        };
+        req.on?.("close", cleanup);
+        req.on?.("aborted", cleanup);
       },
     });
 
