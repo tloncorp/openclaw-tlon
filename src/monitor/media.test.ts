@@ -116,6 +116,17 @@ describe("parseBlobData", () => {
     expect(result![0]).toMatchObject({ type: "unknown" });
     expect(result![1]).toMatchObject({ type: "file" });
   });
+
+  it("degrades metadata-only context lens blobs without treating them as media", () => {
+    const blob = JSON.stringify([
+      { type: "tlon-context-lens", version: 1, lensId: "lens-123" },
+      { type: "file", version: 1, fileUri: "https://example.com/a.pdf", size: 100 },
+    ]);
+    const result = parseBlobData(blob);
+    expect(result).toHaveLength(2);
+    expect(result![0]).toMatchObject({ type: "unknown" });
+    expect(result![1]).toMatchObject({ type: "file" });
+  });
 });
 
 describe("formatBlobAnnotations", () => {
@@ -269,6 +280,16 @@ describe("blob download limits", () => {
     expect(result.notices).toEqual([
       "[blob not downloaded: large-report.pdf is 101.0MB, over the 100.0MB limit]",
     ]);
+  });
+
+  it("ignores metadata-only context lens blobs when downloading attachments", async () => {
+    const result = await downloadBlobAttachments(
+      [{ type: "tlon-context-lens", version: 1, lensId: "lens-123" }],
+      mediaDir,
+    );
+
+    expect(mockedFetchWithSsrFGuard).not.toHaveBeenCalled();
+    expect(result).toEqual({ attachments: [], notices: [] });
   });
 
   it("skips oversized blob attachments when content-length exceeds the cap", async () => {

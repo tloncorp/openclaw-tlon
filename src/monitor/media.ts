@@ -35,6 +35,11 @@ export interface BlobAttachmentDownloadResult {
   notices: string[];
 }
 
+type DownloadableBlobEntry = Extract<
+  ClientPostBlobData[number],
+  { type: "file" | "voicememo" | "video" }
+>;
+
 class MediaTooLargeError extends Error {
   constructor(
     public readonly observedSizeBytes: number,
@@ -354,9 +359,9 @@ export async function downloadBlobAttachments(
   const notices: string[] = [];
 
   for (const entry of blobData) {
-    if (entry.type === "unknown") continue;
+    if (!isDownloadableBlobEntry(entry)) continue;
 
-    const uri = "fileUri" in entry ? entry.fileUri : undefined;
+    const uri = entry.fileUri;
     if (!uri) continue;
 
     // Only download http/https URIs
@@ -390,12 +395,16 @@ export async function downloadBlobAttachments(
 }
 
 function formatBlobTooLargeNotice(
-  entry: Exclude<ClientPostBlobData[number], { type: "unknown" }>,
+  entry: DownloadableBlobEntry,
   sizeBytes?: number,
 ): string {
   const label = entry.type === "voicememo" ? "voice memo" : entry.name || "blob attachment";
   const sizeText = sizeBytes !== undefined ? formatFileSize(sizeBytes) : "unknown size";
   return `[blob not downloaded: ${label} is ${sizeText}, over the ${formatFileSize(MAX_BLOB_DOWNLOAD_BYTES)} limit]`;
+}
+
+function isDownloadableBlobEntry(entry: ClientPostBlobData[number]): entry is DownloadableBlobEntry {
+  return entry.type === "file" || entry.type === "voicememo" || entry.type === "video";
 }
 
 function formatFileSize(bytes: number): string {

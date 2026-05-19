@@ -108,6 +108,7 @@ const apiClientParamsSlot = sharedSlot<SharedApiClientParams>(
 );
 import { authenticate } from "../urbit/auth.js";
 import { describeError } from "../urbit/errors.js";
+import { serializeContextLensReferenceBlob } from "../urbit/blob.js";
 import { ssrfPolicyFromAllowPrivateNetwork } from "../urbit/context.js";
 import { sendDm, sendChannelPost, type BotProfile } from "../urbit/send.js";
 import { UrbitSSEClient } from "../urbit/sse-client.js";
@@ -614,6 +615,15 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       channelNames,
       groupNames: groupNameCache,
     };
+  }
+
+  function buildContextLensReferenceBlobField(lensId: string): string | undefined {
+    try {
+      return serializeContextLensReferenceBlob(lensId);
+    } catch (err) {
+      runtime.error?.(`[tlon] Failed to build Context Lens reference blob: ${String(err)}`);
+      return undefined;
+    }
   }
 
   // Migrate file config to settings store (seed on first run)
@@ -2039,6 +2049,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         if (history.length === 0) {
           const noHistoryMsg =
             "I couldn't fetch any messages for this channel. It might be empty or there might be a permissions issue.";
+          const contextLensBlob = buildContextLensReferenceBlobField(lens.lensId);
           let outputMessageId: string | null = null;
           if (isGroup && groupChannel) {
             const result = await sendChannelPost({
@@ -2046,6 +2057,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
               fromShip: botShipName,
               nest: groupChannel,
               story: markdownToStory(noHistoryMsg),
+              blob: contextLensBlob,
             });
             outputMessageId = await resolveChannelOutputMessageId(
               groupChannel,
@@ -2058,6 +2070,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
               fromShip: botShipName,
               toShip: senderShip,
               text: noHistoryMsg,
+              blob: contextLensBlob,
             });
             outputMessageId = result.messageId;
           }
@@ -2106,6 +2119,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
           "4. Notable participants";
       } catch (error: any) {
         const errorMsg = `Sorry, I encountered an error while fetching the channel history: ${error?.message ?? String(error)}`;
+        const contextLensBlob = buildContextLensReferenceBlobField(lens.lensId);
         let outputMessageId: string | null = null;
         if (isGroup && groupChannel) {
           const result = await sendChannelPost({
@@ -2113,6 +2127,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
             fromShip: botShipName,
             nest: groupChannel,
             story: markdownToStory(errorMsg),
+            blob: contextLensBlob,
           });
           outputMessageId = await resolveChannelOutputMessageId(
             groupChannel,
@@ -2125,6 +2140,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
             fromShip: botShipName,
             toShip: senderShip,
             text: errorMsg,
+            blob: contextLensBlob,
           });
           outputMessageId = result.messageId;
         }
@@ -2497,6 +2513,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
                 }
 
                 let outputMessageId: string | null = null;
+                const contextLensBlob = buildContextLensReferenceBlobField(lens.lensId);
                 if (isGroup && groupChannel) {
                   // Send to any channel type (chat, heap, diary) using the nest directly
                   const result = await sendChannelPost({
@@ -2505,6 +2522,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
                     nest: groupChannel,
                     story: markdownToStory(replyText),
                     replyToId: deliverParentId ?? undefined,
+                    blob: contextLensBlob,
                   });
                   outputMessageId = await resolveChannelOutputMessageId(
                     groupChannel,
@@ -2525,6 +2543,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
                     toShip: senderShip,
                     text: replyText,
                     replyToId: deliverParentId ? String(deliverParentId) : undefined,
+                    blob: contextLensBlob,
                   });
                   outputMessageId = result.messageId;
                 }
