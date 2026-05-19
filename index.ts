@@ -15,7 +15,6 @@ import { resolveTlonBinary } from "./src/tlon-binary.js";
 import { checkBlockedSendOperation } from "./src/tlon-tool-guard.js";
 import {
   findRecentContextLensById,
-  findRecentContextLensByOutputMessageId,
   listRecentContextLensEvents,
   subscribeToContextLensEvents,
   type ContextLensEvent,
@@ -58,7 +57,6 @@ const DEFAULT_TLON_TOOL_TIMEOUT_MS = 45_000;
 const CONTEXT_LENS_RECENT_ROUTE = "/tlon/context-lens/recent";
 const CONTEXT_LENS_EVENTS_ROUTE = "/tlon/context-lens/events";
 const CONTEXT_LENS_RUN_ROUTE = "/tlon/context-lens/run";
-const CONTEXT_LENS_BY_MESSAGE_ROUTE = "/tlon/context-lens/by-message";
 
 /**
  * Find the first positional argument (subcommand) by skipping credential flags
@@ -412,12 +410,6 @@ export default defineChannelPluginEntry({
       CONTEXT_LENS_RUN_ROUTE,
       "lensId",
       findRecentContextLensById,
-    );
-    registerContextLensLookupRoute(
-      api,
-      CONTEXT_LENS_BY_MESSAGE_ROUTE,
-      "messageId",
-      findRecentContextLensByOutputMessageId,
     );
 
     // Register the tlon tool

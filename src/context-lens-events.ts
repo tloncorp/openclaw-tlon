@@ -55,30 +55,6 @@ export function findRecentContextLensById(lensId: string) {
   return null;
 }
 
-function messageIdCandidates(messageId: string) {
-  const trimmed = messageId.trim();
-  const slashIndex = trimmed.indexOf("/");
-  return new Set([
-    trimmed,
-    slashIndex >= 0 ? trimmed.slice(slashIndex + 1) : trimmed,
-  ]);
-}
-
-export function findRecentContextLensByOutputMessageId(messageId: string) {
-  const candidates = messageIdCandidates(messageId);
-  for (const event of [...recentEvents].reverse()) {
-    for (const output of event.lens.outputs ?? []) {
-      const outputCandidates = messageIdCandidates(output.messageId);
-      for (const candidate of candidates) {
-        if (outputCandidates.has(candidate)) {
-          return event.lens;
-        }
-      }
-    }
-  }
-  return null;
-}
-
 export function subscribeToContextLensEvents(listener: ContextLensListener) {
   listeners.add(listener);
   return () => {

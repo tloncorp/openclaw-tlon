@@ -1,9 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { createContextLensRegistry, hashSessionKey } from "./context-lens.js";
-import {
-  findRecentContextLensByOutputMessageId,
-  publishContextLensEvent,
-} from "./context-lens-events.js";
 
 describe("context lens registry", () => {
   it("creates redacted receipts without storing raw session keys or prompt text", () => {
@@ -165,7 +161,6 @@ describe("context lens registry", () => {
         queuedFinal: false,
       },
     });
-    expect(registry.findByOutputMessageId("~zod/170.141.184")?.lensId).toBe(lens.lensId);
   });
 
   it("records no-reply and timeout lifecycle outcomes without raw content", () => {
@@ -223,24 +218,4 @@ describe("context lens registry", () => {
     expect(registry.get(third.lensId)).toBeNull();
   });
 
-  it("finds recent lenses by outbound message ids", () => {
-    const registry = createContextLensRegistry();
-    const lens = registry.create({ messageId: "inbound", chatType: "dm" });
-    registry.recordOutput(lens.lensId, {
-      messageId: "~nec/170.141.184",
-      conversationId: "~ten",
-      kind: "dm",
-      sentAt: Date.now(),
-    });
-    const snapshot = registry.get(lens.lensId)!;
-    publishContextLensEvent("final", snapshot);
-
-    expect(
-      findRecentContextLensByOutputMessageId("~nec/170.141.184")?.lensId,
-    ).toBe(lens.lensId);
-    expect(findRecentContextLensByOutputMessageId("170.141.184")?.lensId).toBe(
-      lens.lensId,
-    );
-    expect(findRecentContextLensByOutputMessageId("~nec/not-this-message")).toBeNull();
-  });
 });

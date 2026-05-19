@@ -457,16 +457,6 @@ export function createContextLensRegistry(opts: { ttlMs?: number; maxEntries?: n
     });
   };
 
-  const findByOutputMessageId = (messageId: string) => {
-    prune();
-    for (const lens of lenses.values()) {
-      if (lens.outputs.some((output) => output.messageId === messageId)) {
-        return cloneLens(lens);
-      }
-    }
-    return null;
-  };
-
   return {
     create,
     update,
@@ -479,7 +469,6 @@ export function createContextLensRegistry(opts: { ttlMs?: number; maxEntries?: n
     recordToolCall,
     completeOpenToolRuns,
     recordOutput,
-    findByOutputMessageId,
     get: (lensId: string) => {
       prune();
       const lens = lenses.get(lensId);
