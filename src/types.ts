@@ -124,9 +124,11 @@ export function resolveTlonAccount(
   const code = (account?.code ?? base.code ?? null) as string | null;
   const accountNetwork = (account as { network?: { dangerouslyAllowPrivateNetwork?: boolean } })
     ?.network;
+  const accountAllowPrivateNetwork = (account as { allowPrivateNetwork?: boolean })
+    ?.allowPrivateNetwork;
   const allowPrivateNetwork = (accountNetwork?.dangerouslyAllowPrivateNetwork ??
+    accountAllowPrivateNetwork ??
     base.network?.dangerouslyAllowPrivateNetwork ??
-    (account as { allowPrivateNetwork?: boolean })?.allowPrivateNetwork ??
     base.allowPrivateNetwork ??
     null) as boolean | null;
   const groupChannels = (account?.groupChannels ?? base.groupChannels ?? []) as string[];

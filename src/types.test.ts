@@ -141,4 +141,27 @@ describe("resolveTlonAccount allowPrivateNetwork", () => {
 
     expect(account.allowPrivateNetwork).toBe(true);
   });
+
+  it("honors a per-account legacy alias even when base is canonical", () => {
+    const account = resolveTlonAccount(
+      {
+        channels: {
+          tlon: {
+            network: { dangerouslyAllowPrivateNetwork: true },
+            accounts: {
+              hosted: {
+                ship: "~zod",
+                url: "https://example.com",
+                code: "code-123",
+                allowPrivateNetwork: false,
+              },
+            },
+          },
+        },
+      } as OpenClawConfig,
+      "hosted",
+    );
+
+    expect(account.allowPrivateNetwork).toBe(false);
+  });
 });

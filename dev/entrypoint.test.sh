@@ -317,8 +317,5 @@ if [ "${VERBOSE:-0}" = "1" ]; then
   ls -la /root/.openclaw/agents/test/ 2>/dev/null || true
 fi
 
-cd ~/.openclaw
-cat openclaw.json
-
 echo "==> Starting OpenClaw gateway..."
 exec openclaw gateway --port 18789 --bind lan --verbose
