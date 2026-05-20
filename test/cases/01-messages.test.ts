@@ -145,15 +145,19 @@ describe("messages", () => {
         content: story(`parent ${parentToken}`),
       });
 
-      // Poll for the parent post to land instead of a fixed sleep.
+      // Poll for the parent post to land on the BOT'S view of the DM channel.
+      // The previous test in this file shares the same DM session lane and the
+      // bot's SSE-driven processing can lag the user's view by a few seconds;
+      // waiting on the user view raced ahead of the bot, so the reply arrived
+      // before the bot had ingested the parent.
       const parent = await waitFor(async () => {
-        const posts = await fixtures.userState.channelPosts(fixtures.botShip, 10);
+        const posts = await fixtures.botState.channelPosts(fixtures.userShip, 10);
         const found = (posts ?? []).find((p) => {
           const pp = p as PostLike;
           return pp.authorId === fixtures.userShip && postText(pp).includes(parentToken);
         }) as PostLike | undefined;
         return found?.id ? found : undefined;
-      }, 10_000);
+      }, 30_000);
 
       const key = "dm-thread-reply";
       await fakeModel.script(key, [{ kind: "text", content: "Got your thread reply" }]);
@@ -168,7 +172,7 @@ describe("messages", () => {
       const calls = await waitFor(async () => {
         const c = await fakeModel.received(key);
         return c.length > 0 ? c : undefined;
-      }, 30_000);
+      }, 60_000);
       expect(calls.length).toBeGreaterThan(0);
     });
   });
