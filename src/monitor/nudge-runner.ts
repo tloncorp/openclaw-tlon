@@ -89,7 +89,7 @@ export type NudgeRunnerDeps = {
     toShip: string;
     text: string;
     botProfile?: BotProfile;
-  }) => Promise<unknown>;
+  }) => Promise<{ channel: "tlon"; messageId: string; sentAt: number }>;
   getBotProfile?: () => BotProfile | undefined;
   telemetry?: TlonTelemetryClient | null;
   runtime?: RuntimeEnv;
@@ -243,10 +243,17 @@ export function createNudgeRunner(deps: NudgeRunnerDeps): NudgeRunner {
     deps.setLastNudgeStageShadow(deps.accountId, targetStage);
 
     const content = NUDGE_MESSAGES[targetStage];
-    const sentAt = now();
+    // `localSentAt` is captured before the network call as a fallback for
+    // log/telemetry call sites that need *some* timestamp when the send
+    // failed and the canonical value is unavailable. The DM's actual sent
+    // timestamp comes from the send result and is preferred everywhere
+    // it's available — see `nudgeSentAtMs` and the success-path
+    // `setLocalPendingNudge` write below.
+    const localSentAt = now();
     let sent = false;
+    let sendResult: { channel: "tlon"; messageId: string; sentAt: number } | null = null;
     try {
-      await deps.sendDm({
+      sendResult = await deps.sendDm({
         fromShip: deps.botShip,
         toShip: ownerShip,
         text: content,
@@ -259,6 +266,9 @@ export function createNudgeRunner(deps: NudgeRunnerDeps): NudgeRunner {
       );
     }
 
+    const canonicalSentAt = sent && sendResult ? sendResult.sentAt : null;
+    const messageId = sent && sendResult ? sendResult.messageId : null;
+
     try {
       deps.telemetry?.captureHeartbeatNudge({
         ownerShip,
@@ -268,6 +278,8 @@ export function createNudgeRunner(deps: NudgeRunnerDeps): NudgeRunner {
         channel: "tlon",
         success: sent,
         accountId: deps.accountId,
+        messageId,
+        nudgeSentAtMs: canonicalSentAt,
       });
     } catch (err) {
       deps.runtime?.error?.(`[tlon] nudge: telemetry capture failed: ${String(err)}`);
@@ -287,7 +299,11 @@ export function createNudgeRunner(deps: NudgeRunnerDeps): NudgeRunner {
       }
       try {
         deps.setLocalPendingNudge(deps.accountId, {
-          sentAt,
+          // Use the canonical send-result timestamp so the pending-nudge
+          // record agrees with the telemetry event's `nudgeSentAtMs`. The
+          // null-coalesce can only fire if the send "succeeded" but the
+          // result is missing — defensive belt-and-braces only.
+          sentAt: canonicalSentAt ?? localSentAt,
           stage: targetStage,
           ownerShip,
           accountId: deps.accountId,
