@@ -18,7 +18,7 @@ import {
   liveToolTraceContentsEnabled,
   shouldLogAfterToolTrace,
 } from "./src/tool-trace.js";
-import { resolveTlonAccount, listTlonAccountIds } from "./src/types.js";
+import { resolveTlonAccount, listRunnableTlonAccountIds } from "./src/types.js";
 import { PLUGIN_COMMIT, PLUGIN_VERSION } from "./src/version.generated.js";
 
 export { tlonPlugin } from "./src/channel.js";
@@ -170,16 +170,20 @@ export default defineChannelPluginEntry({
   registerFull(api) {
     // ── Gateway-status liveness integration ───────────────────
     //
-    // v1 requires exactly one Tlon account. With multiple accounts, multiple
-    // monitors call configureTlonApiWithPoke() and the last one wins the global
+    // v1 requires exactly one Tlon account that will actually run a monitor.
+    // With multiple runnable accounts, multiple monitors call
+    // configureTlonApiWithPoke() and the last one wins the global
     // @tloncorp/api singleton — making it unsafe to route heartbeats or stop
-    // pokes to a specific ship. Disable entirely rather than route to the wrong ship.
-    const gsAccountIds = listTlonAccountIds(api.config);
+    // pokes to a specific ship. Disable entirely rather than route to the
+    // wrong ship. Disabled or unconfigured account stubs cannot spawn a
+    // monitor and so cannot race the shared state, which is why we count
+    // *runnable* accounts here rather than all configured account entries.
+    const gsAccountIds = listRunnableTlonAccountIds(api.config);
     setGatewayStatusManager(null);
 
     if (gsAccountIds.length > 1) {
       api.logger.warn(
-        `[gateway-status] disabled: ${gsAccountIds.length} Tlon accounts configured, ` +
+        `[gateway-status] disabled: ${gsAccountIds.length} runnable Tlon accounts, ` +
           `but v1 only supports one (global @tloncorp/api client cannot target multiple ships)`,
       );
     } else if (gsAccountIds.length === 1) {

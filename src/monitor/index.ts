@@ -333,6 +333,58 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     shipUrl: accountUrl,
   };
   apiClientParamsSlot.set(myApiClientParams);
+
+  // gsManager is hoisted here (from its prior location at the
+  // gateway-status activation block below) so cleanupGatewayStatus can
+  // close over it. getGatewayStatusManager() returns the manager
+  // singleton index.ts published during plugin registration; it is
+  // null when multi-account or zero-account configs disable the
+  // feature (see index.ts registration gate).
+  const gsManager = getGatewayStatusManager();
+
+  // Idempotent gateway-status teardown. Called from every path that
+  // can leave this monitor: (a) synchronous abort already raised at
+  // entry, (b) abort fired during the long bootstrap window before the
+  // main try/finally is reached, (c) the late abort listener inside
+  // the main try, (d) the existing inner finally, (e) the outer
+  // try/finally below that wraps everything from publish onward.
+  // Idempotency makes every combination of these firing produce one
+  // effect.
+  let gatewayStatusCleanupRan = false;
+  const cleanupGatewayStatus = (): void => {
+    if (gatewayStatusCleanupRan) return;
+    gatewayStatusCleanupRan = true;
+    gsManager?.stopHeartbeat();
+    gsManager?.markStopped();
+    if (apiClientParamsSlot.get() === myApiClientParams) {
+      apiClientParamsSlot.set(null);
+    }
+  };
+
+  // If the signal was already aborted before we reached this line,
+  // addEventListener("abort", ..., { once: true }) won't fire (abort
+  // events only deliver on transitions). Run cleanup synchronously and
+  // throw out so the caller knows monitor startup didn't complete.
+  if (opts.abortSignal?.aborted) {
+    cleanupGatewayStatus();
+    throw new Error("Tlon monitor startup aborted before bootstrap");
+  }
+  // Register the abort listener IMMEDIATELY, before any of the long
+  // bootstrap work below. The late listener inside the main try block
+  // covers the heartbeat-running phase; this one covers the long
+  // bootstrap window between slot publication and the inner try.
+  // Idempotent with the late listener via cleanupGatewayStatus's flag.
+  opts.abortSignal?.addEventListener("abort", cleanupGatewayStatus, {
+    once: true,
+  });
+
+  // Outer try/finally wraps everything from slot publication onward.
+  // The reviewer's P2: a synchronous throw between slot publication and
+  // the inner try at ~line 2719 (constructor, queue setup, bridge
+  // setup, channel discovery, future edits in this large pre-try
+  // region) would leave the shared slot orphaned. This outer finally
+  // catches all of those and runs cleanup unconditionally.
+  try {
   const computingPresence = createComputingPresenceTracker({ runtime });
 
   const processedTracker = createProcessedMessageTracker(2000);
@@ -740,9 +792,9 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
   }
 
   // ── Gateway-status: non-blocking background activation ──────
-  // getGatewayStatusManager() returns null when multi-account or zero accounts configured
-  // (see index.ts registration gate).
-  const gsManager = getGatewayStatusManager();
+  // (gsManager was hoisted to the slot-publish region above so that
+  // cleanupGatewayStatus can close over it; we reuse the same captured
+  // reference here.)
 
   if (gsManager && effectiveOwnerShip) {
     const capturedOwnerShip = effectiveOwnerShip;
@@ -3415,39 +3467,41 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
 
     if (opts.abortSignal) {
       const signal = opts.abortSignal;
-      await new Promise((resolve) => {
-        signal.addEventListener(
-          "abort",
-          () => {
-            clearInterval(pollInterval);
-            clearInterval(settingsRefreshInterval);
-            // Kick off scheduler shutdown; don't block the event-handler
-            // callback. The `finally` block awaits the same stop promise
-            // before draining the persistence queues and closing the
-            // api, so any in-flight tick is guaranteed to settle first.
-            void nudgeRunner?.stop();
-            gsManager?.stopHeartbeat();
-            // Mark the manager stopped so the activation task — which may
-            // still be mid-await on configureGatewayStatus/gatewayStart —
-            // bails before calling markActivated()/startHeartbeat() and
-            // creating a zombie heartbeat interval. Mirrors what the
-            // gateway_stop hook in index.ts does for the other teardown path.
-            gsManager?.markStopped();
-            // Only clear if we still own the slot — a replacement monitor
-            // started during a config reload may have already published its
-            // own params, and we must not overwrite those with null.
-            if (apiClientParamsSlot.get() === myApiClientParams) {
-              apiClientParamsSlot.set(null);
-            }
-            resolve(null);
-          },
-          { once: true },
-        );
+      await new Promise<void>((resolve) => {
+        const onAbort = () => {
+          clearInterval(pollInterval);
+          clearInterval(settingsRefreshInterval);
+          // Kick off scheduler shutdown; don't block the event-handler
+          // callback. The `finally` block awaits the same stop promise
+          // before draining the persistence queues and closing the
+          // api, so any in-flight tick is guaranteed to settle first.
+          void nudgeRunner?.stop();
+          // Gateway-status teardown is idempotent via the helper —
+          // the early abort listener registered at slot-publish time
+          // may have already run, in which case this is a no-op.
+          cleanupGatewayStatus();
+          resolve();
+        };
+        // If the signal is already aborted when we reach here,
+        // addEventListener("abort", ..., { once: true }) would never
+        // fire and we'd await forever. Run cleanup synchronously
+        // instead.
+        if (signal.aborted) {
+          onAbort();
+          return;
+        }
+        signal.addEventListener("abort", onAbort, { once: true });
       });
     } else {
       await new Promise(() => {});
     }
   } finally {
+    // Gateway-status teardown via the idempotent helper. Covers the
+    // non-abort exit path where the inner try block throws (e.g.
+    // api.subscribe rejection, channel discovery failure, connection
+    // drop during the main work). Both the late abort listener and
+    // this finally call the helper; whichever runs first wins.
+    cleanupGatewayStatus();
     removeBridge(accountKey, commandBridge);
     // Await the scheduler drain before flushing persistence queues.
     // `stop()` waits for any in-flight tick to finish so its final
@@ -3464,5 +3518,20 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     } catch (error: any) {
       runtime.error?.(`[tlon] Cleanup error: ${error?.message ?? String(error)}`);
     }
+  }
+  } finally {
+    // Outer finally — covers throws in the long bootstrap region
+    // between slot publication (above) and the inner try (which begins
+    // after the helper definitions). Anything that throws before the
+    // inner finally can run hits this one. Idempotent via the helper.
+    cleanupGatewayStatus();
+    // Remove the early abort listener so the host's signal does not
+    // retain `cleanupGatewayStatus` (which transitively pins
+    // `myApiClientParams.poke` and the SSE client) after the monitor
+    // exits without aborting. `{ once: true }` on the listener auto-
+    // removes after firing, so this is a no-op if abort already
+    // triggered cleanup; on normal/error exits the explicit removal
+    // breaks the retention chain.
+    opts.abortSignal?.removeEventListener("abort", cleanupGatewayStatus);
   }
 }
