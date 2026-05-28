@@ -2,16 +2,33 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 vi.mock("@tloncorp/api", () => ({
   gatewayHeartbeat: vi.fn().mockResolvedValue(undefined),
+  gatewayStop: vi.fn().mockResolvedValue(undefined),
+}));
+
+// The heartbeat now calls configureTlonApiWithPoke each tick to defeat
+// OpenClaw plugin module isolation; in tests we stub it to a no-op so the
+// fake @tloncorp/api singleton stays as the vitest mock above.
+vi.mock("./urbit/api-client.js", () => ({
+  configureTlonApiWithPoke: vi.fn(),
 }));
 
 import { gatewayHeartbeat } from "@tloncorp/api";
+import { sharedSlot } from "./shared-state.js";
 import {
+  API_CLIENT_PARAMS_SLOT,
   createGatewayStatusManager,
   setGatewayStatusManager,
   getGatewayStatusManager,
   computeLeaseUntil,
   type GatewayStatusManager,
+  type SharedApiClientParams,
 } from "./gateway-status.js";
+
+const stubApiClientParams: SharedApiClientParams = {
+  poke: vi.fn().mockResolvedValue(undefined),
+  shipName: "test-bot",
+  shipUrl: "http://localhost:8080",
+};
 
 describe("gateway-status: createGatewayStatusManager", () => {
   let manager: GatewayStatusManager;
@@ -19,11 +36,17 @@ describe("gateway-status: createGatewayStatusManager", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.mocked(gatewayHeartbeat).mockClear();
+    // Publish stub api-client params so the heartbeat's per-tick
+    // configure-then-poke can find data in the shared slot and proceed.
+    sharedSlot<SharedApiClientParams>(API_CLIENT_PARAMS_SLOT).set(
+      stubApiClientParams,
+    );
     manager = createGatewayStatusManager({ logger: undefined });
   });
 
   afterEach(() => {
     manager.stopHeartbeat();
+    sharedSlot<SharedApiClientParams>(API_CLIENT_PARAMS_SLOT).set(null);
     vi.useRealTimers();
   });
 

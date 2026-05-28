@@ -323,11 +323,16 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
   // the gateway-status heartbeat) can configure their own @tloncorp/api
   // singletons before pokeing. We store data here, not a closure, because
   // closures capture their creating context's module imports.
-  apiClientParamsSlot.set({
+  // Capture the published object so the abort handler can do a
+  // reference-equality check before clearing — under a config-reload
+  // restart, a replacement monitor may publish fresh params before the
+  // old monitor's abort fires, and we must not clobber the new params.
+  const myApiClientParams = {
     poke: api.poke.bind(api),
     shipName: botShipName,
     shipUrl: accountUrl,
-  });
+  };
+  apiClientParamsSlot.set(myApiClientParams);
   const computingPresence = createComputingPresenceTracker({ runtime });
 
   const processedTracker = createProcessedMessageTracker(2000);
@@ -768,10 +773,20 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
           activeWindowSecs: ACTIVE_WINDOW_SECS,
           offlineReplyCooldownSecs: OFFLINE_REPLY_COOLDOWN_SECS,
         });
+        // Recheck after each await: the monitor can be aborted (or a
+        // replacement registration can mark this manager stopped) while
+        // these pokes are in flight. Without the recheck we would leave
+        // a zombie heartbeat interval running against a torn-down manager.
+        if (signal?.aborted || gsManager.stopped) {
+          return;
+        }
         await gatewayStart({
           bootId: gsManager.bootId,
           leaseUntil: computeLeaseUntil(),
         });
+        if (signal?.aborted || gsManager.stopped) {
+          return;
+        }
         gsManager.markActivated();
         gsManager.startHeartbeat();
         runtime.log?.(
@@ -3412,7 +3427,18 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
             // api, so any in-flight tick is guaranteed to settle first.
             void nudgeRunner?.stop();
             gsManager?.stopHeartbeat();
-            apiClientParamsSlot.set(null);
+            // Mark the manager stopped so the activation task — which may
+            // still be mid-await on configureGatewayStatus/gatewayStart —
+            // bails before calling markActivated()/startHeartbeat() and
+            // creating a zombie heartbeat interval. Mirrors what the
+            // gateway_stop hook in index.ts does for the other teardown path.
+            gsManager?.markStopped();
+            // Only clear if we still own the slot — a replacement monitor
+            // started during a config reload may have already published its
+            // own params, and we must not overwrite those with null.
+            if (apiClientParamsSlot.get() === myApiClientParams) {
+              apiClientParamsSlot.set(null);
+            }
             resolve(null);
           },
           { once: true },
