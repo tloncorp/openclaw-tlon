@@ -85,6 +85,18 @@ import { canonicalizeNest, normalizeShip, parseChannelNest } from "../targets.js
 import { createTlonTelemetry } from "../telemetry.js";
 import { resolveTlonAccount } from "../types.js";
 import { configureTlonApiWithPoke } from "../urbit/api-client.js";
+import {
+  API_CLIENT_PARAMS_SLOT,
+  type SharedApiClientParams,
+} from "../gateway-status.js";
+import { sharedSlot } from "../shared-state.js";
+
+// Holds the data needed for any module-loader context to (re)configure its
+// own @tloncorp/api singleton — see gateway-status.ts for why this is
+// necessary under OpenClaw >=2026.4.27 plugin module isolation.
+const apiClientParamsSlot = sharedSlot<SharedApiClientParams>(
+  API_CLIENT_PARAMS_SLOT,
+);
 import { authenticate } from "../urbit/auth.js";
 import { ssrfPolicyFromAllowPrivateNetwork } from "../urbit/context.js";
 import { sendDm, sendChannelPost, type BotProfile } from "../urbit/send.js";
@@ -306,6 +318,16 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
 
   // Configure @tloncorp/api's global client to use the SSE client's poke for all send operations
   configureTlonApiWithPoke(api.poke.bind(api), botShipName, account.url);
+
+  // Publish the SSE-bound poke + ship coords so other module contexts (e.g.
+  // the gateway-status heartbeat) can configure their own @tloncorp/api
+  // singletons before pokeing. We store data here, not a closure, because
+  // closures capture their creating context's module imports.
+  apiClientParamsSlot.set({
+    poke: api.poke.bind(api),
+    shipName: botShipName,
+    shipUrl: accountUrl,
+  });
   const computingPresence = createComputingPresenceTracker({ runtime });
 
   const processedTracker = createProcessedMessageTracker(2000);
@@ -3390,6 +3412,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
             // api, so any in-flight tick is guaranteed to settle first.
             void nudgeRunner?.stop();
             gsManager?.stopHeartbeat();
+            apiClientParamsSlot.set(null);
             resolve(null);
           },
           { once: true },

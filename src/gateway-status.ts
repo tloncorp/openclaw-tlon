@@ -1,6 +1,29 @@
 import { randomUUID } from "node:crypto";
 import { gatewayHeartbeat } from "@tloncorp/api";
 import { sharedSlot } from "./shared-state.js";
+import { configureTlonApiWithPoke } from "./urbit/api-client.js";
+
+// Shared-state slot for the @tloncorp/api client params. The monitor
+// publishes its SSE-bound poke + ship coords here; every other module
+// context (notably this one) reads them and configures its OWN local
+// @tloncorp/api singleton before any poke call. Storing a callback would
+// configure the publisher's @tloncorp/api instance, not the reader's, so
+// we deliberately move *data* through the slot, not behavior.
+export const API_CLIENT_PARAMS_SLOT = "@tloncorp/openclaw.api-client-params";
+
+export interface SharedApiClientParams {
+  poke: (params: {
+    app: string;
+    mark: string;
+    json: unknown;
+  }) => Promise<unknown>;
+  shipName: string;
+  shipUrl: string;
+}
+
+const apiClientParamsSlot = sharedSlot<SharedApiClientParams>(
+  API_CLIENT_PARAMS_SLOT,
+);
 
 // ── Constants (matching design doc recommendations) ─────────
 const HEARTBEAT_INTERVAL_MS = 30_000; // 30s
@@ -81,6 +104,25 @@ export function createGatewayStatusManager(opts: {
       }
       heartbeatInterval = setInterval(async () => {
         try {
+          // Configure THIS module's @tloncorp/api instance against the
+          // monitor-published params every tick. Under OpenClaw plugin
+          // module isolation this code path can hold a separate
+          // @tloncorp/api instance from the monitor; outbound DMs via
+          // `withAuthenticatedTlonApi` can also rotate the global
+          // client between heartbeats. Reapplying here keeps the
+          // heartbeat poke pointed at the SSE-bound client.
+          const params = apiClientParamsSlot.get();
+          if (!params) {
+            opts.logger?.error?.(
+              "[gateway-status] heartbeat skipped: api-client params not published",
+            );
+            return;
+          }
+          configureTlonApiWithPoke(
+            params.poke,
+            params.shipName,
+            params.shipUrl,
+          );
           await gatewayHeartbeat({ bootId, leaseUntil: computeLeaseUntil() });
         } catch (err) {
           opts.logger?.error?.(`[gateway-status] heartbeat failed: ${String(err)}`);
