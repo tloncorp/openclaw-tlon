@@ -1,4 +1,4 @@
-import { gatewayStop } from "@tloncorp/api";
+import { sendGatewayStop } from "./src/gateway-status.js";
 import { spawn } from "node:child_process";
 import { createRequire } from "node:module";
 import { dirname } from "node:path";
@@ -203,11 +203,17 @@ export default defineChannelPluginEntry({
         gsManager.stopHeartbeat();
         gsManager.markStopped();
         try {
-          await gatewayStop({
+          const sent = await sendGatewayStop({
             bootId: gsManager.bootId,
             reason: event.reason ?? "shutdown",
           });
-          api.logger.info(`[gateway-status] stopped (reason=${event.reason ?? "shutdown"})`);
+          if (sent) {
+            api.logger.info(`[gateway-status] stopped (reason=${event.reason ?? "shutdown"})`);
+          } else {
+            api.logger.warn(
+              "[gateway-status] stop skipped: api-client params not published",
+            );
+          }
         } catch (err) {
           api.logger.warn(`[gateway-status] stop poke failed: ${String(err)}`);
         }

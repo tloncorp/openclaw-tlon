@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { gatewayHeartbeat } from "@tloncorp/api";
+import { gatewayHeartbeat, gatewayStop } from "@tloncorp/api";
 import { sharedSlot } from "./shared-state.js";
 import { configureTlonApiWithPoke } from "./urbit/api-client.js";
 
@@ -151,4 +151,29 @@ export function setGatewayStatusManager(m: GatewayStatusManager | null): void {
 
 export function getGatewayStatusManager(): GatewayStatusManager | null {
   return managerSlot.get();
+}
+
+// Configure THIS module's @tloncorp/api singleton against the
+// monitor-published params, then send the gateway-stop poke. Callers
+// (notably the gateway_stop hook in index.ts) must go through this helper
+// instead of importing `gatewayStop` directly, because under OpenClaw
+// >=2026.4.27 plugin module isolation the entry module's @tloncorp/api
+// instance is never configured — only the monitor's is. Routing through
+// gateway-status.ts reuses the same configured instance the heartbeat uses.
+// Returns true if the poke was sent, false if the params slot was empty.
+export async function sendGatewayStop(params: {
+  bootId: string;
+  reason: string;
+}): Promise<boolean> {
+  const apiParams = apiClientParamsSlot.get();
+  if (!apiParams) {
+    return false;
+  }
+  configureTlonApiWithPoke(
+    apiParams.poke,
+    apiParams.shipName,
+    apiParams.shipUrl,
+  );
+  await gatewayStop({ bootId: params.bootId, reason: params.reason });
+  return true;
 }
