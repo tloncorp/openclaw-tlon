@@ -86,6 +86,117 @@ export type TlonSettingsState = {
 
 const SETTINGS_DESK = "moltbot";
 const SETTINGS_BUCKET = "tlon";
+export const PENDING_APPROVAL_TTL_MS = 48 * 60 * 60 * 1000;
+
+function isPendingApprovalExpired(approval: PendingApproval, now = Date.now()): boolean {
+  return now - approval.timestamp > PENDING_APPROVAL_TTL_MS;
+}
+
+function hasUsableOriginalMessage(approval: PendingApproval): boolean {
+  if (approval.type === "group") {
+    return true;
+  }
+  if (approval.type === "dm" && approval.messagePreview === "(DM invite - no message yet)") {
+    return true;
+  }
+
+  const message = approval.originalMessage;
+  return Boolean(
+    message &&
+    typeof message.messageId === "string" &&
+    typeof message.messageText === "string" &&
+    typeof message.timestamp === "number",
+  );
+}
+
+function summarizePendingApproval(approval: PendingApproval): Record<string, unknown> {
+  return {
+    id: approval.id,
+    type: approval.type,
+    requestingShip: approval.requestingShip,
+    ...(approval.channelNest ? { channelNest: approval.channelNest } : {}),
+    ...(approval.groupFlag ? { groupFlag: approval.groupFlag } : {}),
+    timestamp: approval.timestamp,
+    ...(approval.notificationMessageId
+      ? { notificationMessageId: approval.notificationMessageId }
+      : {}),
+  };
+}
+
+function summarizeSettingsForLog(settings: TlonSettingsStore): Record<string, unknown> {
+  const pendingApprovals = settings.pendingApprovals ?? [];
+  return {
+    ...(settings.groupChannels ? { groupChannels: settings.groupChannels.length } : {}),
+    ...(settings.dmAllowlist ? { dmAllowlist: settings.dmAllowlist.length } : {}),
+    ...(settings.autoDiscover !== undefined ? { autoDiscover: settings.autoDiscover } : {}),
+    ...(settings.showModelSig !== undefined ? { showModelSig: settings.showModelSig } : {}),
+    ...(settings.autoAcceptDmInvites !== undefined
+      ? { autoAcceptDmInvites: settings.autoAcceptDmInvites }
+      : {}),
+    ...(settings.autoDiscoverChannels !== undefined
+      ? { autoDiscoverChannels: settings.autoDiscoverChannels }
+      : {}),
+    ...(settings.autoAcceptGroupInvites !== undefined
+      ? { autoAcceptGroupInvites: settings.autoAcceptGroupInvites }
+      : {}),
+    ...(settings.groupInviteAllowlist
+      ? { groupInviteAllowlist: settings.groupInviteAllowlist.length }
+      : {}),
+    ...(settings.channelRules ? { channelRules: Object.keys(settings.channelRules).length } : {}),
+    ...(settings.defaultAuthorizedShips
+      ? { defaultAuthorizedShips: settings.defaultAuthorizedShips.length }
+      : {}),
+    ...(settings.ownerShip ? { ownerShip: settings.ownerShip } : {}),
+    ...(pendingApprovals.length
+      ? { pendingApprovals: pendingApprovals.map(summarizePendingApproval) }
+      : { pendingApprovals: 0 }),
+    ...(settings.lastOwnerMessageAt !== undefined
+      ? { lastOwnerMessageAt: settings.lastOwnerMessageAt }
+      : {}),
+    ...(settings.lastOwnerMessageDate
+      ? { lastOwnerMessageDate: settings.lastOwnerMessageDate }
+      : {}),
+    ...(settings.pendingNudge
+      ? {
+          pendingNudge: {
+            sentAt: settings.pendingNudge.sentAt,
+            stage: settings.pendingNudge.stage,
+            ownerShip: settings.pendingNudge.ownerShip,
+            accountId: settings.pendingNudge.accountId,
+          },
+        }
+      : {}),
+    ...(settings.lastNudgeStage !== undefined ? { lastNudgeStage: settings.lastNudgeStage } : {}),
+    ...(settings.nudgeActiveHoursStart
+      ? { nudgeActiveHoursStart: settings.nudgeActiveHoursStart }
+      : {}),
+    ...(settings.nudgeActiveHoursEnd ? { nudgeActiveHoursEnd: settings.nudgeActiveHoursEnd } : {}),
+    ...(settings.nudgeActiveHoursTimezone
+      ? { nudgeActiveHoursTimezone: settings.nudgeActiveHoursTimezone }
+      : {}),
+    ...(settings.ownerListenEnabled !== undefined
+      ? { ownerListenEnabled: settings.ownerListenEnabled }
+      : {}),
+    ...(settings.ownerListenDisabledChannels
+      ? { ownerListenDisabledChannels: settings.ownerListenDisabledChannels.length }
+      : {}),
+  };
+}
+
+function formatSettingsForLog(settings: TlonSettingsStore): string {
+  return JSON.stringify(summarizeSettingsForLog(settings));
+}
+
+function formatSettingsUpdateValueForLog(key: string, value: unknown): string {
+  if (key === "pendingApprovals") {
+    const approvals = parsePendingApprovals(value) ?? [];
+    return JSON.stringify({
+      count: approvals.length,
+      items: approvals.map(summarizePendingApproval),
+    });
+  }
+  return JSON.stringify(value);
+}
 
 /**
  * Parse channelRules - handles both JSON string and object formats.
@@ -276,18 +387,20 @@ function parsePendingApprovals(value: unknown): PendingApproval[] | undefined {
     return undefined;
   }
 
-  // Filter to valid PendingApproval objects
+  // Filter to valid, unexpired PendingApproval objects.
   return parsed.filter((item): item is PendingApproval => {
     if (!item || typeof item !== "object") {
       return false;
     }
     const obj = item as Record<string, unknown>;
-    return (
+    const valid =
       typeof obj.id === "string" &&
       (obj.type === "dm" || obj.type === "channel" || obj.type === "group") &&
       typeof obj.requestingShip === "string" &&
-      typeof obj.timestamp === "number"
-    );
+      typeof obj.timestamp === "number";
+
+    const approval = obj as PendingApproval;
+    return valid && hasUsableOriginalMessage(approval) && !isPendingApprovalExpired(approval);
   });
 }
 
@@ -476,7 +589,7 @@ export function createSettingsManager(api: UrbitSSEClient, logger?: SettingsLogg
         const deskData = allData?.all?.[SETTINGS_DESK];
         state.current = parseSettingsResponse(deskData ?? {});
         state.loaded = true;
-        logger?.log?.(`[settings] Loaded: ${JSON.stringify(state.current)}`);
+        logger?.log?.(`[settings] Loaded: ${formatSettingsForLog(state.current)}`);
         return { settings: state.current, fresh: true };
       } catch (err) {
         // Preserve the last good snapshot on scry failure so refresh fallback
@@ -500,7 +613,12 @@ export function createSettingsManager(api: UrbitSSEClient, logger?: SettingsLogg
             return;
           }
 
-          logger?.log?.(`[settings] Update: ${update.key} = ${JSON.stringify(update.value)}`);
+          logger?.log?.(
+            `[settings] Update: ${update.key} = ${formatSettingsUpdateValueForLog(
+              update.key,
+              update.value,
+            )}`,
+          );
           state.current = applySettingsUpdate(state.current, update.key, update.value);
           notify();
         },

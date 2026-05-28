@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { applySettingsUpdate, createSettingsManager, parseSettingsResponse } from "./settings.js";
+import {
+  PENDING_APPROVAL_TTL_MS,
+  applySettingsUpdate,
+  createSettingsManager,
+  parseSettingsResponse,
+} from "./settings.js";
 
 describe("Settings: parseSettingsResponse", () => {
   it("parses lastOwnerMessageAt as number", () => {
@@ -137,6 +142,78 @@ describe("Settings: parseSettingsResponse", () => {
       expect(result.nudgeActiveHoursEnd).toBeUndefined();
     });
   });
+
+  describe("pendingApprovals", () => {
+    it("drops expired approvals when parsing settings", () => {
+      const now = Date.now();
+      const result = parseSettingsResponse({
+        tlon: {
+          pendingApprovals: JSON.stringify([
+            {
+              id: "expired",
+              type: "channel",
+              requestingShip: "~old",
+              timestamp: now - PENDING_APPROVAL_TTL_MS - 1,
+            },
+            {
+              id: "fresh",
+              type: "channel",
+              requestingShip: "~new",
+              timestamp: now,
+              originalMessage: {
+                messageId: "170.000",
+                messageText: "hi",
+                messageContent: [{ inline: ["hi"] }],
+                timestamp: now,
+              },
+            },
+          ]),
+        },
+      });
+
+      expect(result.pendingApprovals?.map((approval) => approval.id)).toEqual(["fresh"]);
+    });
+
+    it("drops message approvals that cannot replay an original message", () => {
+      const now = Date.now();
+      const result = parseSettingsResponse({
+        tlon: {
+          pendingApprovals: JSON.stringify([
+            {
+              id: "stale-channel",
+              type: "channel",
+              requestingShip: "~old",
+              timestamp: now,
+            },
+            {
+              id: "dm-invite",
+              type: "dm",
+              requestingShip: "~new",
+              messagePreview: "(DM invite - no message yet)",
+              timestamp: now,
+            },
+            {
+              id: "fresh-channel",
+              type: "channel",
+              requestingShip: "~new",
+              timestamp: now,
+              originalMessage: {
+                messageId: "170.000",
+                messageText: "hi",
+                messageContent: [{ inline: ["hi"] }],
+                timestamp: now,
+              },
+            },
+          ]),
+        },
+      });
+
+      expect(result.pendingApprovals?.map((approval) => approval.id)).toEqual([
+        "dm-invite",
+        "fresh-channel",
+      ]);
+    });
+  });
 });
 
 describe("Settings: applySettingsUpdate", () => {
@@ -228,6 +305,36 @@ describe("Settings: applySettingsUpdate", () => {
       ).ownerListenDisabledChannels,
     ).toBeUndefined();
   });
+
+  it("drops expired pendingApprovals updates", () => {
+    const now = Date.now();
+    const result = applySettingsUpdate(
+      {},
+      "pendingApprovals",
+      JSON.stringify([
+        {
+          id: "expired",
+          type: "dm",
+          requestingShip: "~old",
+          timestamp: now - PENDING_APPROVAL_TTL_MS - 1,
+        },
+        {
+          id: "fresh",
+          type: "dm",
+          requestingShip: "~new",
+          timestamp: now,
+          originalMessage: {
+            messageId: "170.000",
+            messageText: "hi",
+            messageContent: [{ inline: ["hi"] }],
+            timestamp: now,
+          },
+        },
+      ]),
+    );
+
+    expect(result.pendingApprovals?.map((approval) => approval.id)).toEqual(["fresh"]);
+  });
 });
 
 describe("Settings: createSettingsManager.load", () => {
@@ -284,5 +391,46 @@ describe("Settings: createSettingsManager.load", () => {
       fresh: false,
     });
     expect(manager.current).toEqual({});
+  });
+
+  it("logs a compact settings summary without full pending approval messages", async () => {
+    const logs: string[] = [];
+    const manager = createSettingsManager(
+      {
+        scry: async () => ({
+          all: {
+            moltbot: {
+              tlon: {
+                pendingApprovals: JSON.stringify([
+                  {
+                    id: "approval-1",
+                    type: "channel",
+                    requestingShip: "~zod",
+                    channelNest: "chat/~zod/general",
+                    messagePreview: "secret preview",
+                    originalMessage: {
+                      messageId: "170.000",
+                      messageText: "secret full message",
+                      messageContent: [{ inline: ["secret content"] }],
+                      timestamp: Date.now(),
+                    },
+                    timestamp: Date.now(),
+                  },
+                ]),
+              },
+            },
+          },
+        }),
+      } as never,
+      { log: (message) => logs.push(message) },
+    );
+
+    await manager.load();
+    const loadedLog = logs.find((message) => message.startsWith("[settings] Loaded:"));
+    expect(loadedLog).toContain("approval-1");
+    expect(loadedLog).toContain("~zod");
+    expect(loadedLog).not.toContain("secret preview");
+    expect(loadedLog).not.toContain("secret full message");
+    expect(loadedLog).not.toContain("secret content");
   });
 });
