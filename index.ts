@@ -18,7 +18,7 @@ import {
   liveToolTraceContentsEnabled,
   shouldLogAfterToolTrace,
 } from "./src/tool-trace.js";
-import { resolveTlonAccount, listRunnableTlonAccountIds } from "./src/types.js";
+import { resolveTlonAccount, listTlonAccountIds } from "./src/types.js";
 import { PLUGIN_COMMIT, PLUGIN_VERSION } from "./src/version.generated.js";
 
 export { tlonPlugin } from "./src/channel.js";
@@ -170,20 +170,26 @@ export default defineChannelPluginEntry({
   registerFull(api) {
     // ── Gateway-status liveness integration ───────────────────
     //
-    // v1 requires exactly one Tlon account that will actually run a monitor.
-    // With multiple runnable accounts, multiple monitors call
-    // configureTlonApiWithPoke() and the last one wins the global
-    // @tloncorp/api singleton — making it unsafe to route heartbeats or stop
-    // pokes to a specific ship. Disable entirely rather than route to the
-    // wrong ship. Disabled or unconfigured account stubs cannot spawn a
-    // monitor and so cannot race the shared state, which is why we count
-    // *runnable* accounts here rather than all configured account entries.
-    const gsAccountIds = listRunnableTlonAccountIds(api.config);
+    // v1 requires exactly one Tlon account. With multiple accounts, multiple
+    // monitors call configureTlonApiWithPoke() and the last one wins the
+    // global @tloncorp/api singleton — making it unsafe to route heartbeats or
+    // stop pokes to a specific ship. Disable entirely rather than route to the
+    // wrong ship.
+    //
+    // We count ALL configured account entries (not just currently-runnable
+    // ones) on purpose. The manager is a process-lifetime singleton created
+    // here in registerFull, which does NOT re-run on config reload. If we
+    // counted only runnable accounts, a config of one complete account plus a
+    // disabled/unconfigured stub would enable the singleton, and later
+    // completing the stub would start a second monitor that races the shared
+    // API slot — without registerFull re-evaluating the gate. Counting every
+    // entry keeps the feature off whenever a second account exists at all.
+    const gsAccountIds = listTlonAccountIds(api.config);
     setGatewayStatusManager(null);
 
     if (gsAccountIds.length > 1) {
       api.logger.warn(
-        `[gateway-status] disabled: ${gsAccountIds.length} runnable Tlon accounts, ` +
+        `[gateway-status] disabled: ${gsAccountIds.length} Tlon accounts configured, ` +
           `but v1 only supports one (global @tloncorp/api client cannot target multiple ships)`,
       );
     } else if (gsAccountIds.length === 1) {
