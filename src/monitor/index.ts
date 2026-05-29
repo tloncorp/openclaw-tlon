@@ -355,7 +355,15 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     if (gatewayStatusCleanupRan) return;
     gatewayStatusCleanupRan = true;
     gsManager?.stopHeartbeat();
-    gsManager?.markStopped();
+    // Deliberately do NOT call gsManager.markStopped() here. The manager is
+    // a process-lifetime singleton (set once in index.ts's registerFull,
+    // which does not re-run on config reload) reused across monitor
+    // restarts. markStopped() is a one-way latch the gateway_stop hook owns;
+    // if monitor teardown set it, a config-reload's replacement monitor
+    // would reuse the latched manager, its activation would see stopped and
+    // bail, and gateway-status would stay dead until a full gateway restart.
+    // Zombie-heartbeat prevention is monitor-local via gatewayStatusCleanupRan
+    // (checked in the activation task before startHeartbeat).
     if (apiClientParamsSlot.get() === myApiClientParams) {
       apiClientParamsSlot.set(null);
     }
@@ -803,20 +811,33 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     // Fire-and-forget: wait for gateway_start signal, then activate.
     // Does NOT block monitor startup — discovery, subscriptions, etc. proceed immediately.
     void (async () => {
+      // Named abort handler so it can be removed once the race settles. When
+      // the "started" branch wins (every config-reload restart, since
+      // waitForGatewayStart() is already resolved on the process-lifetime
+      // manager), a bare addEventListener would linger on the host's signal
+      // forever — `{ once: true }` only removes it after it fires — retaining
+      // this activation closure and the SSE-bound monitor state. Same
+      // retention class the outer-finally removeEventListener avoids.
+      let onRaceAbort: (() => void) | undefined;
       try {
+        const abortRace =
+          signal &&
+          new Promise<"aborted">((r) => {
+            if (signal.aborted) {
+              r("aborted");
+              return;
+            }
+            onRaceAbort = () => r("aborted");
+            signal.addEventListener("abort", onRaceAbort, { once: true });
+          });
         const raced = await Promise.race([
           gsManager.waitForGatewayStart().then(() => "started" as const),
-          ...(signal
-            ? [
-                new Promise<"aborted">((r) =>
-                  signal.addEventListener("abort", () => r("aborted"), {
-                    once: true,
-                  }),
-                ),
-              ]
-            : []),
+          ...(abortRace ? [abortRace] : []),
         ]);
-        if (raced !== "started" || gsManager.stopped) {
+        if (signal && onRaceAbort) {
+          signal.removeEventListener("abort", onRaceAbort);
+        }
+        if (raced !== "started" || gatewayStatusCleanupRan || gsManager.stopped) {
           return;
         }
 
@@ -825,18 +846,24 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
           activeWindowSecs: ACTIVE_WINDOW_SECS,
           offlineReplyCooldownSecs: OFFLINE_REPLY_COOLDOWN_SECS,
         });
-        // Recheck after each await: the monitor can be aborted (or a
-        // replacement registration can mark this manager stopped) while
-        // these pokes are in flight. Without the recheck we would leave
-        // a zombie heartbeat interval running against a torn-down manager.
-        if (signal?.aborted || gsManager.stopped) {
+        // Recheck after each await: this monitor can be torn down
+        // (gatewayStatusCleanupRan), the signal can abort, or the gateway can
+        // stop (gsManager.stopped) while these pokes are in flight. Without
+        // the recheck we would leave a zombie heartbeat interval running.
+        // The cleanup flag is monitor-local on purpose — see
+        // cleanupGatewayStatus for why we don't latch the shared manager.
+        if (signal?.aborted || gatewayStatusCleanupRan || gsManager.stopped) {
           return;
         }
+        // Mark starting before the %gateway-start poke so a concurrent
+        // gateway_stop hook knows a start poke is in flight and sends a
+        // matching %gateway-stop even if shutdown lands before markActivated().
+        gsManager.markStarting();
         await gatewayStart({
           bootId: gsManager.bootId,
           leaseUntil: computeLeaseUntil(),
         });
-        if (signal?.aborted || gsManager.stopped) {
+        if (signal?.aborted || gatewayStatusCleanupRan || gsManager.stopped) {
           return;
         }
         gsManager.markActivated();

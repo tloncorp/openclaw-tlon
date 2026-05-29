@@ -201,11 +201,22 @@ export default defineChannelPluginEntry({
       });
 
       api.on("gateway_stop", async (event) => {
-        if (!gsManager.activated || gsManager.stopped) {
+        if (gsManager.stopped) {
           return;
         }
+        // Latch stopped FIRST, unconditionally. An activation task may be
+        // in flight (between the %gateway-start poke and markActivated());
+        // latching here makes its post-poke recheck bail so it can't start a
+        // heartbeat after we've already passed the shutdown hook.
+        const startPokeInFlightOrDone = gsManager.activated || gsManager.starting;
         gsManager.stopHeartbeat();
         gsManager.markStopped();
+        // Only send %gateway-stop if a %gateway-start has been or is being
+        // sent. If activation never reached the start poke, there is nothing
+        // for the ship to stop.
+        if (!startPokeInFlightOrDone) {
+          return;
+        }
         try {
           const sent = await sendGatewayStop({
             bootId: gsManager.bootId,

@@ -45,6 +45,16 @@ export interface GatewayStatusManager {
   /** Returns a Promise that resolves when gateway_start has fired. */
   waitForGatewayStart(): Promise<void>;
 
+  /**
+   * True once the activation task is about to send the %gateway-start poke
+   * (set immediately before the gatewayStart call). Distinguishes "a start
+   * poke is/was in flight" from "activation fully completed", so the
+   * gateway_stop hook can send a matching %gateway-stop even if shutdown
+   * lands before markActivated().
+   */
+  readonly starting: boolean;
+  markStarting(): void;
+
   /** True after monitor has successfully sent %configure + %gateway-start. */
   readonly activated: boolean;
   markActivated(): void;
@@ -66,6 +76,7 @@ export function createGatewayStatusManager(opts: {
 }): GatewayStatusManager {
   const bootId = randomUUID();
   let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
+  let starting = false;
   let activated = false;
   let stopped = false;
 
@@ -82,6 +93,13 @@ export function createGatewayStatusManager(opts: {
     },
     waitForGatewayStart() {
       return startedPromise;
+    },
+
+    get starting() {
+      return starting;
+    },
+    markStarting() {
+      starting = true;
     },
 
     get activated() {

@@ -12,13 +12,15 @@ vi.mock("./urbit/api-client.js", () => ({
   configureTlonApiWithPoke: vi.fn(),
 }));
 
-import { gatewayHeartbeat } from "@tloncorp/api";
+import { gatewayHeartbeat, gatewayStop } from "@tloncorp/api";
+import { configureTlonApiWithPoke } from "./urbit/api-client.js";
 import { sharedSlot } from "./shared-state.js";
 import {
   API_CLIENT_PARAMS_SLOT,
   createGatewayStatusManager,
   setGatewayStatusManager,
   getGatewayStatusManager,
+  sendGatewayStop,
   computeLeaseUntil,
   type GatewayStatusManager,
   type SharedApiClientParams,
@@ -158,9 +160,49 @@ describe("gateway-status: createGatewayStatusManager", () => {
       vi.advanceTimersByTime(30_000);
       expect(gatewayHeartbeat).toHaveBeenCalledTimes(1); // not 2
     });
+
+    it("skips the heartbeat poke when api-client params are not published", () => {
+      // Clear the params the suite beforeEach published. The per-tick body
+      // must bail before configuring/pokeing when the shared slot is empty.
+      sharedSlot<SharedApiClientParams>(API_CLIENT_PARAMS_SLOT).set(null);
+      manager.markActivated();
+      manager.startHeartbeat();
+
+      vi.advanceTimersByTime(60_000);
+      expect(gatewayHeartbeat).not.toHaveBeenCalled();
+    });
+
+    it("re-activates after stopHeartbeat without markStopped (config-reload survival)", () => {
+      // First monitor incarnation: activate + heartbeat.
+      manager.markActivated();
+      manager.startHeartbeat();
+      vi.advanceTimersByTime(30_000);
+      expect(gatewayHeartbeat).toHaveBeenCalledTimes(1);
+
+      // Monitor teardown stops the heartbeat but must NOT latch the shared
+      // manager stopped — that's the gateway_stop hook's job. A replacement
+      // monitor (config reload) reuses this same process-lifetime manager.
+      manager.stopHeartbeat();
+      expect(manager.stopped).toBe(false);
+
+      // Replacement monitor re-activates; the heartbeat resumes instead of
+      // staying dead until a full gateway restart.
+      manager.startHeartbeat();
+      vi.advanceTimersByTime(30_000);
+      expect(gatewayHeartbeat).toHaveBeenCalledTimes(2);
+    });
   });
 
   describe("lifecycle flags", () => {
+    it("starting starts false", () => {
+      expect(manager.starting).toBe(false);
+    });
+
+    it("markStarting sets starting", () => {
+      manager.markStarting();
+      expect(manager.starting).toBe(true);
+    });
+
     it("activated starts false", () => {
       expect(manager.activated).toBe(false);
     });
@@ -177,6 +219,15 @@ describe("gateway-status: createGatewayStatusManager", () => {
     it("markStopped sets stopped", () => {
       manager.markStopped();
       expect(manager.stopped).toBe(true);
+    });
+
+    it("starting is set independently of activated (in-flight start window)", () => {
+      // The gateway_stop hook relies on `starting` to know a %gateway-start
+      // poke is in flight even before markActivated() runs, so it can still
+      // send a matching %gateway-stop during a shutdown that races activation.
+      manager.markStarting();
+      expect(manager.starting).toBe(true);
+      expect(manager.activated).toBe(false);
     });
   });
 });
@@ -206,5 +257,43 @@ describe("gateway-status: computeLeaseUntil", () => {
     // Should be ~90 seconds in the future
     expect(lease - now).toBeGreaterThanOrEqual(89_000);
     expect(lease - now).toBeLessThanOrEqual(91_000);
+  });
+});
+
+describe("gateway-status: sendGatewayStop", () => {
+  beforeEach(() => {
+    vi.mocked(gatewayStop).mockClear();
+    vi.mocked(configureTlonApiWithPoke).mockClear();
+    sharedSlot<SharedApiClientParams>(API_CLIENT_PARAMS_SLOT).set(null);
+  });
+
+  afterEach(() => {
+    sharedSlot<SharedApiClientParams>(API_CLIENT_PARAMS_SLOT).set(null);
+  });
+
+  it("returns false and does not poke when params are not published", async () => {
+    const sent = await sendGatewayStop({ bootId: "boot-1", reason: "shutdown" });
+    expect(sent).toBe(false);
+    expect(gatewayStop).not.toHaveBeenCalled();
+  });
+
+  it("configures the api client before sending the stop poke", async () => {
+    const params: SharedApiClientParams = {
+      poke: vi.fn().mockResolvedValue(undefined),
+      shipName: "test-bot",
+      shipUrl: "http://localhost:8080",
+    };
+    sharedSlot<SharedApiClientParams>(API_CLIENT_PARAMS_SLOT).set(params);
+
+    const sent = await sendGatewayStop({ bootId: "boot-1", reason: "shutdown" });
+    expect(sent).toBe(true);
+    expect(configureTlonApiWithPoke).toHaveBeenCalledTimes(1);
+    expect(gatewayStop).toHaveBeenCalledTimes(1);
+    // configure must run before the poke so the stop reaches the SSE-bound
+    // client in this module's @tloncorp/api instance.
+    const configureOrder =
+      vi.mocked(configureTlonApiWithPoke).mock.invocationCallOrder[0];
+    const stopOrder = vi.mocked(gatewayStop).mock.invocationCallOrder[0];
+    expect(configureOrder).toBeLessThan(stopOrder);
   });
 });
