@@ -79,7 +79,7 @@ import {
 } from "../pending-nudge.js";
 import { getTlonRuntime } from "../runtime.js";
 import { setSessionRole } from "../session-roles.js";
-import { createSettingsManager, type TlonSettingsStore } from "../settings.js";
+import { createSettingsManager, DM_INVITE_PREVIEW, type TlonSettingsStore } from "../settings.js";
 import { canonicalizeNest, normalizeShip, parseChannelNest } from "../targets.js";
 import { createTlonTelemetry } from "../telemetry.js";
 import { resolveTlonAccount } from "../types.js";
@@ -645,9 +645,10 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     setLastOwnerActivity(account.accountId, ownerActivityFromSettings(currentSettings));
     setLastNudgeStageShadow(account.accountId, currentSettings.lastNudgeStage ?? 0);
 
-    if (currentSettings.pendingApprovals?.length) {
-      pendingApprovals = currentSettings.pendingApprovals;
+    if (currentSettings.pendingApprovals !== undefined) {
+      pendingApprovals = pruneExpired(currentSettings.pendingApprovals);
       runtime.log?.(`[tlon] Loaded ${pendingApprovals.length} pending approval(s) from settings`);
+      await savePendingApprovals();
     }
   } catch (err) {
     runtime.log?.(`[tlon] Settings store not available, using file config: ${String(err)}`);
@@ -857,6 +858,13 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
 
   // Helper to save pending approvals to settings store
   async function savePendingApprovals(): Promise<void> {
+    const beforePrune = pendingApprovals.length;
+    pendingApprovals = pruneExpired(pendingApprovals);
+    if (pendingApprovals.length !== beforePrune) {
+      runtime.log?.(
+        `[tlon] Pruned ${beforePrune - pendingApprovals.length} expired pending approval(s)`,
+      );
+    }
     try {
       await api!.poke({
         app: "settings",
@@ -1122,6 +1130,8 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
 
   // Queue a new approval request and notify the owner
   async function queueApprovalRequest(approval: PendingApproval): Promise<void> {
+    pendingApprovals = pruneExpired(pendingApprovals);
+
     // Check if ship is blocked - silently ignore
     if (await isShipBlocked(approval.requestingShip)) {
       runtime.log?.(`[tlon] Ignoring request from blocked ship ${approval.requestingShip}`);
@@ -1599,10 +1609,14 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
           runtime,
         );
         if (threadContextHistory.length > 0) {
-          const threadContextMessage = buildThreadContextMessage(threadContextHistory, messageText, {
-            formatAuthor: formatShipWithNickname,
-            sanitizeContent: sanitizeMessageText,
-          });
+          const threadContextMessage = buildThreadContextMessage(
+            threadContextHistory,
+            messageText,
+            {
+              formatAuthor: formatShipWithNickname,
+              sanitizeContent: sanitizeMessageText,
+            },
+          );
           if (threadContextMessage) {
             messageText = threadContextMessage.messageText;
             runtime?.log?.(
@@ -2425,7 +2439,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
               {
                 type: "dm",
                 requestingShip: ship,
-                messagePreview: "(DM invite - no message yet)",
+                messagePreview: DM_INVITE_PREVIEW,
               },
               pendingApprovals.map((a) => a.id),
             );
