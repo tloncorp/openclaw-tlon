@@ -1,4 +1,4 @@
-import { A2UI, appendToPostBlob } from "@tloncorp/api";
+import { A2UI } from "./a2ui.js";
 
 export const TLON_A2UI_CATALOG_ID = "tlon.a2ui.basic.v1";
 export type TlonA2UIBlob = A2UI.BlobEntry;
@@ -29,5 +29,5 @@ export function makeA2UIBlob(
 }
 
 export function serializeBlobField(entry: TlonA2UIBlob): string {
-  return appendToPostBlob(undefined, entry);
+  return JSON.stringify([entry]);
 }

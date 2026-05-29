@@ -1,4 +1,3 @@
-import { A2UI } from "@tloncorp/api";
 import { randomUUID } from "node:crypto";
 /**
  * Approval system for managing DM, channel mention, and group invite approvals.
@@ -8,6 +7,7 @@ import { randomUUID } from "node:crypto";
  * (/allow, /reject, /ban).
  */
 import type { PendingApproval } from "../settings.js";
+import { A2UI } from "../urbit/a2ui.js";
 import { makeA2UIBlob, type TlonA2UIBlob } from "../urbit/blob.js";
 
 export type { PendingApproval };
@@ -217,6 +217,7 @@ type ApprovalA2UIParams = {
   groupName?: string;
   groupFlag?: string;
   groupTitle?: string;
+  sourceTarget?: A2UI.NavigationTarget;
 };
 
 function approvalRequesterName(params: ApprovalA2UIParams): string {
@@ -310,12 +311,14 @@ function buildApprovalA2UIBlobFromParams(params: ApprovalA2UIParams): TlonA2UIBl
   const contextLines = approvalContextLines(params);
   const contextIds = contextLines.map((_, index) => `context${index}`);
   const copy = approvalCopy(params);
+  const actionChildren = ["allow", "reject", "ban"];
   const bodyChildren = [
     "eyebrow",
     "title",
     "titleDivider",
     ...contextIds,
     ...(copy ? ["copy"] : []),
+    ...(params.sourceTarget ? ["sourceAction"] : []),
     "divider",
     "details",
     "actions",
@@ -335,6 +338,9 @@ function buildApprovalA2UIBlobFromParams(params: ApprovalA2UIParams): TlonA2UIBl
           text: copy,
         },
       ]
+    : [];
+  const sourceActionComponents: A2UI.Component[] = params.sourceTarget
+    ? [{ id: "sourceAction", component: "Row", children: ["viewMessage"] }]
     : [];
 
   const components: A2UI.Component[] = [
@@ -359,6 +365,7 @@ function buildApprovalA2UIBlobFromParams(params: ApprovalA2UIParams): TlonA2UIBl
     { id: "titleDivider", component: "Divider" },
     ...contextComponents,
     ...copyComponents,
+    ...sourceActionComponents,
     { id: "divider", component: "Divider" },
     {
       id: "details",
@@ -374,8 +381,25 @@ function buildApprovalA2UIBlobFromParams(params: ApprovalA2UIParams): TlonA2UIBl
     {
       id: "actions",
       component: "Row",
-      children: ["allow", "reject", "ban"],
+      children: actionChildren,
     },
+    ...(params.sourceTarget
+      ? [
+          {
+            id: "viewMessage",
+            component: "Button",
+            variant: "secondary",
+            child: "viewMessageLabel",
+            action: {
+              event: {
+                name: A2UI.action.navigate,
+                context: { target: params.sourceTarget },
+              },
+            },
+          } as const,
+          { id: "viewMessageLabel", component: "Text", text: "View message" } as const,
+        ]
+      : []),
     {
       id: "allow",
       component: "Button",
@@ -461,6 +485,40 @@ function displayGroupForApproval(
   return titleOverride || ctx?.groupNames?.get(flag) || flag;
 }
 
+function approvalSourceTarget(
+  approval: PendingApproval,
+  ctx?: DisplayContext,
+): A2UI.NavigationTarget | undefined {
+  const messageId = approval.originalMessage?.messageId;
+  if (!messageId) {
+    return undefined;
+  }
+
+  const base = {
+    type: "message" as const,
+    postId: messageId,
+    authorId: approval.requestingShip,
+    parentId: approval.originalMessage?.parentId,
+  };
+
+  if (approval.type === "dm") {
+    return {
+      ...base,
+      channelId: approval.requestingShip,
+    };
+  }
+
+  if (approval.type === "channel" && approval.channelNest) {
+    return {
+      ...base,
+      channelId: approval.channelNest,
+      groupId: ctx?.channelGroups?.get(approval.channelNest),
+    };
+  }
+
+  return undefined;
+}
+
 export function buildApprovalA2UIBlob(
   approval: PendingApproval,
   ctx?: DisplayContext,
@@ -478,6 +536,7 @@ export function buildApprovalA2UIBlob(
     groupFlag: approval.groupFlag,
     groupTitle: approval.groupTitle,
     groupName: displayGroupForApproval(approval.groupFlag, approval.groupTitle, ctx),
+    sourceTarget: approvalSourceTarget(approval, ctx),
   });
 }
 
