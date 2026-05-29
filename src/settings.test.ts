@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  PENDING_APPROVAL_TTL_MS,
+  APPROVAL_TTL_MS,
+  DM_INVITE_PREVIEW,
   applySettingsUpdate,
   createSettingsManager,
   parseSettingsResponse,
@@ -153,7 +154,7 @@ describe("Settings: parseSettingsResponse", () => {
               id: "expired",
               type: "channel",
               requestingShip: "~old",
-              timestamp: now - PENDING_APPROVAL_TTL_MS - 1,
+              timestamp: now - APPROVAL_TTL_MS - 1,
             },
             {
               id: "fresh",
@@ -189,7 +190,7 @@ describe("Settings: parseSettingsResponse", () => {
               id: "dm-invite",
               type: "dm",
               requestingShip: "~new",
-              messagePreview: "(DM invite - no message yet)",
+              messagePreview: DM_INVITE_PREVIEW,
               timestamp: now,
             },
             {
@@ -316,7 +317,7 @@ describe("Settings: applySettingsUpdate", () => {
           id: "expired",
           type: "dm",
           requestingShip: "~old",
-          timestamp: now - PENDING_APPROVAL_TTL_MS - 1,
+          timestamp: now - APPROVAL_TTL_MS - 1,
         },
         {
           id: "fresh",

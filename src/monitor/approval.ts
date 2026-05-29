@@ -7,9 +7,10 @@ import { randomUUID } from "node:crypto";
  * (/allow, /reject, /ban).
  */
 
-import type { PendingApproval } from "../settings.js";
+import { APPROVAL_TTL_MS, type PendingApproval } from "../settings.js";
 
 export type { PendingApproval };
+export { APPROVAL_TTL_MS };
 
 export type ApprovalType = "dm" | "channel" | "group";
 
@@ -93,10 +94,7 @@ export function normalizeNotificationId(id: string): string {
 // Approval Expiration
 // ============================================================================
 
-/** Pending approvals expire after 48 hours. */
-export const APPROVAL_TTL_MS = 48 * 60 * 60 * 1000;
-
-/** Check if a pending approval has expired. */
+/** Check if a pending approval has expired (TTL defined in settings.ts). */
 export function isExpired(approval: PendingApproval): boolean {
   return Date.now() - approval.timestamp > APPROVAL_TTL_MS;
 }

@@ -86,17 +86,19 @@ export type TlonSettingsState = {
 
 const SETTINGS_DESK = "moltbot";
 const SETTINGS_BUCKET = "tlon";
-export const PENDING_APPROVAL_TTL_MS = 48 * 60 * 60 * 1000;
+export const APPROVAL_TTL_MS = 48 * 60 * 60 * 1000;
+/** Sentinel preview used for DM-invite approvals that have no message body yet. */
+export const DM_INVITE_PREVIEW = "(DM invite - no message yet)";
 
 function isPendingApprovalExpired(approval: PendingApproval, now = Date.now()): boolean {
-  return now - approval.timestamp > PENDING_APPROVAL_TTL_MS;
+  return now - approval.timestamp > APPROVAL_TTL_MS;
 }
 
 function hasUsableOriginalMessage(approval: PendingApproval): boolean {
   if (approval.type === "group") {
     return true;
   }
-  if (approval.type === "dm" && approval.messagePreview === "(DM invite - no message yet)") {
+  if (approval.type === "dm" && approval.messagePreview === DM_INVITE_PREVIEW) {
     return true;
   }
 

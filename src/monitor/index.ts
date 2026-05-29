@@ -79,7 +79,7 @@ import {
 } from "../pending-nudge.js";
 import { getTlonRuntime } from "../runtime.js";
 import { setSessionRole } from "../session-roles.js";
-import { createSettingsManager, type TlonSettingsStore } from "../settings.js";
+import { createSettingsManager, DM_INVITE_PREVIEW, type TlonSettingsStore } from "../settings.js";
 import { canonicalizeNest, normalizeShip, parseChannelNest } from "../targets.js";
 import { createTlonTelemetry } from "../telemetry.js";
 import { resolveTlonAccount } from "../types.js";
@@ -2439,7 +2439,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
               {
                 type: "dm",
                 requestingShip: ship,
-                messagePreview: "(DM invite - no message yet)",
+                messagePreview: DM_INVITE_PREVIEW,
               },
               pendingApprovals.map((a) => a.id),
             );
