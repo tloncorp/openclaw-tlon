@@ -162,4 +162,25 @@ describe("owner-reply-persistence queue", () => {
     // Batch B still ran.
     expect(api.poke.mock.calls.length).toBeGreaterThan(1);
   });
+
+  it("logs the transport error cause, not just 'fetch failed'", async () => {
+    // Undici surfaces transport failures as `TypeError: fetch failed` with the
+    // real reason on `.cause`; the log must include it for diagnosis.
+    const api = {
+      poke: vi.fn().mockRejectedValue(
+        new TypeError("fetch failed", {
+          cause: Object.assign(new Error("read ECONNRESET"), {
+            code: "ECONNRESET",
+          }),
+        }),
+      ),
+    };
+    const logError = vi.fn();
+    const queue = createOwnerReplyPersistenceQueue(api, { error: logError });
+    queue.enqueue({ at: 1, date: "2026-04-21", clearStage: true });
+    await queue.flush();
+
+    expect(logError).toHaveBeenCalledOnce();
+    expect(logError.mock.calls[0][0]).toContain("cause=ECONNRESET");
+  });
 });

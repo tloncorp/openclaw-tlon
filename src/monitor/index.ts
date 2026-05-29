@@ -98,6 +98,7 @@ const apiClientParamsSlot = sharedSlot<SharedApiClientParams>(
   API_CLIENT_PARAMS_SLOT,
 );
 import { authenticate } from "../urbit/auth.js";
+import { describeError } from "../urbit/errors.js";
 import { ssrfPolicyFromAllowPrivateNetwork } from "../urbit/context.js";
 import { sendDm, sendChannelPost, type BotProfile } from "../urbit/send.js";
 import { UrbitSSEClient } from "../urbit/sse-client.js";
@@ -772,8 +773,8 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     } catch (err: unknown) {
       runtime.error?.(
         nudge
-          ? `[tlon] Failed to persist pendingNudge: ${String(err)}`
-          : `[tlon] Failed to clear pendingNudge: ${String(err)}`,
+          ? `[tlon] Failed to persist pendingNudge: ${describeError(err)}`
+          : `[tlon] Failed to clear pendingNudge: ${describeError(err)}`,
       );
     }
   });
