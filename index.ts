@@ -53,7 +53,7 @@ const ALLOWED_TLON_COMMANDS = new Set([
 
 /** Credential flags that the tlon skill binary accepts before the subcommand. */
 const CREDENTIAL_FLAGS_WITH_VALUE = new Set(["--config", "--url", "--ship", "--code", "--cookie"]);
-const DEFAULT_TLON_TOOL_TIMEOUT_MS = 45_000;
+const DEFAULT_TLON_CLI_TIMEOUT_MS = 45_000;
 const CONTEXT_LENS_RECENT_ROUTE = "/tlon/context-lens/recent";
 const CONTEXT_LENS_EVENTS_ROUTE = "/tlon/context-lens/events";
 const CONTEXT_LENS_RUN_ROUTE = "/tlon/context-lens/run";
@@ -135,7 +135,7 @@ function runTlonCommand(
   binary: string,
   args: string[],
   credentials?: { url: string; ship: string; code: string },
-  timeoutMs = DEFAULT_TLON_TOOL_TIMEOUT_MS,
+  timeoutMs = DEFAULT_TLON_CLI_TIMEOUT_MS,
 ): Promise<string> {
   return new Promise((resolve, reject) => {
     const env = { ...process.env };
@@ -426,7 +426,7 @@ export default defineChannelPluginEntry({
       account.configured && account.url && account.ship && account.code
         ? { url: account.url, ship: account.ship, code: account.code }
         : undefined;
-    const toolTimeoutMs = account.lifecycle.toolTimeoutMs ?? DEFAULT_TLON_TOOL_TIMEOUT_MS;
+    const toolTimeoutMs = account.lifecycle.toolTimeoutMs ?? DEFAULT_TLON_CLI_TIMEOUT_MS;
 
     if (credentials) {
       api.logger.info(`[tlon] Credentials available for ${account.ship}`);
