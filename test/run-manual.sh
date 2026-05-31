@@ -4,7 +4,6 @@
 # Usage:
 #   pnpm test:manual              # start everything, attach to logs
 #   pnpm test:manual --stop       # tear down
-#   pnpm test:manual -- --stop    # also accepted when using pnpm's arg separator
 #
 # Ships:
 #   ~zod (bot)  — http://localhost:8080  code: lidlut-tabwed-pillex-ridrup
@@ -38,7 +37,7 @@ if [ -f "dev/docker-compose.local.yml" ] && [ -d "../tlonbot" ]; then
 fi
 
 # Handle --stop flag
-if [ "${1:-}" = "--stop" ] || { [ "${1:-}" = "--" ] && [ "${2:-}" = "--stop" ]; }; then
+if [ "${1:-}" = "--stop" ]; then
   echo "==> Stopping containers..."
   docker compose $COMPOSE_FILES down -v
   exit 0
@@ -111,7 +110,7 @@ print_info() {
   echo "    ~ten (user)  http://localhost:$TEN_PORT   code: lapseg-nolmel-riswen-hopryc"
   echo "    ~mug (3rd)   http://localhost:$MUG_PORT   code: ravsut-bolryd-hapsum-pastul"
   echo ""
-  echo "  Gateway:       http://localhost:$GATEWAY_PORT/?token=ci-test-token"
+  echo "  Gateway:       http://localhost:$GATEWAY_PORT"
   echo ""
   echo "  Stop with:     pnpm test:manual --stop"
   echo "                 (or Ctrl+C)"
