@@ -1,4 +1,4 @@
-import { gatewayStop } from "@tloncorp/api";
+import { sendGatewayStop } from "./src/gateway-status.js";
 import { spawn } from "node:child_process";
 import { createRequire } from "node:module";
 import { dirname } from "node:path";
@@ -171,9 +171,19 @@ export default defineChannelPluginEntry({
     // ── Gateway-status liveness integration ───────────────────
     //
     // v1 requires exactly one Tlon account. With multiple accounts, multiple
-    // monitors call configureTlonApiWithPoke() and the last one wins the global
-    // @tloncorp/api singleton — making it unsafe to route heartbeats or stop
-    // pokes to a specific ship. Disable entirely rather than route to the wrong ship.
+    // monitors call configureTlonApiWithPoke() and the last one wins the
+    // global @tloncorp/api singleton — making it unsafe to route heartbeats or
+    // stop pokes to a specific ship. Disable entirely rather than route to the
+    // wrong ship.
+    //
+    // We count ALL configured account entries (not just currently-runnable
+    // ones) on purpose. The manager is a process-lifetime singleton created
+    // here in registerFull, which does NOT re-run on config reload. If we
+    // counted only runnable accounts, a config of one complete account plus a
+    // disabled/unconfigured stub would enable the singleton, and later
+    // completing the stub would start a second monitor that races the shared
+    // API slot — without registerFull re-evaluating the gate. Counting every
+    // entry keeps the feature off whenever a second account exists at all.
     const gsAccountIds = listTlonAccountIds(api.config);
     setGatewayStatusManager(null);
 
@@ -197,17 +207,34 @@ export default defineChannelPluginEntry({
       });
 
       api.on("gateway_stop", async (event) => {
-        if (!gsManager.activated || gsManager.stopped) {
+        if (gsManager.stopped) {
           return;
         }
+        // Latch stopped FIRST, unconditionally. An activation task may be
+        // in flight (between the %gateway-start poke and markActivated());
+        // latching here makes its post-poke recheck bail so it can't start a
+        // heartbeat after we've already passed the shutdown hook.
+        const startPokeInFlightOrDone = gsManager.activated || gsManager.starting;
         gsManager.stopHeartbeat();
         gsManager.markStopped();
+        // Only send %gateway-stop if a %gateway-start has been or is being
+        // sent. If activation never reached the start poke, there is nothing
+        // for the ship to stop.
+        if (!startPokeInFlightOrDone) {
+          return;
+        }
         try {
-          await gatewayStop({
+          const sent = await sendGatewayStop({
             bootId: gsManager.bootId,
             reason: event.reason ?? "shutdown",
           });
-          api.logger.info(`[gateway-status] stopped (reason=${event.reason ?? "shutdown"})`);
+          if (sent) {
+            api.logger.info(`[gateway-status] stopped (reason=${event.reason ?? "shutdown"})`);
+          } else {
+            api.logger.warn(
+              "[gateway-status] stop skipped: api-client params not published",
+            );
+          }
         } catch (err) {
           api.logger.warn(`[gateway-status] stop poke failed: ${String(err)}`);
         }

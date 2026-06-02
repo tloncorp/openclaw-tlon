@@ -5,6 +5,7 @@ import {
   setConversationPresence,
 } from "@tloncorp/api";
 import type { RuntimeEnv } from "openclaw/plugin-sdk";
+import { describeError } from "../urbit/errors.js";
 
 type RunState = {
   toolNames: string[];
@@ -235,11 +236,7 @@ export function createComputingPresenceTracker(params?: {
       await fn();
     } catch (error) {
       runtime?.error?.(
-        `[tlon] Failed to ${action} computing presence for ${conversationId}: ${
-          error instanceof Error
-            ? (error.stack ?? error.message)
-            : String(error)
-        }`,
+        `[tlon] Failed to ${action} computing presence for ${conversationId}: ${describeError(error)}`,
       );
     }
   };

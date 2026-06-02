@@ -1,5 +1,5 @@
 import type { ClientPostBlobData } from "@tloncorp/api";
-import type { RuntimeEnv } from "openclaw/plugin-sdk/tlon";
+import type { RuntimeEnv } from "openclaw/plugin-sdk/runtime";
 import { parseBlobData, formatBlobForHistory } from "./media.js";
 import { extractMessageText } from "./utils.js";
 

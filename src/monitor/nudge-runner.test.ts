@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
-import type { OpenClawConfig } from "openclaw/plugin-sdk/tlon";
+import type { OpenClawConfig } from "openclaw/plugin-sdk/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { PendingNudge } from "../pending-nudge.js";
 import type { TlonSettingsStore } from "../settings.js";

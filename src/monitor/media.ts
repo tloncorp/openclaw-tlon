@@ -7,7 +7,7 @@ import { homedir } from "node:os";
 import * as path from "node:path";
 import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
-import { fetchWithSsrFGuard } from "openclaw/plugin-sdk/tlon";
+import { fetchWithSsrFGuard } from "openclaw/plugin-sdk/ssrf-runtime";
 import { getDefaultSsrFPolicy } from "../urbit/context.js";
 
 // Default to OpenClaw workspace media directory

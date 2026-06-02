@@ -93,7 +93,7 @@ for i in $(seq 1 90); do
   fi
   if [ $i -eq 90 ]; then
     echo " TIMEOUT"
-    docker compose $COMPOSE_FILES logs openclaw | tail -50
+    docker compose $COMPOSE_FILES logs openclaw | tail -200
     exit 1
   fi
   sleep 2
@@ -135,7 +135,7 @@ done
 trap 'echo ""; echo "==> Stopping..."; docker compose $COMPOSE_FILES down -v 2>/dev/null || true' EXIT INT TERM
 
 # Show recent startup logs then re-print info
-docker compose $COMPOSE_FILES logs --tail=20 openclaw 2>/dev/null || true
+docker compose $COMPOSE_FILES logs --tail=50 openclaw 2>/dev/null || true
 print_info
 echo "==> Tailing openclaw logs (Ctrl+C to stop)..."
 echo ""

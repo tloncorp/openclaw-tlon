@@ -220,9 +220,14 @@ describe("blobs", () => {
       blob: fileBlob(filenameToken),
     });
 
+    // Both parent and reply produce calls under the same key. The parent's
+    // call lands first and lacks the blob; if we waited for any call, we'd
+    // race and assert against the parent's userText. Wait for the call
+    // whose userText carries the reply's blob filename.
     const calls = await waitFor(async () => {
       const c = await fakeModel.received(key);
-      return c.length > 0 ? c : undefined;
+      const combined = c.map((x) => x.userText).join("\n");
+      return combined.includes(`${filenameToken}.png`) ? c : undefined;
     }, 30_000);
     const combined = calls.map((c) => c.userText).join("\n");
     expect(combined).toContain(`${filenameToken}.png`);

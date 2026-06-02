@@ -11,6 +11,7 @@
  */
 
 import type { UrbitSSEClient } from "../urbit/sse-client.js";
+import { describeError } from "../urbit/errors.js";
 
 export type OwnerReplyPersistenceBatch = {
   at: number;
@@ -90,7 +91,7 @@ export function createOwnerReplyPersistenceQueue(
               });
             }
           } catch (err) {
-            log.error?.(`[tlon] owner-reply persistence failed: ${String(err)}`);
+            log.error?.(`[tlon] owner-reply persistence failed: ${describeError(err)}`);
           }
         });
     },
@@ -111,7 +112,7 @@ export function createOwnerReplyPersistenceQueue(
               },
             });
           } catch (err) {
-            log.error?.(`[tlon] owner-reply stage-clear failed: ${String(err)}`);
+            log.error?.(`[tlon] owner-reply stage-clear failed: ${describeError(err)}`);
           }
         });
     },

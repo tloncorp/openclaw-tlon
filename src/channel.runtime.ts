@@ -1,6 +1,10 @@
 import crypto from "node:crypto";
-import type { ChannelAccountSnapshot, ChannelOutboundAdapter, ChannelPlugin } from "openclaw/plugin-sdk/tlon";
-import type { OpenClawConfig } from "openclaw/plugin-sdk/tlon";
+import type {
+  ChannelAccountSnapshot,
+  ChannelOutboundAdapter,
+  ChannelPlugin,
+  OpenClawConfig,
+} from "openclaw/plugin-sdk/core";
 import { monitorTlonProvider } from "./monitor/index.js";
 import { tlonSetupWizard } from "./setup-surface.js";
 import {

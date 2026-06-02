@@ -1,5 +1,6 @@
-import type { RuntimeEnv } from "openclaw/plugin-sdk/tlon";
+import type { RuntimeEnv } from "openclaw/plugin-sdk/runtime";
 import { PostHog } from "posthog-node";
+import { sharedMap } from "./shared-state.js";
 import type { TlonTelemetryConfig } from "./types.js";
 
 type ToolCallRecord = {
@@ -112,7 +113,7 @@ const TLON_HEARTBEAT_REENGAGED_EVENT = "TlonBot Heartbeat Nudge Reengaged";
 const TLON_TELEMETRY_LOG_SOURCE = "openclawPlugin";
 const TOOL_TRACE_TTL_MS = 60 * 60 * 1000;
 const MAX_TOOL_CALLS_PER_SESSION = 200;
-const toolCallsBySession = new Map<string, ToolSessionTrace>();
+const toolCallsBySession = sharedMap<string, ToolSessionTrace>("telemetry.toolCallsBySession");
 
 function cleanupToolCalls(now = Date.now()): void {
   for (const [sessionKey, trace] of toolCallsBySession) {
