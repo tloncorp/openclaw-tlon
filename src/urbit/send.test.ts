@@ -50,5 +50,10 @@ describe("sendDm", () => {
       }),
     );
     expect(result.messageId).toBe("~zod/mocked-ud");
+    // §3 of the approved plan: the send result carries `sentAt` so
+    // downstream callers (the nudge runner, pending-nudge writes, the
+    // telemetry event's `nudgeSentAtMs`) agree on a single timestamp.
+    expect(result.sentAt).toBe(sentAt);
+    expect(result.channel).toBe("tlon");
   });
 });

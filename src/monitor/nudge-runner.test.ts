@@ -36,6 +36,8 @@ type Harness = {
   timeRef: { value: number };
 };
 
+type SendDmResult = { channel: "tlon"; messageId: string; sentAt: number };
+
 type HarnessOpts = {
   now: number;
   owner?: string | null;
@@ -45,9 +47,19 @@ type HarnessOpts = {
   scryResult?: unknown;
   scryImpl?: () => Promise<unknown>;
   pokeImpl?: () => Promise<unknown>;
-  sendDmImpl?: () => Promise<unknown>;
+  sendDmImpl?: () => Promise<SendDmResult>;
   cfg?: OpenClawConfig;
 };
+
+const DEFAULT_SEND_RESULT_SENT_AT = 1_700_000_000_000;
+const DEFAULT_SEND_RESULT_MESSAGE_ID = `${BOT_SHIP}/default-fixture-id`;
+function defaultSendResult(): SendDmResult {
+  return {
+    channel: "tlon",
+    messageId: DEFAULT_SEND_RESULT_MESSAGE_ID,
+    sentAt: DEFAULT_SEND_RESULT_SENT_AT,
+  };
+}
 
 function makeHarness(opts: HarnessOpts): Harness {
   const ownerActivity = { value: opts.shadowActivity ?? null };
@@ -65,8 +77,8 @@ function makeHarness(opts: HarnessOpts): Harness {
       .mockImplementation(opts.pokeImpl ?? (async () => undefined)),
   };
   const sendDm = vi
-    .fn<(params: unknown) => Promise<unknown>>()
-    .mockImplementation(opts.sendDmImpl ?? (async () => undefined));
+    .fn<(params: unknown) => Promise<SendDmResult>>()
+    .mockImplementation(opts.sendDmImpl ?? (async () => defaultSendResult()));
   const setLocalPendingNudge = vi.fn<(accountId: string, nudge: PendingNudge) => void>();
   const setLastNudgeStageShadow = vi
     .fn<(accountId: string, stage: LastNudgeStageShadow) => void>()
@@ -181,11 +193,20 @@ describe("nudge-runner", () => {
       ownerShip: OWNER_SHIP,
       accountId: ACCOUNT_ID,
       content: NUDGE_MESSAGES[1],
+      // §3.2: pending-nudge `sentAt` must match the canonical send-result
+      // timestamp so downstream consumers agree with the telemetry event's
+      // `nudgeSentAtMs`.
+      sentAt: DEFAULT_SEND_RESULT_SENT_AT,
     });
     expect(h.telemetry.captureHeartbeatNudge).toHaveBeenCalledTimes(1);
     expect(h.telemetry.captureHeartbeatNudge.mock.calls[0][0]).toMatchObject({
       nudgeStage: 1,
       success: true,
+      // §3.3: heartbeat-nudge telemetry carries the canonical messageId
+      // and unix-ms timestamp so the Homestead-side tap join (TLON-5728)
+      // can correlate by exact `messageId`.
+      messageId: DEFAULT_SEND_RESULT_MESSAGE_ID,
+      nudgeSentAtMs: DEFAULT_SEND_RESULT_SENT_AT,
     });
   });
 
@@ -442,6 +463,11 @@ describe("nudge-runner", () => {
     expect(h.telemetry.captureHeartbeatNudge).toHaveBeenCalledTimes(1);
     expect(h.telemetry.captureHeartbeatNudge.mock.calls[0][0]).toMatchObject({
       success: false,
+      // §3.2/§3.3: on send failure both messageId and nudgeSentAtMs are
+      // null. The HogQL funnel filters `success = true`, so the null
+      // fields never end up joining against a mobile tap.
+      messageId: null,
+      nudgeSentAtMs: null,
     });
   });
 
@@ -604,8 +630,8 @@ describe("nudge-runner", () => {
     // catches the write instead of losing it.
     const now = Date.UTC(2026, 3, 21, 12, 0, 0);
     const lastOwnerAt = now - 8 * DAY_MS;
-    let releaseSend!: () => void;
-    const sendPromise = new Promise<void>((resolve) => {
+    let releaseSend!: (result: SendDmResult) => void;
+    const sendPromise = new Promise<SendDmResult>((resolve) => {
       releaseSend = resolve;
     });
     const h = makeHarness({
@@ -632,7 +658,7 @@ describe("nudge-runner", () => {
     expect(stopResolved).toBe(false);
 
     // Release sendDm and let the tick commit its final writes.
-    releaseSend();
+    releaseSend(defaultSendResult());
     await tickPromise;
     await stopPromise;
 
@@ -742,7 +768,7 @@ describe("nudge-runner", () => {
         // Owner reply lands while sendDm await is in flight.
         h.ownerActivity.value = { at: now - 1, date: "2026-04-21" };
         h.stageShadow.value = 0;
-        return undefined;
+        return defaultSendResult();
       },
     });
 

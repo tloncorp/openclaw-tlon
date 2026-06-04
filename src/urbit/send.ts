@@ -40,8 +40,12 @@ function parseWritId(id: string): { author: string; bareId: string } {
 
 /**
  * Compute a @ud-formatted timestamp for building message IDs.
+ *
+ * Exported so cross-repo fixture tests can pin the message-id encoding
+ * against this exact function — see `src/urbit/send.fixtures.test.ts` and
+ * `homestead/packages/shared/src/api/__tests__/dmTapTelemetryRoundTrip.test.ts`.
  */
-function formatSentAt(sentAt: number): string {
+export function formatSentAt(sentAt: number): string {
   return scot("ud", da.fromUnix(sentAt));
 }
 
@@ -102,7 +106,7 @@ export async function sendDmWithStory({
       authorId: fromShip,
       botProfile,
     });
-    return { channel: "tlon", messageId };
+    return { channel: "tlon" as const, messageId, sentAt };
   }
 
   await apiSendPost({
@@ -112,7 +116,7 @@ export async function sendDmWithStory({
     content: story,
     botProfile,
   });
-  return { channel: "tlon", messageId };
+  return { channel: "tlon" as const, messageId, sentAt };
 }
 
 // --- Channel posts (chat, heap, diary) ---

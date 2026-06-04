@@ -34,6 +34,21 @@ export type TlonHeartbeatNudgeEvent = {
   channel: string;
   success: boolean;
   accountId: string | null;
+  /**
+   * Canonical DM message id constructed by `sendDmWithStory` as
+   * `${fromShip}/${formatSentAt(sentAt)}`. Populated only when the send
+   * succeeded; `null` on send failure. Joined to Homestead's
+   * `Tapped DM Push Notification` event by exact `messageId` to compute
+   * the TLON-5728 nudge → tap funnel.
+   */
+  messageId: string | null;
+  /**
+   * Unix ms timestamp the send-side `Date.now()` used to construct
+   * `messageId`. Populated only when the send succeeded; `null` on send
+   * failure. Carried as a sibling field so downstream HogQL queries can
+   * compute a `delayMs` without parsing the id.
+   */
+  nudgeSentAtMs: number | null;
 };
 
 export type TlonHeartbeatReengagementEvent = {
@@ -335,6 +350,8 @@ class PostHogTlonTelemetry implements TlonTelemetryClient {
         channel: event.channel,
         success: event.success,
         accountId: event.accountId,
+        messageId: event.messageId,
+        nudgeSentAtMs: event.nudgeSentAtMs,
       },
     });
   }
