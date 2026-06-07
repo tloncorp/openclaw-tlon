@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createContextLensRegistry, hashSessionKey } from "./context-lens.js";
+import { publishContextLensEvent } from "./context-lens-events.js";
 
 describe("context lens registry", () => {
   it("creates redacted receipts without storing raw session keys or prompt text", () => {
@@ -218,4 +219,25 @@ describe("context lens registry", () => {
     expect(registry.get(third.lensId)).toBeNull();
   });
 
+});
+
+describe("context lens event bus", () => {
+  it("shares recent events across repeated module loads", async () => {
+    const registry = createContextLensRegistry();
+    const lens = registry.create({
+      messageId: "message-global-bus",
+      chatType: "dm",
+      trigger: "dm",
+      sessionKey: "session-global-bus",
+    });
+
+    publishContextLensEvent("created", lens);
+
+    const duplicateBus = await import("./context-lens-events.js?duplicate");
+
+    expect(duplicateBus.findRecentContextLensById(lens.lensId)).toMatchObject({
+      lensId: lens.lensId,
+      messageId: "message-global-bus",
+    });
+  });
 });

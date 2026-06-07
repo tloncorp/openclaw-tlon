@@ -1,4 +1,5 @@
 import type { ContextLens } from "./context-lens.js";
+import { sharedSlot } from "./shared-state.js";
 
 export type ContextLensEvent = {
   seq: number;
@@ -14,10 +15,22 @@ export type ContextLensEvent = {
 
 type ContextLensListener = (event: ContextLensEvent) => void;
 
+type ContextLensEventState = {
+  listeners: Set<ContextLensListener>;
+  recentEvents: ContextLensEvent[];
+  nextSeq: number;
+};
+
 const MAX_RECENT_EVENTS = 200;
-const listeners = new Set<ContextLensListener>();
-const recentEvents: ContextLensEvent[] = [];
-let nextSeq = 1;
+const CONTEXT_LENS_EVENTS_SLOT = "@tloncorp/openclaw.context-lens-events";
+const stateSlot = sharedSlot<ContextLensEventState>(CONTEXT_LENS_EVENTS_SLOT);
+const state = stateSlot.get() ?? {
+  listeners: new Set<ContextLensListener>(),
+  recentEvents: [],
+  nextSeq: 1,
+};
+
+stateSlot.set(state);
 
 export function publishContextLensEvent(
   phase: string,
@@ -25,29 +38,29 @@ export function publishContextLensEvent(
   detail?: ContextLensEvent["detail"],
 ) {
   const event: ContextLensEvent = {
-    seq: nextSeq++,
+    seq: state.nextSeq++,
     at: Date.now(),
     phase,
     lens,
     ...(detail ? { detail } : {}),
   };
 
-  recentEvents.push(event);
-  if (recentEvents.length > MAX_RECENT_EVENTS) {
-    recentEvents.splice(0, recentEvents.length - MAX_RECENT_EVENTS);
+  state.recentEvents.push(event);
+  if (state.recentEvents.length > MAX_RECENT_EVENTS) {
+    state.recentEvents.splice(0, state.recentEvents.length - MAX_RECENT_EVENTS);
   }
 
-  for (const listener of listeners) {
+  for (const listener of state.listeners) {
     listener(event);
   }
 }
 
 export function listRecentContextLensEvents() {
-  return [...recentEvents];
+  return [...state.recentEvents];
 }
 
 export function findRecentContextLensById(lensId: string) {
-  for (const event of [...recentEvents].reverse()) {
+  for (const event of [...state.recentEvents].reverse()) {
     if (event.lens.lensId === lensId) {
       return event.lens;
     }
@@ -56,8 +69,8 @@ export function findRecentContextLensById(lensId: string) {
 }
 
 export function subscribeToContextLensEvents(listener: ContextLensListener) {
-  listeners.add(listener);
+  state.listeners.add(listener);
   return () => {
-    listeners.delete(listener);
+    state.listeners.delete(listener);
   };
 }
