@@ -33,11 +33,7 @@ const state = stateSlot.get() ?? {
 stateSlot.set(state);
 
 function pruneExpiredEvents(now = Date.now()) {
-  for (let i = state.recentEvents.length - 1; i >= 0; i -= 1) {
-    if (state.recentEvents[i]?.lens.expiresAt <= now) {
-      state.recentEvents.splice(i, 1);
-    }
-  }
+  state.recentEvents = state.recentEvents.filter((event) => event.lens.expiresAt > now);
 }
 
 export function publishContextLensEvent(
@@ -79,7 +75,7 @@ export function listRecentContextLensEvents() {
 
 export function findRecentContextLensById(lensId: string) {
   pruneExpiredEvents();
-  for (const event of [...state.recentEvents].reverse()) {
+  for (const event of state.recentEvents.toReversed()) {
     if (event.lens.lensId === lensId) {
       return event.lens;
     }
