@@ -2,7 +2,12 @@ import type { Story } from "@tloncorp/api";
 import type { ReplyPayload, OpenClawConfig } from "openclaw/plugin-sdk/core";
 import type { RuntimeEnv } from "openclaw/plugin-sdk/runtime";
 import { createTypingCallbacks } from "openclaw/plugin-sdk/channel-runtime";
-import { createContextLensRegistry, type ContextLensTrigger } from "../context-lens.js";
+import {
+  bindContextLensToSession,
+  createContextLensRegistry,
+  unbindContextLensFromSession,
+  type ContextLensTrigger,
+} from "../context-lens.js";
 
 // Local structural types — @tloncorp/api defines these internally but
 // does not export them from its public entrypoint.
@@ -2382,6 +2387,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
           dispatchStartedAt: Date.now(),
           timeoutMs: dispatchTimeoutMs,
         });
+        bindContextLensToSession(route.sessionKey, contextLenses, lens.lensId);
         logContextLens(lens.lensId, "dispatching");
         timeoutId = setTimeout(() => {
           dispatchTimedOut = true;
@@ -2530,6 +2536,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         dispatchError ? "error" : "completed",
         dispatchError,
       );
+      unbindContextLensFromSession(route.sessionKey, lens.lensId);
       contextLenses.recordLifecycle(lens.lensId, {
         completedAt: Date.now(),
         durationMs: dispatchDurationMs,

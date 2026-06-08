@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { createContextLensRegistry, hashSessionKey } from "./context-lens.js";
+import {
+  bindContextLensToSession,
+  createContextLensRegistry,
+  hashSessionKey,
+  recordContextLensToolResultForSession,
+  unbindContextLensFromSession,
+} from "./context-lens.js";
 import {
   findRecentContextLensById,
   listRecentContextLensEvents,
@@ -228,6 +234,39 @@ describe("context lens registry", () => {
         timedOut: true,
       },
     });
+  });
+
+  it("records completed tool durations from session tool results", () => {
+    const registry = createContextLensRegistry();
+    const sessionKey = "session-tool-result";
+    const lens = registry.create({
+      messageId: "message-tool-result",
+      chatType: "dm",
+      sessionKey,
+    });
+
+    registry.recordToolCall(lens.lensId, "read");
+    registry.recordToolCall(lens.lensId, "tlon");
+    bindContextLensToSession(sessionKey, registry, lens.lensId);
+
+    try {
+      recordContextLensToolResultForSession(sessionKey, "read", { durationMs: 17 });
+      registry.completeOpenToolRuns(lens.lensId);
+    } finally {
+      unbindContextLensFromSession(sessionKey, lens.lensId);
+    }
+
+    expect(registry.get(lens.lensId)?.tools.runs).toEqual([
+      expect.objectContaining({
+        name: "read",
+        status: "completed",
+        durationMs: 17,
+      }),
+      expect.objectContaining({
+        name: "tlon",
+        status: "completed",
+      }),
+    ]);
   });
 
   it("expires old lenses and caps registry size", () => {

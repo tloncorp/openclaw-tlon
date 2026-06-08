@@ -16,9 +16,11 @@ import { checkBlockedSendOperation } from "./src/tlon-tool-guard.js";
 import {
   findRecentContextLensById,
   listRecentContextLensEvents,
+  publishContextLensEvent,
   subscribeToContextLensEvents,
   type ContextLensEvent,
 } from "./src/context-lens-events.js";
+import { recordContextLensToolResultForSession } from "./src/context-lens.js";
 import {
   formatToolTraceEvent,
   liveToolTraceContentsEnabled,
@@ -602,6 +604,17 @@ export default defineChannelPluginEntry({
         durationMs: event.durationMs,
         error: event.error,
       });
+      const lens = recordContextLensToolResultForSession(ctx.sessionKey, event.toolName, {
+        durationMs: event.durationMs,
+        error: event.error,
+      });
+      if (lens) {
+        publishContextLensEvent("tool_result", lens, {
+          toolName: event.toolName,
+          toolPhase: "after",
+          toolCallCount: lens.tools.callCount,
+        });
+      }
     });
 
     // ── Slash commands for approval & admin ────────────────────────────
