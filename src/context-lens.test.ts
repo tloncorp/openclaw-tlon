@@ -302,6 +302,7 @@ describe("context lens event bus", () => {
 
     publishContextLensEvent("created", lens);
 
+    // @ts-expect-error Vitest supports query-string imports for duplicate module instances.
     const duplicateBus = await import("./context-lens-events.js?duplicate");
 
     expect(duplicateBus.findRecentContextLensById(lens.lensId)).toMatchObject({

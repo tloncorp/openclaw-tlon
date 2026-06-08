@@ -203,8 +203,8 @@ export function createContextLensRegistry(opts: { ttlMs?: number; maxEntries?: n
     }
 
     while (lenses.size > maxEntries) {
-      const oldest = lenses.keys().next().value as string | undefined;
-      if (!oldest) break;
+      const oldest = lenses.keys().next().value;
+      if (!oldest) { break; }
       lenses.delete(oldest);
     }
   };
@@ -291,9 +291,9 @@ export function createContextLensRegistry(opts: { ttlMs?: number; maxEntries?: n
   };
 
   const update = (lensId: string | null | undefined, patch: Partial<ContextLens>) => {
-    if (!lensId) return null;
+    if (!lensId) { return null; }
     const existing = lenses.get(lensId);
-    if (!existing) return null;
+    if (!existing) { return null; }
 
     const next: ContextLens = {
       ...existing,
@@ -334,9 +334,9 @@ export function createContextLensRegistry(opts: { ttlMs?: number; maxEntries?: n
     lensId: string | null | undefined,
     source: ContextLensSource,
   ) => {
-    if (!lensId) return null;
+    if (!lensId) { return null; }
     const existing = lenses.get(lensId);
-    if (!existing) return null;
+    if (!existing) { return null; }
     const existingIndex = existing.context.sources.findIndex(
       (item) =>
         item.kind === source.kind &&
@@ -346,8 +346,8 @@ export function createContextLensRegistry(opts: { ttlMs?: number; maxEntries?: n
     const sources =
       existingIndex >= 0
         ? existing.context.sources.map((item, index) =>
-            index === existingIndex ? { ...item, ...source } : item,
-          )
+          index === existingIndex ? { ...item, ...source } : item,
+        )
         : [...existing.context.sources, source];
     return update(lensId, {
       context: {
@@ -361,9 +361,9 @@ export function createContextLensRegistry(opts: { ttlMs?: number; maxEntries?: n
     lensId: string | null | undefined,
     event: Omit<ContextLensPersistenceEvent, "at"> & { at?: number },
   ) => {
-    if (!lensId) return null;
+    if (!lensId) { return null; }
     const existing = lenses.get(lensId);
-    if (!existing) return null;
+    if (!existing) { return null; }
     return update(lensId, {
       persistence: {
         ...existing.persistence,
@@ -382,9 +382,9 @@ export function createContextLensRegistry(opts: { ttlMs?: number; maxEntries?: n
     toolName: string,
     detail: { phase?: string; argumentSummary?: string } = {},
   ) => {
-    if (!lensId || !toolName) return null;
+    if (!lensId || !toolName) { return null; }
     const existing = lenses.get(lensId);
-    if (!existing) return null;
+    if (!existing) { return null; }
     const now = Date.now();
     const called = existing.tools.called.includes(toolName)
       ? existing.tools.called
@@ -423,9 +423,9 @@ export function createContextLensRegistry(opts: { ttlMs?: number; maxEntries?: n
     status: ContextLensToolRun["status"] = "completed",
     error?: unknown,
   ) => {
-    if (!lensId) return null;
+    if (!lensId) { return null; }
     const existing = lenses.get(lensId);
-    if (!existing) return null;
+    if (!existing) { return null; }
     const now = Date.now();
     return update(lensId, {
       tools: {
@@ -434,12 +434,12 @@ export function createContextLensRegistry(opts: { ttlMs?: number; maxEntries?: n
           run.completedAt
             ? run
             : {
-                ...run,
-                completedAt: now,
-                durationMs: now - run.startedAt,
-                status,
-                ...(error === undefined ? {} : { error: serializeError(error) }),
-              },
+              ...run,
+              completedAt: now,
+              durationMs: now - run.startedAt,
+              status,
+              ...(error === undefined ? {} : { error: serializeError(error) }),
+            },
         ),
       },
     });
@@ -449,9 +449,9 @@ export function createContextLensRegistry(opts: { ttlMs?: number; maxEntries?: n
     lensId: string | null | undefined,
     output: ContextLensOutput,
   ) => {
-    if (!lensId) return null;
+    if (!lensId) { return null; }
     const existing = lenses.get(lensId);
-    if (!existing) return null;
+    if (!existing) { return null; }
     return update(lensId, {
       outputs: [...existing.outputs, output],
     });
@@ -476,7 +476,7 @@ export function createContextLensRegistry(opts: { ttlMs?: number; maxEntries?: n
     },
     listRecent: () => {
       prune();
-      return [...lenses.values()].sort((a, b) => b.createdAt - a.createdAt).map(cloneLens);
+      return [...lenses.values()].toSorted((a, b) => b.createdAt - a.createdAt).map(cloneLens);
     },
     destroy: (lensId: string) => lenses.delete(lensId),
     clear: () => lenses.clear(),

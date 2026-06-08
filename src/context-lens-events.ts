@@ -58,6 +58,8 @@ export function publishContextLensEvent(
     state.recentEvents.splice(0, state.recentEvents.length - MAX_RECENT_EVENTS);
   }
 
+  // Deliver this event to the listeners that existed at publish start.
+  // oxlint-disable-next-line no-useless-spread
   for (const listener of [...state.listeners]) {
     try {
       listener(event);
