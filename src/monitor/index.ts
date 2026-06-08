@@ -407,7 +407,6 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
   try {
   const computingPresence = createComputingPresenceTracker({ runtime });
   const contextLenses = createContextLensRegistry();
-  const sessionDispatches = new Map<string, Promise<void>>();
   const logContextLens = (
     lensId: string,
     phase: string,
@@ -419,45 +418,6 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         `[tlon] ContextLens ${JSON.stringify({ phase, detail, ...snapshot })}`,
       );
       publishContextLensEvent(phase, snapshot, detail);
-    }
-  };
-  const runInSessionDispatchSlot = async <T>(
-    sessionKey: string,
-    lensId: string,
-    run: () => Promise<T>,
-  ): Promise<T> => {
-    const previous = sessionDispatches.get(sessionKey);
-    let releaseCurrent: () => void = () => {};
-    const current = (previous ?? Promise.resolve())
-      .catch(() => undefined)
-      .then(
-        () =>
-          new Promise<void>((resolve) => {
-            releaseCurrent = resolve;
-          }),
-      );
-
-    const stored = current.finally(() => {
-      if (sessionDispatches.get(sessionKey) === stored) {
-        sessionDispatches.delete(sessionKey);
-      }
-    });
-    sessionDispatches.set(sessionKey, stored);
-
-    if (previous) {
-      const queuedAt = Date.now();
-      contextLenses.setStatus(lensId, "queued");
-      contextLenses.recordLifecycle(lensId, { queuedAt });
-      logContextLens(lensId, "queued");
-      await previous.catch(() => undefined);
-      contextLenses.recordLifecycle(lensId, { queuedMs: Date.now() - queuedAt });
-    }
-
-    await Promise.resolve();
-    try {
-      return await run();
-    } finally {
-      releaseCurrent();
     }
   };
 
@@ -2415,37 +2375,36 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     let dispatchError: unknown;
 
     try {
-      await runInSessionDispatchSlot(route.sessionKey, lens.lensId, async () => {
-        let timeoutId: NodeJS.Timeout | null = null;
-        try {
-          contextLenses.setStatus(lens.lensId, "dispatching");
-          contextLenses.recordLifecycle(lens.lensId, {
-            dispatchStartedAt: Date.now(),
-            timeoutMs: dispatchTimeoutMs,
-          });
-          logContextLens(lens.lensId, "dispatching");
-          timeoutId = setTimeout(() => {
-            dispatchTimedOut = true;
-            if (!dispatchAbortController.signal.aborted) {
-              dispatchAbortController.abort(
-                new Error(`Tlon dispatch timed out after ${dispatchTimeoutMs}ms`),
-              );
-            }
-          }, dispatchTimeoutMs);
-          dispatchResult = await core.channel.reply.dispatchReplyWithBufferedBlockDispatcher({
-            ctx: ctxPayload,
-            cfg,
-            replyOptions,
-            dispatcherOptions: {
-              responsePrefix,
-              humanDelay,
-              typingCallbacks,
-              deliver: async (payload: ReplyPayload) => {
-                contextLenses.setStatus(lens.lensId, "delivering");
-                let replyText = payload.text;
-                if (!replyText) {
-                  return;
-                }
+      let timeoutId: NodeJS.Timeout | null = null;
+      try {
+        contextLenses.setStatus(lens.lensId, "dispatching");
+        contextLenses.recordLifecycle(lens.lensId, {
+          dispatchStartedAt: Date.now(),
+          timeoutMs: dispatchTimeoutMs,
+        });
+        logContextLens(lens.lensId, "dispatching");
+        timeoutId = setTimeout(() => {
+          dispatchTimedOut = true;
+          if (!dispatchAbortController.signal.aborted) {
+            dispatchAbortController.abort(
+              new Error(`Tlon dispatch timed out after ${dispatchTimeoutMs}ms`),
+            );
+          }
+        }, dispatchTimeoutMs);
+        dispatchResult = await core.channel.reply.dispatchReplyWithBufferedBlockDispatcher({
+          ctx: ctxPayload,
+          cfg,
+          replyOptions,
+          dispatcherOptions: {
+            responsePrefix,
+            humanDelay,
+            typingCallbacks,
+            deliver: async (payload: ReplyPayload) => {
+              contextLenses.setStatus(lens.lensId, "delivering");
+              let replyText = payload.text;
+              if (!replyText) {
+                return;
+              }
 
                 // Process any block directives in the response (strips them from text)
                 replyText = await processBlockDirectives(replyText, senderShip);
@@ -2541,21 +2500,20 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
                   : payload.mediaUrl
                     ? 1
                     : 0;
-              },
-              onError: (err, info) => {
-                const dispatchDuration = Date.now() - dispatchStartTime;
-                runtime.error?.(
-                  `[tlon] ${info.kind} reply failed after ${dispatchDuration}ms: ${String(err)}`,
-                );
-              },
             },
-          });
-        } finally {
-          if (timeoutId) {
-            clearTimeout(timeoutId);
-          }
+            onError: (err, info) => {
+              const dispatchDuration = Date.now() - dispatchStartTime;
+              runtime.error?.(
+                `[tlon] ${info.kind} reply failed after ${dispatchDuration}ms: ${String(err)}`,
+              );
+            },
+          },
+        });
+      } finally {
+        if (timeoutId) {
+          clearTimeout(timeoutId);
         }
-      });
+      }
     } catch (error) {
       dispatchError = error;
       if (dispatchTimedOut) {

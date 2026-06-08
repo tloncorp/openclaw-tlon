@@ -32,6 +32,14 @@ const state = stateSlot.get() ?? {
 
 stateSlot.set(state);
 
+function pruneExpiredEvents(now = Date.now()) {
+  for (let i = state.recentEvents.length - 1; i >= 0; i -= 1) {
+    if (state.recentEvents[i]?.lens.expiresAt <= now) {
+      state.recentEvents.splice(i, 1);
+    }
+  }
+}
+
 export function publishContextLensEvent(
   phase: string,
   lens: ContextLens,
@@ -45,6 +53,10 @@ export function publishContextLensEvent(
     ...(detail ? { detail } : {}),
   };
 
+  pruneExpiredEvents(event.at);
+  if (event.lens.expiresAt <= event.at) {
+    return;
+  }
   state.recentEvents.push(event);
   if (state.recentEvents.length > MAX_RECENT_EVENTS) {
     state.recentEvents.splice(0, state.recentEvents.length - MAX_RECENT_EVENTS);
@@ -61,10 +73,12 @@ export function publishContextLensEvent(
 }
 
 export function listRecentContextLensEvents() {
+  pruneExpiredEvents();
   return [...state.recentEvents];
 }
 
 export function findRecentContextLensById(lensId: string) {
+  pruneExpiredEvents();
   for (const event of [...state.recentEvents].reverse()) {
     if (event.lens.lensId === lensId) {
       return event.lens;

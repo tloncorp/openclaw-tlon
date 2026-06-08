@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { createContextLensRegistry, hashSessionKey } from "./context-lens.js";
-import { publishContextLensEvent, subscribeToContextLensEvents } from "./context-lens-events.js";
+import {
+  findRecentContextLensById,
+  listRecentContextLensEvents,
+  publishContextLensEvent,
+  subscribeToContextLensEvents,
+} from "./context-lens-events.js";
 
 describe("context lens registry", () => {
   it("creates redacted receipts without storing raw session keys or prompt text", () => {
@@ -244,6 +249,24 @@ describe("context lens registry", () => {
 });
 
 describe("context lens event bus", () => {
+  it("does not expose expired lens snapshots from the global event store", () => {
+    const registry = createContextLensRegistry();
+    const expired = registry.create({
+      messageId: "message-expired-event",
+      chatType: "dm",
+      trigger: "dm",
+      now: 100,
+      ttlMs: 1,
+    });
+
+    publishContextLensEvent("created", expired);
+
+    expect(findRecentContextLensById(expired.lensId)).toBeNull();
+    expect(listRecentContextLensEvents()).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ lens: expect.objectContaining({ lensId: expired.lensId }) })]),
+    );
+  });
+
   it("continues publishing when a listener throws", () => {
     const registry = createContextLensRegistry();
     const lens = registry.create({
