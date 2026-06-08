@@ -2325,13 +2325,19 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         })
       : undefined;
 
+    const hasExplicitVisibleReplyPolicy =
+      cfg.messages?.visibleReplies !== undefined ||
+      cfg.messages?.groupChat?.visibleReplies !== undefined;
+    const sourceReplyDeliveryMode =
+      isGroup && !hasExplicitVisibleReplyPolicy ? "automatic" : undefined;
+
     const replyOptions: NonNullable<
       Parameters<
         typeof core.channel.reply.dispatchReplyWithBufferedBlockDispatcher
       >[0]["replyOptions"]
     > = {
       abortSignal: dispatchAbortController.signal,
-      sourceReplyDeliveryMode: "automatic",
+      ...(sourceReplyDeliveryMode ? { sourceReplyDeliveryMode } : {}),
       timeoutOverrideSeconds: Math.ceil(dispatchTimeoutMs / 1000),
       onModelSelected: ({ provider, model, thinkLevel }) => {
         selectedProvider = provider;

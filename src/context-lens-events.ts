@@ -9,6 +9,7 @@ export type ContextLensEvent = {
   detail?: {
     toolName?: string;
     toolPhase?: string;
+    toolCallId?: string;
     toolCallCount?: number;
   };
 };

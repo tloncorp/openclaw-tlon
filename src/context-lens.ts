@@ -63,6 +63,7 @@ export type ContextLensSource = {
 
 export type ContextLensToolRun = {
   id: string;
+  toolCallId?: string;
   callIndex: number;
   name: string;
   phase?: string;
@@ -172,10 +173,12 @@ type ActiveContextLensBinding = {
   registry: ContextLensRegistry;
   lensId: string;
   background: boolean;
+  finalizeTimer?: ReturnType<typeof setTimeout>;
 };
 
 const DEFAULT_TTL_MS = 30 * 60 * 1000;
 const MAX_LENSES = 200;
+const BACKGROUND_FINALIZE_IDLE_MS = 1_500;
 const activeLensesBySession = sharedMap<string, ActiveContextLensBinding>(
   "contextLens.activeLensesBySession",
 );
@@ -427,11 +430,14 @@ export function createContextLensRegistry(opts: { ttlMs?: number; maxEntries?: n
   const recordToolCall = (
     lensId: string | null | undefined,
     toolName: string,
-    detail: { phase?: string; argumentSummary?: string } = {},
+    detail: { phase?: string; argumentSummary?: string; toolCallId?: string } = {},
   ) => {
     if (!lensId || !toolName) { return null; }
     const existing = lenses.get(lensId);
     if (!existing) { return null; }
+    if (detail.toolCallId && existing.tools.runs.some((run) => run.toolCallId === detail.toolCallId)) {
+      return cloneLens(existing);
+    }
     const now = Date.now();
     const called = existing.tools.called.includes(toolName)
       ? existing.tools.called
@@ -446,7 +452,8 @@ export function createContextLensRegistry(opts: { ttlMs?: number; maxEntries?: n
         runs: [
           ...existing.tools.runs,
           {
-            id: `${toolName}-${callIndex}`,
+            id: detail.toolCallId ?? `${toolName}-${callIndex}`,
+            ...(detail.toolCallId ? { toolCallId: detail.toolCallId } : {}),
             callIndex,
             name: toolName,
             ...(detail.phase ? { phase: detail.phase } : {}),
@@ -500,6 +507,7 @@ export function createContextLensRegistry(opts: { ttlMs?: number; maxEntries?: n
       error?: unknown;
       resultSummary?: string;
       status?: ContextLensToolRun["status"];
+      toolCallId?: string;
     } = {},
   ) => {
     if (!lensId || !toolName) { return null; }
@@ -507,8 +515,13 @@ export function createContextLensRegistry(opts: { ttlMs?: number; maxEntries?: n
     if (!existing) { return null; }
     const now = Date.now();
     let completed = false;
+    const hasToolCallIdMatch = detail.toolCallId
+      ? existing.tools.runs.some((run) => !run.completedAt && run.toolCallId === detail.toolCallId)
+      : false;
     const runs = existing.tools.runs.map((run) => {
-      if (completed || run.completedAt || run.name !== toolName) {
+      const matchesToolCallId = hasToolCallIdMatch && run.toolCallId === detail.toolCallId;
+      const matchesFallbackName = !hasToolCallIdMatch && run.name === toolName;
+      if (completed || run.completedAt || (!matchesToolCallId && !matchesFallbackName)) {
         return run;
       }
       completed = true;
@@ -527,7 +540,12 @@ export function createContextLensRegistry(opts: { ttlMs?: number; maxEntries?: n
       };
     });
     if (!completed) { return null; }
+    const nextStatus =
+      existing.status === "tool_running" && !runs.some((run) => run.status === "running")
+        ? "dispatching"
+        : existing.status;
     return update(lensId, {
+      status: nextStatus,
       tools: {
         ...existing.tools,
         runs,
@@ -593,6 +611,9 @@ export function unbindContextLensFromSession(
   if (!key) { return; }
   const binding = activeLensesBySession.get(key);
   if (binding?.lensId === lensId) {
+    if (binding.finalizeTimer) {
+      clearTimeout(binding.finalizeTimer);
+    }
     activeLensesBySession.delete(key);
   }
 }
@@ -614,6 +635,12 @@ export function ensureBackgroundContextLensForSession(
   if (!key) { return null; }
   const existing = activeLensesBySession.get(key);
   if (existing) {
+    if (existing.finalizeTimer) {
+      clearTimeout(existing.finalizeTimer);
+      const cleared = { ...existing };
+      delete cleared.finalizeTimer;
+      activeLensesBySession.set(key, cleared);
+    }
     return existing.registry.get(existing.lensId);
   }
 
@@ -641,6 +668,7 @@ export function recordContextLensToolStartForSession(
   detail: {
     phase?: string;
     argumentSummary?: string;
+    toolCallId?: string;
   } = {},
 ): ContextLens | null {
   const key = sessionKey?.trim();
@@ -660,6 +688,7 @@ export function recordContextLensToolResultForSession(
     error?: unknown;
     resultSummary?: string;
     status?: ContextLensToolRun["status"];
+    toolCallId?: string;
   } = {},
 ): ContextLens | null {
   const key = sessionKey?.trim();
@@ -676,6 +705,9 @@ export function finalizeBackgroundContextLensForSession(
   if (!key) { return null; }
   const binding = activeLensesBySession.get(key);
   if (!binding?.background) { return null; }
+  if (binding.finalizeTimer) {
+    clearTimeout(binding.finalizeTimer);
+  }
   const lens = binding.registry.get(binding.lensId);
   if (!lens || lens.tools.runs.some((run) => run.status === "running")) {
     return null;
@@ -689,4 +721,25 @@ export function finalizeBackgroundContextLensForSession(
   const completed = binding.registry.setStatus(binding.lensId, "completed");
   activeLensesBySession.delete(key);
   return completed;
+}
+
+export function scheduleBackgroundContextLensFinalization(
+  sessionKey: string | null | undefined,
+  onFinalize: (lens: ContextLens) => void,
+  idleMs = BACKGROUND_FINALIZE_IDLE_MS,
+): void {
+  const key = sessionKey?.trim();
+  if (!key) { return; }
+  const binding = activeLensesBySession.get(key);
+  if (!binding?.background) { return; }
+  if (binding.finalizeTimer) {
+    clearTimeout(binding.finalizeTimer);
+  }
+  const finalizeTimer = setTimeout(() => {
+    const finalLens = finalizeBackgroundContextLensForSession(key);
+    if (finalLens) {
+      onFinalize(finalLens);
+    }
+  }, idleMs);
+  activeLensesBySession.set(key, { ...binding, finalizeTimer });
 }

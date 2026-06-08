@@ -7,6 +7,7 @@ import {
   hashSessionKey,
   recordContextLensToolResultForSession,
   recordContextLensToolStartForSession,
+  scheduleBackgroundContextLensFinalization,
   unbindContextLensFromSession,
 } from "./context-lens.js";
 import {
@@ -259,6 +260,7 @@ describe("context lens registry", () => {
         argumentSummary: "2 keys: path, line",
       });
       recordContextLensToolStartForSession(sessionKey, "tlon");
+      expect(registry.get(lens.lensId)?.status).toBe("tool_running");
       recordContextLensToolResultForSession(sessionKey, "read", { durationMs: 17 });
       registry.completeOpenToolRuns(lens.lensId);
     } finally {
@@ -277,6 +279,69 @@ describe("context lens registry", () => {
         status: "completed",
       }),
     ]);
+  });
+
+  it("correlates tool results by tool call id before falling back to tool name", () => {
+    const registry = createContextLensRegistry();
+    const sessionKey = "session-tool-call-id";
+    const lens = registry.create({
+      messageId: "message-tool-call-id",
+      chatType: "dm",
+      sessionKey,
+    });
+
+    bindContextLensToSession(sessionKey, registry, lens.lensId);
+
+    try {
+      recordContextLensToolStartForSession(sessionKey, "read", {
+        toolCallId: "call-a",
+      });
+      recordContextLensToolStartForSession(sessionKey, "read", {
+        toolCallId: "call-b",
+      });
+      recordContextLensToolResultForSession(sessionKey, "read", {
+        toolCallId: "call-b",
+        durationMs: 25,
+      });
+    } finally {
+      unbindContextLensFromSession(sessionKey, lens.lensId);
+    }
+
+    expect(registry.get(lens.lensId)?.tools.runs).toEqual([
+      expect.objectContaining({
+        name: "read",
+        toolCallId: "call-a",
+        status: "running",
+      }),
+      expect.objectContaining({
+        name: "read",
+        toolCallId: "call-b",
+        status: "completed",
+        durationMs: 25,
+      }),
+    ]);
+    expect(registry.get(lens.lensId)?.status).toBe("tool_running");
+  });
+
+  it("returns to dispatching after the last running tool completes", () => {
+    const registry = createContextLensRegistry();
+    const sessionKey = "session-tool-status";
+    const lens = registry.create({
+      messageId: "message-tool-status",
+      chatType: "dm",
+      sessionKey,
+    });
+
+    bindContextLensToSession(sessionKey, registry, lens.lensId);
+
+    try {
+      recordContextLensToolStartForSession(sessionKey, "read");
+      recordContextLensToolResultForSession(sessionKey, "read", { durationMs: 10 });
+    } finally {
+      unbindContextLensFromSession(sessionKey, lens.lensId);
+    }
+
+    expect(registry.get(lens.lensId)?.status).toBe("dispatching");
   });
 
   it("records blocked tool calls from session tool results", () => {
@@ -348,6 +413,42 @@ describe("context lens registry", () => {
       },
     });
     expect(recordContextLensToolStartForSession(sessionKey, "cron")).toBeNull();
+  });
+
+  it("groups background tool calls until the session is idle", async () => {
+    const sessionKey = "session-background-debounce";
+    const finalized: Array<{ lensId: string; tools: { runs: Array<{ name: string; status: string }> } }> = [];
+    ensureBackgroundContextLensForSession(sessionKey, {
+      runKind: "cron",
+      trigger: "cron",
+      preview: "cron tool activity",
+    });
+
+    recordContextLensToolStartForSession(sessionKey, "cron");
+    recordContextLensToolResultForSession(sessionKey, "cron", { durationMs: 42 });
+    scheduleBackgroundContextLensFinalization(
+      sessionKey,
+      (lens) => finalized.push(lens),
+      20,
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    ensureBackgroundContextLensForSession(sessionKey);
+    recordContextLensToolStartForSession(sessionKey, "tlon");
+    recordContextLensToolResultForSession(sessionKey, "tlon", { durationMs: 12 });
+    scheduleBackgroundContextLensFinalization(
+      sessionKey,
+      (lens) => finalized.push(lens),
+      20,
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 30));
+
+    expect(finalized).toHaveLength(1);
+    expect(finalized[0]?.tools.runs).toEqual([
+      expect.objectContaining({ name: "cron", status: "completed" }),
+      expect.objectContaining({ name: "tlon", status: "completed" }),
+    ]);
   });
 
   it("expires old lenses and caps registry size", () => {
