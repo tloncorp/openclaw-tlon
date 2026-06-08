@@ -2,8 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   bindContextLensToSession,
   createContextLensRegistry,
+  ensureBackgroundContextLensForSession,
+  finalizeBackgroundContextLensForSession,
   hashSessionKey,
   recordContextLensToolResultForSession,
+  recordContextLensToolStartForSession,
   unbindContextLensFromSession,
 } from "./context-lens.js";
 import {
@@ -19,6 +22,8 @@ describe("context lens registry", () => {
     const lens = registry.create({
       messageId: "message-1",
       chatType: "dm",
+      runKind: "conversation",
+      visibility: "owner",
       trigger: "dm",
       sessionKey: "agent:test:tlon:direct:~ten",
       now: 100,
@@ -27,6 +32,8 @@ describe("context lens registry", () => {
     expect(lens).toMatchObject({
       messageId: "message-1",
       chatType: "dm",
+      runKind: "conversation",
+      visibility: "owner",
       trigger: "dm",
       sessionKeyHash: hashSessionKey("agent:test:tlon:direct:~ten"),
       status: "assembling",
@@ -245,11 +252,13 @@ describe("context lens registry", () => {
       sessionKey,
     });
 
-    registry.recordToolCall(lens.lensId, "read");
-    registry.recordToolCall(lens.lensId, "tlon");
     bindContextLensToSession(sessionKey, registry, lens.lensId);
 
     try {
+      recordContextLensToolStartForSession(sessionKey, "read", {
+        argumentSummary: "2 keys: path, line",
+      });
+      recordContextLensToolStartForSession(sessionKey, "tlon");
       recordContextLensToolResultForSession(sessionKey, "read", { durationMs: 17 });
       registry.completeOpenToolRuns(lens.lensId);
     } finally {
@@ -261,12 +270,84 @@ describe("context lens registry", () => {
         name: "read",
         status: "completed",
         durationMs: 17,
+        argumentSummary: "2 keys: path, line",
       }),
       expect.objectContaining({
         name: "tlon",
         status: "completed",
       }),
     ]);
+  });
+
+  it("records blocked tool calls from session tool results", () => {
+    const registry = createContextLensRegistry();
+    const sessionKey = "session-blocked-tool";
+    const lens = registry.create({
+      messageId: "message-blocked-tool",
+      chatType: "dm",
+      sessionKey,
+    });
+
+    bindContextLensToSession(sessionKey, registry, lens.lensId);
+
+    try {
+      recordContextLensToolStartForSession(sessionKey, "read");
+      recordContextLensToolResultForSession(sessionKey, "read", {
+        status: "blocked",
+        error: "read is not available",
+      });
+    } finally {
+      unbindContextLensFromSession(sessionKey, lens.lensId);
+    }
+
+    expect(registry.get(lens.lensId)?.tools.runs).toEqual([
+      expect.objectContaining({
+        name: "read",
+        status: "blocked",
+        error: "read is not available",
+      }),
+    ]);
+  });
+
+  it("creates and finalizes owner-visible background tool runs", () => {
+    const sessionKey = "session-background-tool";
+    const lens = ensureBackgroundContextLensForSession(sessionKey, {
+      runKind: "cron",
+      trigger: "cron",
+      preview: "cron tool activity",
+    });
+
+    expect(lens).toMatchObject({
+      chatType: "internal",
+      runKind: "cron",
+      visibility: "owner",
+      trigger: "cron",
+      triggerDetails: {
+        conversationKind: "internal",
+        preview: "cron tool activity",
+      },
+    });
+
+    recordContextLensToolStartForSession(sessionKey, "cron");
+    recordContextLensToolResultForSession(sessionKey, "cron", { durationMs: 42 });
+    const finalLens = finalizeBackgroundContextLensForSession(sessionKey);
+
+    expect(finalLens).toMatchObject({
+      status: "completed",
+      lifecycle: {
+        deliveredMessageCount: 0,
+      },
+      tools: {
+        runs: [
+          expect.objectContaining({
+            name: "cron",
+            status: "completed",
+            durationMs: 42,
+          }),
+        ],
+      },
+    });
+    expect(recordContextLensToolStartForSession(sessionKey, "cron")).toBeNull();
   });
 
   it("expires old lenses and caps registry size", () => {

@@ -2352,15 +2352,6 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       },
       onToolStart: async (payload) => {
         const toolName = payload.name ?? "unknown";
-        const toolLens = contextLenses.recordToolCall(lens.lensId, toolName, {
-          phase: payload.phase,
-        });
-        contextLenses.setStatus(lens.lensId, "tool_running");
-        logContextLens(lens.lensId, "tool_start", {
-          toolName,
-          toolPhase: payload.phase,
-          toolCallCount: toolLens?.tools.callCount,
-        });
         if (presenceConversationId) {
           await computingPresence.addToolCall({
             conversationId: presenceConversationId,

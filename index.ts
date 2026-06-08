@@ -20,7 +20,12 @@ import {
   subscribeToContextLensEvents,
   type ContextLensEvent,
 } from "./src/context-lens-events.js";
-import { recordContextLensToolResultForSession } from "./src/context-lens.js";
+import {
+  ensureBackgroundContextLensForSession,
+  finalizeBackgroundContextLensForSession,
+  recordContextLensToolResultForSession,
+  recordContextLensToolStartForSession,
+} from "./src/context-lens.js";
 import {
   formatToolTraceEvent,
   liveToolTraceContentsEnabled,
@@ -85,6 +90,25 @@ function findSubcommandIndex(args: string[]): number {
     return i;
   }
   return -1;
+}
+
+function summarizeToolParams(params: unknown): string | undefined {
+  if (params === null || params === undefined) {
+    return undefined;
+  }
+  if (Array.isArray(params)) {
+    return `${params.length} array item${params.length === 1 ? "" : "s"}`;
+  }
+  if (typeof params === "object") {
+    const keys = Object.keys(params);
+    if (!keys.length) {
+      return "empty object";
+    }
+    const shown = keys.slice(0, 4).join(", ");
+    const suffix = keys.length > 4 ? ` +${keys.length - 4}` : "";
+    return `${keys.length} key${keys.length === 1 ? "" : "s"}: ${shown}${suffix}`;
+  }
+  return typeof params;
 }
 
 /**
@@ -542,6 +566,27 @@ export default defineChannelPluginEntry({
       const isOwnerOnlyTool = ownerOnlyTools.has(event.toolName);
       const isBlocked = isOwnerOnlyTool && role === "user";
       const blockReason = isBlocked ? `The ${event.toolName} tool is not available.` : undefined;
+      if (role === null) {
+        const backgroundLens = ensureBackgroundContextLensForSession(ctx.sessionKey, {
+          runKind: event.toolName === "cron" ? "cron" : "internal",
+          trigger: event.toolName === "cron" ? "cron" : "tool",
+          preview: `${event.toolName} tool activity`,
+        });
+        if (backgroundLens && backgroundLens.tools.callCount === 0) {
+          publishContextLensEvent("created", backgroundLens);
+        }
+      }
+      const lens = recordContextLensToolStartForSession(ctx.sessionKey, event.toolName, {
+        phase: "before",
+        argumentSummary: summarizeToolParams(event.params),
+      });
+      if (lens) {
+        publishContextLensEvent("tool_start", lens, {
+          toolName: event.toolName,
+          toolPhase: "before",
+          toolCallCount: lens.tools.callCount,
+        });
+      }
 
       if (logToolTraceContents) {
         api.logger.info(
@@ -570,6 +615,21 @@ export default defineChannelPluginEntry({
         api.logger.warn(
           `[tlon] Blocked ${event.toolName} tool for non-owner. Session: ${ctx.sessionKey}, Role: ${role}`,
         );
+        const blockedLens = recordContextLensToolResultForSession(ctx.sessionKey, event.toolName, {
+          error: blockReason,
+          status: "blocked",
+        });
+        if (blockedLens) {
+          publishContextLensEvent("tool_result", blockedLens, {
+            toolName: event.toolName,
+            toolPhase: "blocked",
+            toolCallCount: blockedLens.tools.callCount,
+          });
+          const finalLens = finalizeBackgroundContextLensForSession(ctx.sessionKey);
+          if (finalLens) {
+            publishContextLensEvent("final", finalLens);
+          }
+        }
         return {
           block: true,
           blockReason,
@@ -614,6 +674,10 @@ export default defineChannelPluginEntry({
           toolPhase: "after",
           toolCallCount: lens.tools.callCount,
         });
+        const finalLens = finalizeBackgroundContextLensForSession(ctx.sessionKey);
+        if (finalLens) {
+          publishContextLensEvent("final", finalLens);
+        }
       }
     });
 

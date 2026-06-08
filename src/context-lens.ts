@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { sharedMap } from "./shared-state.js";
 
 export type ContextLensTrigger =
+  | "cron"
   | "dm"
   | "mention"
   | "thread"
@@ -9,7 +10,17 @@ export type ContextLensTrigger =
   | "owner-listen"
   | "owner-blob"
   | "summarization"
+  | "tool"
   | "unknown";
+
+export type ContextLensRunKind =
+  | "conversation"
+  | "cron"
+  | "owner_listen"
+  | "summarization"
+  | "internal";
+
+export type ContextLensVisibility = "owner" | "participants" | "internal";
 
 export type ContextLensStatus =
   | "assembling"
@@ -27,7 +38,7 @@ export type ContextLensTriggerDetails = {
   messageId: string;
   authorShip?: string;
   conversationId?: string;
-  conversationKind: "dm" | "channel";
+  conversationKind: "dm" | "channel" | "internal";
   receivedAt?: number;
   preview?: string;
 };
@@ -58,7 +69,7 @@ export type ContextLensToolRun = {
   startedAt: number;
   completedAt: number | null;
   durationMs: number | null;
-  status: "running" | "completed" | "error";
+  status: "running" | "completed" | "error" | "blocked";
   argumentSummary?: string;
   resultSummary?: string;
   error?: string;
@@ -87,7 +98,9 @@ export type ContextLens = {
   lensId: string;
   messageId: string;
   sessionKeyHash: string | null;
-  chatType: "dm" | "channel";
+  chatType: "dm" | "channel" | "internal";
+  runKind: ContextLensRunKind;
+  visibility: ContextLensVisibility;
   trigger: ContextLensTrigger;
   triggerDetails: ContextLensTriggerDetails;
   model: string | null;
@@ -141,6 +154,8 @@ export type ContextLens = {
 export type CreateContextLensInput = {
   messageId: string;
   chatType: ContextLens["chatType"];
+  runKind?: ContextLensRunKind;
+  visibility?: ContextLensVisibility;
   trigger?: ContextLensTrigger;
   sessionKey?: string | null;
   senderShip?: string;
@@ -156,6 +171,7 @@ export type ContextLensRegistry = ReturnType<typeof createContextLensRegistry>;
 type ActiveContextLensBinding = {
   registry: ContextLensRegistry;
   lensId: string;
+  background: boolean;
 };
 
 const DEFAULT_TTL_MS = 30 * 60 * 1000;
@@ -163,9 +179,29 @@ const MAX_LENSES = 200;
 const activeLensesBySession = sharedMap<string, ActiveContextLensBinding>(
   "contextLens.activeLensesBySession",
 );
+let backgroundContextLenses: ContextLensRegistry | null = null;
 
 export function hashSessionKey(sessionKey: string): string {
   return createHash("sha256").update(sessionKey).digest("hex").slice(0, 16);
+}
+
+function defaultRunKind(
+  trigger: ContextLensTrigger | undefined,
+  chatType: ContextLens["chatType"],
+): ContextLensRunKind {
+  if (trigger === "cron") {
+    return "cron";
+  }
+  if (trigger === "owner-listen" || trigger === "owner-blob") {
+    return "owner_listen";
+  }
+  if (trigger === "summarization") {
+    return "summarization";
+  }
+  if (chatType === "internal") {
+    return "internal";
+  }
+  return "conversation";
 }
 
 function cloneLens(lens: ContextLens): ContextLens {
@@ -227,6 +263,8 @@ export function createContextLensRegistry(opts: { ttlMs?: number; maxEntries?: n
       messageId: input.messageId,
       sessionKeyHash: input.sessionKey ? hashSessionKey(input.sessionKey) : null,
       chatType: input.chatType,
+      runKind: input.runKind ?? defaultRunKind(input.trigger, input.chatType),
+      visibility: input.visibility ?? "owner",
       trigger: input.trigger ?? "unknown",
       triggerDetails: {
         type: input.trigger ?? "unknown",
@@ -461,6 +499,7 @@ export function createContextLensRegistry(opts: { ttlMs?: number; maxEntries?: n
       durationMs?: number;
       error?: unknown;
       resultSummary?: string;
+      status?: ContextLensToolRun["status"];
     } = {},
   ) => {
     if (!lensId || !toolName) { return null; }
@@ -477,7 +516,7 @@ export function createContextLensRegistry(opts: { ttlMs?: number; maxEntries?: n
         ? detail.durationMs
         : now - run.startedAt;
       const status: ContextLensToolRun["status"] =
-        detail.error === undefined ? "completed" : "error";
+        detail.status ?? (detail.error === undefined ? "completed" : "error");
       return {
         ...run,
         completedAt: now,
@@ -543,7 +582,7 @@ export function bindContextLensToSession(
 ): void {
   const key = sessionKey?.trim();
   if (!key) { return; }
-  activeLensesBySession.set(key, { registry, lensId });
+  activeLensesBySession.set(key, { registry, lensId, background: false });
 }
 
 export function unbindContextLensFromSession(
@@ -558,6 +597,61 @@ export function unbindContextLensFromSession(
   }
 }
 
+function getBackgroundContextLensRegistry(): ContextLensRegistry {
+  backgroundContextLenses ??= createContextLensRegistry();
+  return backgroundContextLenses;
+}
+
+export function ensureBackgroundContextLensForSession(
+  sessionKey: string | null | undefined,
+  input: {
+    runKind?: ContextLensRunKind;
+    trigger?: ContextLensTrigger;
+    preview?: string;
+  } = {},
+): ContextLens | null {
+  const key = sessionKey?.trim();
+  if (!key) { return null; }
+  const existing = activeLensesBySession.get(key);
+  if (existing) {
+    return existing.registry.get(existing.lensId);
+  }
+
+  const registry = getBackgroundContextLensRegistry();
+  const sessionKeyHash = hashSessionKey(key);
+  const runKind = input.runKind ?? "internal";
+  const lens = registry.create({
+    messageId: `${runKind}:${sessionKeyHash}:${Date.now()}`,
+    chatType: "internal",
+    runKind,
+    visibility: "owner",
+    trigger: input.trigger ?? "tool",
+    sessionKey: key,
+    conversationId: `session:${sessionKeyHash}`,
+    receivedAt: Date.now(),
+    preview: input.preview,
+  });
+  activeLensesBySession.set(key, { registry, lensId: lens.lensId, background: true });
+  return lens;
+}
+
+export function recordContextLensToolStartForSession(
+  sessionKey: string | null | undefined,
+  toolName: string,
+  detail: {
+    phase?: string;
+    argumentSummary?: string;
+  } = {},
+): ContextLens | null {
+  const key = sessionKey?.trim();
+  if (!key) { return null; }
+  const binding = activeLensesBySession.get(key);
+  if (!binding) { return null; }
+  const lens = binding.registry.recordToolCall(binding.lensId, toolName, detail);
+  if (!lens) { return null; }
+  return binding.registry.setStatus(binding.lensId, "tool_running");
+}
+
 export function recordContextLensToolResultForSession(
   sessionKey: string | null | undefined,
   toolName: string,
@@ -565,6 +659,7 @@ export function recordContextLensToolResultForSession(
     durationMs?: number;
     error?: unknown;
     resultSummary?: string;
+    status?: ContextLensToolRun["status"];
   } = {},
 ): ContextLens | null {
   const key = sessionKey?.trim();
@@ -572,4 +667,26 @@ export function recordContextLensToolResultForSession(
   const binding = activeLensesBySession.get(key);
   if (!binding) { return null; }
   return binding.registry.completeToolRun(binding.lensId, toolName, detail);
+}
+
+export function finalizeBackgroundContextLensForSession(
+  sessionKey: string | null | undefined,
+): ContextLens | null {
+  const key = sessionKey?.trim();
+  if (!key) { return null; }
+  const binding = activeLensesBySession.get(key);
+  if (!binding?.background) { return null; }
+  const lens = binding.registry.get(binding.lensId);
+  if (!lens || lens.tools.runs.some((run) => run.status === "running")) {
+    return null;
+  }
+  const completedAt = Date.now();
+  binding.registry.recordLifecycle(binding.lensId, {
+    completedAt,
+    durationMs: completedAt - lens.createdAt,
+    deliveredMessageCount: 0,
+  });
+  const completed = binding.registry.setStatus(binding.lensId, "completed");
+  activeLensesBySession.delete(key);
+  return completed;
 }
