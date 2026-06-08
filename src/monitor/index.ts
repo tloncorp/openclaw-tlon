@@ -2331,6 +2331,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       >[0]["replyOptions"]
     > = {
       abortSignal: dispatchAbortController.signal,
+      sourceReplyDeliveryMode: "automatic",
       timeoutOverrideSeconds: Math.ceil(dispatchTimeoutMs / 1000),
       onModelSelected: ({ provider, model, thinkLevel }) => {
         selectedProvider = provider;
