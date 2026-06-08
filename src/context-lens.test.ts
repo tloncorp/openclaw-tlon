@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createContextLensRegistry, hashSessionKey } from "./context-lens.js";
-import { publishContextLensEvent } from "./context-lens-events.js";
+import { publishContextLensEvent, subscribeToContextLensEvents } from "./context-lens-events.js";
 
 describe("context lens registry", () => {
   it("creates redacted receipts without storing raw session keys or prompt text", () => {
@@ -164,6 +164,28 @@ describe("context lens registry", () => {
     });
   });
 
+  it("records summarization triggers distinctly from ordinary mentions", () => {
+    const registry = createContextLensRegistry();
+    const lens = registry.create({
+      messageId: "summary-message",
+      chatType: "channel",
+      trigger: "summarization",
+      sessionKey: "session-summary",
+      senderShip: "~ten",
+      conversationId: "chat/~ten/test",
+      preview: "summarize this channel",
+    });
+
+    expect(lens).toMatchObject({
+      trigger: "summarization",
+      triggerDetails: {
+        type: "summarization",
+        messageId: "summary-message",
+        conversationKind: "channel",
+      },
+    });
+  });
+
   it("records no-reply and timeout lifecycle outcomes without raw content", () => {
     const registry = createContextLensRegistry();
     const noReply = registry.create({ messageId: "message-3", chatType: "dm" });
@@ -222,6 +244,30 @@ describe("context lens registry", () => {
 });
 
 describe("context lens event bus", () => {
+  it("continues publishing when a listener throws", () => {
+    const registry = createContextLensRegistry();
+    const lens = registry.create({
+      messageId: "message-listener-throw",
+      chatType: "dm",
+      trigger: "dm",
+    });
+    const received: string[] = [];
+    const unsubscribeThrowing = subscribeToContextLensEvents(() => {
+      throw new Error("closed response");
+    });
+    const unsubscribeReceiving = subscribeToContextLensEvents((event) => {
+      received.push(event.lens.lensId);
+    });
+
+    try {
+      expect(() => publishContextLensEvent("created", lens)).not.toThrow();
+      expect(received).toContain(lens.lensId);
+    } finally {
+      unsubscribeThrowing();
+      unsubscribeReceiving();
+    }
+  });
+
   it("shares recent events across repeated module loads", async () => {
     const registry = createContextLensRegistry();
     const lens = registry.create({

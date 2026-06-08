@@ -50,8 +50,13 @@ export function publishContextLensEvent(
     state.recentEvents.splice(0, state.recentEvents.length - MAX_RECENT_EVENTS);
   }
 
-  for (const listener of state.listeners) {
-    listener(event);
+  for (const listener of [...state.listeners]) {
+    try {
+      listener(event);
+    } catch {
+      // Listener-owned resources, such as SSE responses, clean themselves up.
+      // Keep publishing so one broken subscriber cannot interrupt bot work.
+    }
   }
 }
 

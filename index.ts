@@ -217,6 +217,14 @@ function writeSseEvent(res: any, event: ContextLensEvent) {
   res.write(`data: ${JSON.stringify(event)}\n\n`);
 }
 
+function closeSseResponse(res: any) {
+  try {
+    res.end?.();
+  } catch {
+    // Ignore cleanup failures from already-closed responses.
+  }
+}
+
 function readRouteQuery(req: any, key: string): string {
   const rawUrl = typeof req.url === "string" ? req.url : "";
   const parsed = new URL(rawUrl, "http://localhost");
@@ -388,18 +396,45 @@ export default defineChannelPluginEntry({
         res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
         res.setHeader("Cache-Control", "no-cache, no-transform");
         res.setHeader("Connection", "keep-alive");
-        res.write(": connected\n\n");
-
-        for (const event of listRecentContextLensEvents().slice(-25)) {
-          writeSseEvent(res, event);
-        }
-
-        const unsubscribe = subscribeToContextLensEvents((event) => {
-          writeSseEvent(res, event);
-        });
+        let closed = false;
+        let unsubscribe = () => {};
         const cleanup = () => {
+          if (closed) {
+            return;
+          }
+          closed = true;
           unsubscribe();
         };
+        const sendOrClose = (event: ContextLensEvent) => {
+          if (closed) {
+            return;
+          }
+          try {
+            writeSseEvent(res, event);
+          } catch (error) {
+            api.logger.warn(`[tlon] Context Lens SSE write failed: ${String(error)}`);
+            cleanup();
+            closeSseResponse(res);
+          }
+        };
+
+        try {
+          res.write(": connected\n\n");
+        } catch (error) {
+          api.logger.warn(`[tlon] Context Lens SSE handshake failed: ${String(error)}`);
+          cleanup();
+          closeSseResponse(res);
+          return;
+        }
+
+        for (const event of listRecentContextLensEvents().slice(-25)) {
+          sendOrClose(event);
+        }
+        if (closed) {
+          return;
+        }
+
+        unsubscribe = subscribeToContextLensEvents(sendOrClose);
         req.on?.("close", cleanup);
         req.on?.("aborted", cleanup);
       },

@@ -1669,39 +1669,6 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       const compact = sanitizeMessageText(text).replace(/\s+/g, " ").trim();
       return compact.length > max ? `${compact.slice(0, max - 1)}…` : compact;
     };
-    const normalizeOutputText = (text: string) =>
-      sanitizeMessageText(text).replace(/\s+/g, " ").trim();
-    const resolveChannelOutputMessageId = async (
-      channelNestForLookup: string,
-      fallbackMessageId: string,
-      replyText: string,
-    ) => {
-      const expected = normalizeOutputText(replyText);
-      const expectedPrefix = expected.slice(0, 80);
-      for (const delayMs of [200, 600, 1_200]) {
-        await new Promise((resolve) => setTimeout(resolve, delayMs));
-        const history = await fetchChannelHistory(api, channelNestForLookup, 8, runtime);
-        const match = history.find((entry) => {
-          if (entry.author !== botShipName || !entry.id) {
-            return false;
-          }
-          const actual = normalizeOutputText(entry.content);
-          const actualPrefix = actual.slice(0, 80);
-          return (
-            actual === expected ||
-            actual.startsWith(expectedPrefix) ||
-            expected.startsWith(actualPrefix)
-          );
-        });
-        if (match?.id) {
-          return `${botShipName}/${match.id}`;
-        }
-      }
-      runtime.log?.(
-        `[tlon] ContextLens: could not resolve channel output id for ${fallbackMessageId}; using send-time fallback`,
-      );
-      return fallbackMessageId;
-    };
 
     // Strip bot mention EARLY, before thread context is prepended.
     // This ensures [Current message] in thread context won't contain the bot ship name,
@@ -1709,6 +1676,10 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     if (isGroup) {
       messageText = stripBotMention(messageText, botShipName);
     }
+    const trigger: ContextLensTrigger =
+      isGroup && groupChannel && isSummarizationRequest(messageText)
+        ? "summarization"
+        : (params.trigger ?? "unknown");
 
     const route = core.channel.routing.resolveAgentRoute({
       cfg,
@@ -1723,7 +1694,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     const lens = contextLenses.create({
       messageId,
       chatType: isGroup ? "channel" : "dm",
-      trigger: params.trigger ?? "unknown",
+      trigger,
       sessionKey: route.sessionKey,
       senderShip,
       conversationId: isGroup ? (groupChannel ?? "") : senderShip,
@@ -2059,11 +2030,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
               story: markdownToStory(noHistoryMsg),
               blob: contextLensBlob,
             });
-            outputMessageId = await resolveChannelOutputMessageId(
-              groupChannel,
-              result.messageId,
-              noHistoryMsg,
-            );
+            outputMessageId = result.messageId;
           } else {
             const result = await sendDm({
               botProfile: getBotProfile(),
@@ -2129,11 +2096,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
             story: markdownToStory(errorMsg),
             blob: contextLensBlob,
           });
-          outputMessageId = await resolveChannelOutputMessageId(
-            groupChannel,
-            result.messageId,
-            errorMsg,
-          );
+          outputMessageId = result.messageId;
         } else {
           const result = await sendDm({
             botProfile: getBotProfile(),
@@ -2524,11 +2487,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
                     replyToId: deliverParentId ?? undefined,
                     blob: contextLensBlob,
                   });
-                  outputMessageId = await resolveChannelOutputMessageId(
-                    groupChannel,
-                    result.messageId,
-                    replyText,
-                  );
+                  outputMessageId = result.messageId;
                   // Track thread participation for future replies without mention
                   if (deliverParentId) {
                     participatedThreads.add(String(deliverParentId));

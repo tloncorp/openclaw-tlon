@@ -78,6 +78,7 @@ describe("sendDm", () => {
       fromShip: "~zod",
       nest: "chat/~zod/general",
       story: [{ inline: ["hi"] }],
+      blob: '[{"type":"tlon-context-lens","version":1,"lensId":"lens-123"}]',
     });
 
     expect(poke).toHaveBeenCalledWith(
@@ -85,6 +86,7 @@ describe("sendDm", () => {
         channelId: "chat/~zod/general",
         authorId: "~zod",
         sentAt,
+        blob: '[{"type":"tlon-context-lens","version":1,"lensId":"lens-123"}]',
       }),
     );
     expect(result.messageId).toBe("~zod/mocked-ud");
