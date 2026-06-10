@@ -598,7 +598,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       return undefined;
     }
     try {
-      return serializeContextLensReferenceBlob(lensId);
+      return serializeContextLensReferenceBlob(lensId, botShipName);
     } catch (err) {
       runtime.error?.(`[tlon] Failed to build Context Lens reference blob: ${String(err)}`);
       return undefined;
