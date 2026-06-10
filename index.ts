@@ -321,7 +321,7 @@ export default defineChannelPluginEntry({
     const contextLensRoutesEnabled = registerContextLensRoutes(api);
     const contextLensShipSyncEnabled = initContextLensShipSync(api);
     // Recording and the disk store run when at least one reader path is
-    // live: authed gateway routes or %lens ship sync.
+    // live: authed gateway routes or %context-lens ship sync.
     const contextLensEnabled = contextLensRoutesEnabled || contextLensShipSyncEnabled;
     if (contextLensEnabled) {
       initContextLensStore(api);

@@ -37,7 +37,7 @@ function truncateSummary(value: string | undefined): string | undefined {
 }
 
 /**
- * Build the opaque run payload poked to %lens. The lens snapshot is passed
+ * Build the opaque run payload poked to %context-lens. The lens snapshot is passed
  * through with per-field truncation (tool args/results, previews) and a
  * total size cap, since the ship stores it verbatim and ames pokes should
  * stay small. Full untruncated runs remain on gateway disk (Phase 2 store).
@@ -100,7 +100,7 @@ export type ContextLensShipSync = {
 };
 
 /**
- * Mirror context-lens runs to the bot ship's %lens agent, which fans them
+ * Mirror context-lens runs to the bot ship's %context-lens agent, which fans them
  * out to owner ships for durable, mobile-reachable history.
  *
  * - terminal status → `%run-final`
@@ -135,13 +135,13 @@ export function createContextLensShipSync(opts: {
         }
         if (params !== configuredFor) {
           await params.poke({
-            app: "lens",
-            mark: "lens-action-1",
+            app: "context-lens",
+            mark: "context-lens-action-1",
             json: { configure: { owners } },
           });
           configuredFor = params;
         }
-        await params.poke({ app: "lens", mark: "lens-action-1", json });
+        await params.poke({ app: "context-lens", mark: "context-lens-action-1", json });
       })
       .catch((error) => {
         // A failed %configure must retry before the next run poke.

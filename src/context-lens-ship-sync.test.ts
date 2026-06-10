@@ -131,7 +131,7 @@ describe("createContextLensShipSync", () => {
       "run-event",
       "run-final",
     ]);
-    expect(pokes.every((p) => p.app === "lens" && p.mark === "lens-action-1")).toBe(true);
+    expect(pokes.every((p) => p.app === "context-lens" && p.mark === "context-lens-action-1")).toBe(true);
     expect(pokes[0].json).toEqual({ configure: { owners: ["~bus"] } });
     const final = pokes[3].json as { "run-final": { id: string; payload: unknown } };
     expect(final["run-final"].id).toBe(lens.lensId);

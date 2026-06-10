@@ -47,7 +47,7 @@ export const TlonContextLensSchema = z.object({
   visibilityDefault: z.enum(["owner", "participants", "internal"]).optional(),
   authToken: z.string().min(16).optional(),
   allowedOrigins: z.array(z.string().min(1)).optional(),
-  // Owner ships that receive run records via the %lens agent (ship sync).
+  // Owner ships that receive run records via the %context-lens agent (ship sync).
   // Falls back to `ownerShip` when empty.
   owners: z.array(ShipSchema).optional(),
   // Durable on-disk history of finalized runs (default on when the lens is
