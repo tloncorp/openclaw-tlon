@@ -60,11 +60,13 @@ describe("resolveLensOwners", () => {
 });
 
 describe("buildLensRunPayload", () => {
-  it("wraps the lens with a schemaVersion", () => {
+  it("serializes the lens with a schemaVersion", () => {
     const lens = makeLens();
-    const payload = buildLensRunPayload(lens);
+    const raw = buildLensRunPayload(lens);
+    expect(typeof raw).toBe("string");
+    const payload = JSON.parse(raw) as { schemaVersion: number; lens: ContextLens };
     expect(payload.schemaVersion).toBe(1);
-    expect((payload.lens as ContextLens).lensId).toBe(lens.lensId);
+    expect(payload.lens.lensId).toBe(lens.lensId);
   });
 
   it("truncates oversized tool summaries", () => {
@@ -82,8 +84,8 @@ describe("buildLensRunPayload", () => {
         resultSummary: "ok",
       },
     ];
-    const payload = buildLensRunPayload(lens);
-    const run = (payload.lens as ContextLens).tools.runs[0];
+    const payload = JSON.parse(buildLensRunPayload(lens)) as { lens: ContextLens };
+    const run = payload.lens.tools.runs[0];
     expect(run.argumentSummary?.length).toBeLessThan(5_000);
     expect(run.argumentSummary).toContain("[truncated]");
     expect(run.resultSummary).toBe("ok");
@@ -101,11 +103,12 @@ describe("buildLensRunPayload", () => {
       status: "completed" as const,
       argumentSummary: "y".repeat(4_000),
     }));
-    const payload = buildLensRunPayload(lens);
+    const raw = buildLensRunPayload(lens);
+    const payload = JSON.parse(raw) as { truncated?: boolean; lens: ContextLens };
     expect(payload.truncated).toBe(true);
-    expect((payload.lens as ContextLens).tools.runs).toEqual([]);
-    expect((payload.lens as ContextLens).status).toBe(lens.status);
-    expect(JSON.stringify(payload).length).toBeLessThan(50 * 1_024);
+    expect(payload.lens.tools.runs).toEqual([]);
+    expect(payload.lens.status).toBe(lens.status);
+    expect(raw.length).toBeLessThan(50 * 1_024);
   });
 });
 

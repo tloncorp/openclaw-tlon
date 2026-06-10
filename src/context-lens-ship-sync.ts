@@ -37,12 +37,14 @@ function truncateSummary(value: string | undefined): string | undefined {
 }
 
 /**
- * Build the opaque run payload poked to %context-lens. The lens snapshot is passed
+ * Build the opaque run payload poked to %context-lens, serialized to a JSON
+ * string (the agent stores payloads as cords — embedding $json in Hoon mark
+ * sample types breaks ford tube builds). The lens snapshot is passed
  * through with per-field truncation (tool args/results, previews) and a
  * total size cap, since the ship stores it verbatim and ames pokes should
  * stay small. Full untruncated runs remain on gateway disk (Phase 2 store).
  */
-export function buildLensRunPayload(lens: ContextLens): Record<string, unknown> {
+export function buildLensRunPayload(lens: ContextLens): string {
   const slim: ContextLens = {
     ...lens,
     context: {
@@ -61,8 +63,8 @@ export function buildLensRunPayload(lens: ContextLens): Record<string, unknown> 
       })),
     },
   };
-  const payload = { schemaVersion: PAYLOAD_SCHEMA_VERSION, lens: slim };
-  if (JSON.stringify(payload).length <= MAX_PAYLOAD_CHARS) {
+  const payload = JSON.stringify({ schemaVersion: PAYLOAD_SCHEMA_VERSION, lens: slim });
+  if (payload.length <= MAX_PAYLOAD_CHARS) {
     return payload;
   }
   // Still oversized (e.g. hundreds of tool runs): drop the bulky arrays but
@@ -74,11 +76,11 @@ export function buildLensRunPayload(lens: ContextLens): Record<string, unknown> 
     tools: { ...slim.tools, runs: [] },
     outputs: [],
   };
-  return {
+  return JSON.stringify({
     schemaVersion: PAYLOAD_SCHEMA_VERSION,
     lens: skeleton,
     truncated: true,
-  };
+  });
 }
 
 export function resolveLensOwners(config: OpenClawConfig): string[] {
