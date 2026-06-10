@@ -13,6 +13,13 @@ export type TlonLifecycleConfig = {
 
 export type TlonContextLensVisibility = "owner" | "participants" | "internal";
 
+export type TlonContextLensStoreConfig = {
+  enabled: boolean;
+  path: string | null;
+  retainDays: number | null;
+  maxStored: number | null;
+};
+
 export type TlonContextLensConfig = {
   enabled: boolean;
   ttlMs: number | null;
@@ -20,6 +27,7 @@ export type TlonContextLensConfig = {
   visibilityDefault: TlonContextLensVisibility;
   authToken: string | null;
   allowedOrigins: string[];
+  store: TlonContextLensStoreConfig;
 };
 
 export type TlonResolvedAccount = {
@@ -66,6 +74,13 @@ type TlonLifecycleInput = {
   toolTimeoutMs?: number;
 };
 
+type TlonContextLensStoreInput = {
+  enabled?: boolean;
+  path?: string;
+  retainDays?: number;
+  maxStored?: number;
+};
+
 type TlonContextLensInput = {
   enabled?: boolean;
   ttlMs?: number;
@@ -73,6 +88,7 @@ type TlonContextLensInput = {
   visibilityDefault?: TlonContextLensVisibility;
   authToken?: string;
   allowedOrigins?: string[];
+  store?: TlonContextLensStoreInput;
 };
 
 function resolveTelemetryConfig(
@@ -107,6 +123,12 @@ function resolveContextLensConfig(
     visibilityDefault: account?.visibilityDefault ?? base?.visibilityDefault ?? "owner",
     authToken: account?.authToken ?? base?.authToken ?? null,
     allowedOrigins: account?.allowedOrigins ?? base?.allowedOrigins ?? [],
+    store: {
+      enabled: account?.store?.enabled ?? base?.store?.enabled ?? true,
+      path: account?.store?.path ?? base?.store?.path ?? null,
+      retainDays: account?.store?.retainDays ?? base?.store?.retainDays ?? null,
+      maxStored: account?.store?.maxStored ?? base?.store?.maxStored ?? null,
+    },
   };
 }
 
@@ -180,6 +202,12 @@ export function resolveTlonAccount(
         visibilityDefault: "owner",
         authToken: null,
         allowedOrigins: [],
+        store: {
+          enabled: true,
+          path: null,
+          retainDays: null,
+          maxStored: null,
+        },
       },
       ownerListenEnabled: null,
       ownerListenDisabledChannels: [],

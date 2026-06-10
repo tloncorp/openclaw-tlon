@@ -14,6 +14,7 @@ import {
   CONTEXT_LENS_RUN_ROUTE,
   registerContextLensRoutes,
 } from "./context-lens-routes.js";
+import { setContextLensStore } from "./context-lens-store.js";
 
 const AUTH_TOKEN = "a-token-of-sufficient-length";
 
@@ -239,6 +240,39 @@ describe("context lens run route", () => {
     await routes.get(CONTEXT_LENS_RUN_ROUTE)?.handler(req, res);
 
     expect(state.statusCode).toBe(404);
+  });
+
+  it("falls back to the durable store when the event buffer misses", async () => {
+    const registry = createContextLensRegistry({ ttlMs: 60_000 });
+    const stored = registry.create({
+      messageId: "from-disk",
+      chatType: "dm",
+      trigger: "dm",
+    });
+    setContextLensStore({
+      filePath: "/tmp/unused",
+      save: () => {},
+      size: () => 1,
+      get: (lensId) => (lensId === stored.lensId ? stored : null),
+    });
+    try {
+      const { routes } = setupRoutes();
+      const { req } = makeReq({
+        url: `${CONTEXT_LENS_RUN_ROUTE}?lensId=${stored.lensId}`,
+        headers: authHeaders(),
+      });
+      const { res, state } = makeRes();
+
+      await routes.get(CONTEXT_LENS_RUN_ROUTE)?.handler(req, res);
+
+      expect(state.statusCode).toBe(200);
+      expect(JSON.parse(state.body).lens).toMatchObject({
+        lensId: stored.lensId,
+        messageId: "from-disk",
+      });
+    } finally {
+      setContextLensStore(null);
+    }
   });
 
   it("resolves lensIds from the recent event buffer", async () => {

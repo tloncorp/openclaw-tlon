@@ -15,6 +15,7 @@ import { resolveTlonBinary } from "./src/tlon-binary.js";
 import { checkBlockedSendOperation } from "./src/tlon-tool-guard.js";
 import { publishContextLensEvent } from "./src/context-lens-events.js";
 import { registerContextLensRoutes } from "./src/context-lens-routes.js";
+import { initContextLensStore } from "./src/context-lens-store.js";
 import {
   ensureBackgroundContextLensForSession,
   recordContextLensToolResultForSession,
@@ -317,6 +318,9 @@ export default defineChannelPluginEntry({
     });
 
     const contextLensEnabled = registerContextLensRoutes(api);
+    if (contextLensEnabled) {
+      initContextLensStore(api);
+    }
 
     // Register the tlon tool
     const tlonBinary = resolveTlonBinary({

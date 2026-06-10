@@ -9,6 +9,7 @@ import {
   subscribeToContextLensEvents,
   type ContextLensEvent,
 } from "./context-lens-events.js";
+import { getContextLensStore } from "./context-lens-store.js";
 import { resolveTlonAccount, type TlonContextLensConfig } from "./types.js";
 
 export const CONTEXT_LENS_RECENT_ROUTE = "/tlon/context-lens/recent";
@@ -257,7 +258,8 @@ export function registerContextLensRoutes(api: ContextLensRouteApi): boolean {
         writeJson(res, 400, { error: "missing_lensId" });
         return;
       }
-      const lens = findRecentContextLensById(lensId);
+      // Live events first, then the durable store so runs survive restarts.
+      const lens = findRecentContextLensById(lensId) ?? getContextLensStore()?.get(lensId);
       if (!lens) {
         writeJson(res, 404, { error: "not_found" });
         return;

@@ -33,6 +33,13 @@ export const TlonLifecycleSchema = z.object({
  * required for those routes to register — lens data exposes bot internals,
  * so there is no unauthenticated mode.
  */
+export const TlonContextLensStoreSchema = z.object({
+  enabled: z.boolean().optional(),
+  path: z.string().min(1).optional(),
+  retainDays: z.number().int().min(1).optional(),
+  maxStored: z.number().int().min(1).optional(),
+});
+
 export const TlonContextLensSchema = z.object({
   enabled: z.boolean().optional(),
   ttlMs: z.number().int().min(60_000).optional(),
@@ -40,6 +47,11 @@ export const TlonContextLensSchema = z.object({
   visibilityDefault: z.enum(["owner", "participants", "internal"]).optional(),
   authToken: z.string().min(16).optional(),
   allowedOrigins: z.array(z.string().min(1)).optional(),
+  // Durable on-disk history of finalized runs (default on when the lens is
+  // enabled). Hosted deployments with ephemeral disks can point `path` at a
+  // mounted volume or set `enabled: false` — the store is a restart
+  // backstop, not the source of truth.
+  store: TlonContextLensStoreSchema.optional(),
 });
 
 /**

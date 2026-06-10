@@ -102,6 +102,37 @@ describe("Tlon config schema", () => {
     expect(parsed.accounts?.hosted?.contextLens?.enabled).toBe(false);
   });
 
+  it("accepts context lens store configuration", () => {
+    const parsed = TlonConfigSchema.parse({
+      contextLens: {
+        enabled: true,
+        authToken: "a-token-of-sufficient-length",
+        store: {
+          enabled: true,
+          path: "/var/lib/openclaw/context-lens-runs.jsonl",
+          retainDays: 14,
+          maxStored: 250,
+        },
+      },
+    });
+
+    expect(parsed.contextLens?.store?.retainDays).toBe(14);
+    expect(parsed.contextLens?.store?.maxStored).toBe(250);
+  });
+
+  it("rejects invalid context lens store retention values", () => {
+    expect(() =>
+      TlonConfigSchema.parse({
+        contextLens: { store: { retainDays: 0 } },
+      }),
+    ).toThrow();
+    expect(() =>
+      TlonConfigSchema.parse({
+        contextLens: { store: { maxStored: -5 } },
+      }),
+    ).toThrow();
+  });
+
   it("rejects context lens auth tokens that are too short", () => {
     expect(() =>
       TlonConfigSchema.parse({
