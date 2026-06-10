@@ -20,18 +20,27 @@ type ContextLensEventState = {
   listeners: Set<ContextLensListener>;
   recentEvents: ContextLensEvent[];
   nextSeq: number;
+  maxRecentEvents: number;
 };
 
-const MAX_RECENT_EVENTS = 200;
+const DEFAULT_MAX_RECENT_EVENTS = 200;
 const CONTEXT_LENS_EVENTS_SLOT = "@tloncorp/openclaw.context-lens-events";
 const stateSlot = sharedSlot<ContextLensEventState>(CONTEXT_LENS_EVENTS_SLOT);
 const state = stateSlot.get() ?? {
   listeners: new Set<ContextLensListener>(),
   recentEvents: [],
   nextSeq: 1,
+  maxRecentEvents: DEFAULT_MAX_RECENT_EVENTS,
 };
+// Slot state written by an older module copy may predate this field.
+state.maxRecentEvents ??= DEFAULT_MAX_RECENT_EVENTS;
 
 stateSlot.set(state);
+
+export function setContextLensEventCapacity(maxEntries: number | null | undefined) {
+  state.maxRecentEvents =
+    maxEntries && maxEntries > 0 ? maxEntries : DEFAULT_MAX_RECENT_EVENTS;
+}
 
 function pruneExpiredEvents(now = Date.now()) {
   state.recentEvents = state.recentEvents.filter((event) => event.lens.expiresAt > now);
@@ -55,8 +64,8 @@ export function publishContextLensEvent(
     return;
   }
   state.recentEvents.push(event);
-  if (state.recentEvents.length > MAX_RECENT_EVENTS) {
-    state.recentEvents.splice(0, state.recentEvents.length - MAX_RECENT_EVENTS);
+  if (state.recentEvents.length > state.maxRecentEvents) {
+    state.recentEvents.splice(0, state.recentEvents.length - state.maxRecentEvents);
   }
 
   // Deliver this event to the listeners that existed at publish start.

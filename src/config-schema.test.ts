@@ -75,6 +75,49 @@ describe("Tlon config schema", () => {
     expect(parsed.accounts?.hosted?.lifecycle?.runTimeoutMs).toBe(90_000);
   });
 
+  it("accepts context lens configuration", () => {
+    const parsed = TlonConfigSchema.parse({
+      contextLens: {
+        enabled: true,
+        ttlMs: 600_000,
+        maxEntries: 500,
+        visibilityDefault: "owner",
+        authToken: "a-token-of-sufficient-length",
+        allowedOrigins: ["https://app.tlon.network"],
+      },
+      accounts: {
+        hosted: {
+          ship: "~zod",
+          url: "https://example.com",
+          code: "code-123",
+          contextLens: {
+            enabled: false,
+          },
+        },
+      },
+    });
+
+    expect(parsed.contextLens?.enabled).toBe(true);
+    expect(parsed.contextLens?.allowedOrigins).toEqual(["https://app.tlon.network"]);
+    expect(parsed.accounts?.hosted?.contextLens?.enabled).toBe(false);
+  });
+
+  it("rejects context lens auth tokens that are too short", () => {
+    expect(() =>
+      TlonConfigSchema.parse({
+        contextLens: { authToken: "short" },
+      }),
+    ).toThrow();
+  });
+
+  it("rejects unknown context lens visibility values", () => {
+    expect(() =>
+      TlonConfigSchema.parse({
+        contextLens: { visibilityDefault: "everyone" },
+      }),
+    ).toThrow();
+  });
+
   it("accepts an opt-in reengagement.enabled flag", () => {
     const parsed = TlonConfigSchema.parse({
       ship: "~zod",

@@ -215,3 +215,63 @@ describe("resolveTlonAccount lifecycle", () => {
     });
   });
 });
+
+describe("resolveTlonAccount contextLens", () => {
+  it("defaults to disabled with owner visibility", () => {
+    const account = resolveTlonAccount({
+      channels: {
+        tlon: {
+          ship: "~zod",
+          url: "https://example.com",
+          code: "code-123",
+        },
+      },
+    } as OpenClawConfig);
+
+    expect(account.contextLens).toEqual({
+      enabled: false,
+      ttlMs: null,
+      maxEntries: null,
+      visibilityDefault: "owner",
+      authToken: null,
+      allowedOrigins: [],
+    });
+  });
+
+  it("merges base and account context lens settings", () => {
+    const account = resolveTlonAccount(
+      {
+        channels: {
+          tlon: {
+            contextLens: {
+              enabled: true,
+              ttlMs: 600_000,
+              authToken: "a-token-of-sufficient-length",
+            },
+            accounts: {
+              hosted: {
+                ship: "~zod",
+                url: "https://example.com",
+                code: "code-123",
+                contextLens: {
+                  maxEntries: 500,
+                  visibilityDefault: "internal",
+                },
+              },
+            },
+          },
+        },
+      } as OpenClawConfig,
+      "hosted",
+    );
+
+    expect(account.contextLens).toEqual({
+      enabled: true,
+      ttlMs: 600_000,
+      maxEntries: 500,
+      visibilityDefault: "internal",
+      authToken: "a-token-of-sufficient-length",
+      allowedOrigins: [],
+    });
+  });
+});

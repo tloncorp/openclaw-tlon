@@ -13,13 +13,8 @@ import { getSessionRole } from "./src/session-roles.js";
 import { recordToolCall } from "./src/telemetry.js";
 import { resolveTlonBinary } from "./src/tlon-binary.js";
 import { checkBlockedSendOperation } from "./src/tlon-tool-guard.js";
-import {
-  findRecentContextLensById,
-  listRecentContextLensEvents,
-  publishContextLensEvent,
-  subscribeToContextLensEvents,
-  type ContextLensEvent,
-} from "./src/context-lens-events.js";
+import { publishContextLensEvent } from "./src/context-lens-events.js";
+import { registerContextLensRoutes } from "./src/context-lens-routes.js";
 import {
   ensureBackgroundContextLensForSession,
   recordContextLensToolResultForSession,
@@ -74,9 +69,6 @@ const ALLOWED_TLON_COMMANDS = new Set([
 /** Credential flags that the tlon skill binary accepts before the subcommand. */
 const CREDENTIAL_FLAGS_WITH_VALUE = new Set(["--config", "--url", "--ship", "--code", "--cookie"]);
 const DEFAULT_TLON_CLI_TIMEOUT_MS = 45_000;
-const CONTEXT_LENS_RECENT_ROUTE = "/tlon/context-lens/recent";
-const CONTEXT_LENS_EVENTS_ROUTE = "/tlon/context-lens/events";
-const CONTEXT_LENS_RUN_ROUTE = "/tlon/context-lens/run";
 
 /**
  * Find the first positional argument (subcommand) by skipping credential flags
@@ -234,78 +226,6 @@ function runTlonCommand(
   });
 }
 
-function setContextLensCorsHeaders(req: any, res: any) {
-  const origin = typeof req.headers?.origin === "string" ? req.headers.origin : "";
-  if (/^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(?::\d+)?$/.test(origin)) {
-    res.setHeader("Access-Control-Allow-Origin", origin);
-    res.setHeader("Vary", "Origin");
-  }
-  res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
-}
-
-function writeJson(res: any, statusCode: number, payload: unknown) {
-  res.statusCode = statusCode;
-  res.setHeader("Content-Type", "application/json; charset=utf-8");
-  res.end(JSON.stringify(payload));
-}
-
-function writeSseEvent(res: any, event: ContextLensEvent) {
-  res.write(`id: ${event.seq}\n`);
-  res.write("event: context-lens\n");
-  res.write(`data: ${JSON.stringify(event)}\n\n`);
-}
-
-function closeSseResponse(res: any) {
-  try {
-    res.end?.();
-  } catch {
-    // Ignore cleanup failures from already-closed responses.
-  }
-}
-
-function readRouteQuery(req: any, key: string): string {
-  const rawUrl = typeof req.url === "string" ? req.url : "";
-  const parsed = new URL(rawUrl, "http://localhost");
-  return parsed.searchParams.get(key)?.trim() ?? "";
-}
-
-function registerContextLensLookupRoute(
-  api: any,
-  path: string,
-  queryKey: string,
-  lookup: (value: string) => unknown,
-) {
-  api.registerHttpRoute({
-    path,
-    auth: "plugin",
-    replaceExisting: true,
-    handler: async (req: any, res: any) => {
-      setContextLensCorsHeaders(req, res);
-      if (req.method === "OPTIONS") {
-        res.statusCode = 204;
-        res.end();
-        return;
-      }
-      if (req.method !== "GET") {
-        writeJson(res, 405, { error: "method_not_allowed" });
-        return;
-      }
-      const value = readRouteQuery(req, queryKey);
-      if (!value) {
-        writeJson(res, 400, { error: `missing_${queryKey}` });
-        return;
-      }
-      const lens = lookup(value);
-      if (!lens) {
-        writeJson(res, 404, { error: "not_found" });
-        return;
-      }
-      writeJson(res, 200, { lens });
-    },
-  });
-}
-
 export default defineChannelPluginEntry({
   id: "tlon",
   name: "Tlon",
@@ -396,95 +316,7 @@ export default defineChannelPluginEntry({
       },
     });
 
-    api.registerHttpRoute({
-      path: CONTEXT_LENS_RECENT_ROUTE,
-      auth: "plugin",
-      replaceExisting: true,
-      handler: async (req, res) => {
-        setContextLensCorsHeaders(req, res);
-        if (req.method === "OPTIONS") {
-          res.statusCode = 204;
-          res.end();
-          return;
-        }
-        if (req.method !== "GET") {
-          writeJson(res, 405, { error: "method_not_allowed" });
-          return;
-        }
-        writeJson(res, 200, { events: listRecentContextLensEvents() });
-      },
-    });
-
-    api.registerHttpRoute({
-      path: CONTEXT_LENS_EVENTS_ROUTE,
-      auth: "plugin",
-      replaceExisting: true,
-      handler: async (req, res) => {
-        setContextLensCorsHeaders(req, res);
-        if (req.method === "OPTIONS") {
-          res.statusCode = 204;
-          res.end();
-          return;
-        }
-        if (req.method !== "GET") {
-          writeJson(res, 405, { error: "method_not_allowed" });
-          return;
-        }
-
-        res.statusCode = 200;
-        res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
-        res.setHeader("Cache-Control", "no-cache, no-transform");
-        res.setHeader("Connection", "keep-alive");
-        let closed = false;
-        let unsubscribe = () => {};
-        const cleanup = () => {
-          if (closed) {
-            return;
-          }
-          closed = true;
-          unsubscribe();
-        };
-        const sendOrClose = (event: ContextLensEvent) => {
-          if (closed) {
-            return;
-          }
-          try {
-            writeSseEvent(res, event);
-          } catch (error) {
-            api.logger.warn(`[tlon] Context Lens SSE write failed: ${String(error)}`);
-            cleanup();
-            closeSseResponse(res);
-          }
-        };
-
-        try {
-          res.write(": connected\n\n");
-        } catch (error) {
-          api.logger.warn(`[tlon] Context Lens SSE handshake failed: ${String(error)}`);
-          cleanup();
-          closeSseResponse(res);
-          return;
-        }
-
-        for (const event of listRecentContextLensEvents().slice(-25)) {
-          sendOrClose(event);
-        }
-        if (closed) {
-          return;
-        }
-
-        unsubscribe = subscribeToContextLensEvents(sendOrClose);
-        req.on?.("close", cleanup);
-        req.on?.("aborted", cleanup);
-      },
-    });
-
-    registerContextLensLookupRoute(
-      api,
-      CONTEXT_LENS_RUN_ROUTE,
-      "lensId",
-      findRecentContextLensById,
-    );
+    const contextLensEnabled = registerContextLensRoutes(api);
 
     // Register the tlon tool
     const tlonBinary = resolveTlonBinary({
@@ -580,28 +412,30 @@ export default defineChannelPluginEntry({
       const isOwnerOnlyTool = ownerOnlyTools.has(event.toolName);
       const isBlocked = isOwnerOnlyTool && role === "user";
       const blockReason = isBlocked ? `The ${event.toolName} tool is not available.` : undefined;
-      if (role === null) {
-        const backgroundLens = ensureBackgroundContextLensForSession(ctx.sessionKey, {
-          runKind: event.toolName === "cron" ? "cron" : "internal",
-          trigger: event.toolName === "cron" ? "cron" : "tool",
-          preview: `${event.toolName} tool activity`,
-        });
-        if (backgroundLens && backgroundLens.tools.callCount === 0) {
-          publishContextLensEvent("created", backgroundLens);
+      if (contextLensEnabled) {
+        if (role === null) {
+          const backgroundLens = ensureBackgroundContextLensForSession(ctx.sessionKey, {
+            runKind: event.toolName === "cron" ? "cron" : "internal",
+            trigger: event.toolName === "cron" ? "cron" : "tool",
+            preview: `${event.toolName} tool activity`,
+          });
+          if (backgroundLens && backgroundLens.tools.callCount === 0) {
+            publishContextLensEvent("created", backgroundLens);
+          }
         }
-      }
-      const lens = recordContextLensToolStartForSession(ctx.sessionKey, event.toolName, {
-        phase: "before",
-        argumentSummary: summarizeToolParams(event.params),
-        toolCallId,
-      });
-      if (lens) {
-        publishContextLensEvent("tool_start", lens, {
-          toolName: event.toolName,
-          ...(toolCallId ? { toolCallId } : {}),
-          toolPhase: "before",
-          toolCallCount: lens.tools.callCount,
+        const lens = recordContextLensToolStartForSession(ctx.sessionKey, event.toolName, {
+          phase: "before",
+          argumentSummary: summarizeToolParams(event.params),
+          toolCallId,
         });
+        if (lens) {
+          publishContextLensEvent("tool_start", lens, {
+            toolName: event.toolName,
+            ...(toolCallId ? { toolCallId } : {}),
+            toolPhase: "before",
+            toolCallCount: lens.tools.callCount,
+          });
+        }
       }
 
       if (logToolTraceContents) {
@@ -631,21 +465,27 @@ export default defineChannelPluginEntry({
         api.logger.warn(
           `[tlon] Blocked ${event.toolName} tool for non-owner. Session: ${ctx.sessionKey}, Role: ${role}`,
         );
-        const blockedLens = recordContextLensToolResultForSession(ctx.sessionKey, event.toolName, {
-          error: blockReason,
-          status: "blocked",
-          toolCallId,
-        });
-        if (blockedLens) {
-          publishContextLensEvent("tool_result", blockedLens, {
-            toolName: event.toolName,
-            ...(toolCallId ? { toolCallId } : {}),
-            toolPhase: "blocked",
-            toolCallCount: blockedLens.tools.callCount,
-          });
-          scheduleBackgroundContextLensFinalization(ctx.sessionKey, (finalLens) => {
-            publishContextLensEvent("final", finalLens);
-          });
+        if (contextLensEnabled) {
+          const blockedLens = recordContextLensToolResultForSession(
+            ctx.sessionKey,
+            event.toolName,
+            {
+              error: blockReason,
+              status: "blocked",
+              toolCallId,
+            },
+          );
+          if (blockedLens) {
+            publishContextLensEvent("tool_result", blockedLens, {
+              toolName: event.toolName,
+              ...(toolCallId ? { toolCallId } : {}),
+              toolPhase: "blocked",
+              toolCallCount: blockedLens.tools.callCount,
+            });
+            scheduleBackgroundContextLensFinalization(ctx.sessionKey, (finalLens) => {
+              publishContextLensEvent("final", finalLens);
+            });
+          }
         }
         return {
           block: true,
@@ -682,21 +522,23 @@ export default defineChannelPluginEntry({
         durationMs: event.durationMs,
         error: event.error,
       });
-      const lens = recordContextLensToolResultForSession(ctx.sessionKey, event.toolName, {
-        durationMs: event.durationMs,
-        error: event.error,
-        toolCallId,
-      });
-      if (lens) {
-        publishContextLensEvent("tool_result", lens, {
-          toolName: event.toolName,
-          ...(toolCallId ? { toolCallId } : {}),
-          toolPhase: "after",
-          toolCallCount: lens.tools.callCount,
+      if (contextLensEnabled) {
+        const lens = recordContextLensToolResultForSession(ctx.sessionKey, event.toolName, {
+          durationMs: event.durationMs,
+          error: event.error,
+          toolCallId,
         });
-        scheduleBackgroundContextLensFinalization(ctx.sessionKey, (finalLens) => {
-          publishContextLensEvent("final", finalLens);
-        });
+        if (lens) {
+          publishContextLensEvent("tool_result", lens, {
+            toolName: event.toolName,
+            ...(toolCallId ? { toolCallId } : {}),
+            toolPhase: "after",
+            toolCallCount: lens.tools.callCount,
+          });
+          scheduleBackgroundContextLensFinalization(ctx.sessionKey, (finalLens) => {
+            publishContextLensEvent("final", finalLens);
+          });
+        }
       }
     });
 

@@ -11,6 +11,17 @@ export type TlonLifecycleConfig = {
   toolTimeoutMs: number | null;
 };
 
+export type TlonContextLensVisibility = "owner" | "participants" | "internal";
+
+export type TlonContextLensConfig = {
+  enabled: boolean;
+  ttlMs: number | null;
+  maxEntries: number | null;
+  visibilityDefault: TlonContextLensVisibility;
+  authToken: string | null;
+  allowedOrigins: string[];
+};
+
 export type TlonResolvedAccount = {
   accountId: string;
   name: string | null;
@@ -37,6 +48,7 @@ export type TlonResolvedAccount = {
   maxConsecutiveBotResponses: number | null;
   telemetry: TlonTelemetryConfig;
   lifecycle: TlonLifecycleConfig;
+  contextLens: TlonContextLensConfig;
   /** Global owner-listen toggle (default true). */
   ownerListenEnabled: boolean | null;
   /** Channels opted out of owner-listen even when the global toggle is on. */
@@ -52,6 +64,15 @@ type TlonTelemetryInput = {
 type TlonLifecycleInput = {
   runTimeoutMs?: number;
   toolTimeoutMs?: number;
+};
+
+type TlonContextLensInput = {
+  enabled?: boolean;
+  ttlMs?: number;
+  maxEntries?: number;
+  visibilityDefault?: TlonContextLensVisibility;
+  authToken?: string;
+  allowedOrigins?: string[];
 };
 
 function resolveTelemetryConfig(
@@ -72,6 +93,20 @@ function resolveLifecycleConfig(
   return {
     runTimeoutMs: account?.runTimeoutMs ?? base?.runTimeoutMs ?? null,
     toolTimeoutMs: account?.toolTimeoutMs ?? base?.toolTimeoutMs ?? null,
+  };
+}
+
+function resolveContextLensConfig(
+  base: TlonContextLensInput | null | undefined,
+  account: TlonContextLensInput | null | undefined,
+): TlonContextLensConfig {
+  return {
+    enabled: account?.enabled ?? base?.enabled ?? false,
+    ttlMs: account?.ttlMs ?? base?.ttlMs ?? null,
+    maxEntries: account?.maxEntries ?? base?.maxEntries ?? null,
+    visibilityDefault: account?.visibilityDefault ?? base?.visibilityDefault ?? "owner",
+    authToken: account?.authToken ?? base?.authToken ?? null,
+    allowedOrigins: account?.allowedOrigins ?? base?.allowedOrigins ?? [],
   };
 }
 
@@ -101,6 +136,7 @@ export function resolveTlonAccount(
         maxConsecutiveBotResponses?: number;
         telemetry?: TlonTelemetryInput;
         lifecycle?: TlonLifecycleInput;
+        contextLens?: TlonContextLensInput;
         ownerListenEnabled?: boolean;
         ownerListenDisabledChannels?: string[];
         accounts?: Record<string, Record<string, unknown>>;
@@ -136,6 +172,14 @@ export function resolveTlonAccount(
       lifecycle: {
         runTimeoutMs: null,
         toolTimeoutMs: null,
+      },
+      contextLens: {
+        enabled: false,
+        ttlMs: null,
+        maxEntries: null,
+        visibilityDefault: "owner",
+        authToken: null,
+        allowedOrigins: [],
       },
       ownerListenEnabled: null,
       ownerListenDisabledChannels: [],
@@ -188,6 +232,10 @@ export function resolveTlonAccount(
     base.lifecycle,
     (account as { lifecycle?: TlonLifecycleInput } | undefined)?.lifecycle,
   );
+  const contextLens = resolveContextLensConfig(
+    base.contextLens,
+    (account as { contextLens?: TlonContextLensInput } | undefined)?.contextLens,
+  );
   const defaultAuthorizedShips = ((account as Record<string, unknown>)?.defaultAuthorizedShips ??
     (base as Record<string, unknown>)?.defaultAuthorizedShips ??
     []) as string[];
@@ -222,9 +270,20 @@ export function resolveTlonAccount(
     maxConsecutiveBotResponses,
     telemetry,
     lifecycle,
+    contextLens,
     ownerListenEnabled,
     ownerListenDisabledChannels,
   };
+}
+
+/**
+ * Context lens is effectively on only when enabled AND an auth token is
+ * configured: without a token the routes never register, so recording and
+ * blob stamping would produce data nothing can read.
+ */
+export function isContextLensEnabled(cfg: OpenClawConfig, accountId?: string | null): boolean {
+  const lens = resolveTlonAccount(cfg, accountId).contextLens;
+  return lens.enabled && Boolean(lens.authToken);
 }
 
 export function listTlonAccountIds(cfg: OpenClawConfig): string[] {

@@ -451,6 +451,30 @@ describe("context lens registry", () => {
     ]);
   });
 
+  it("applies the registry visibility default when create() omits visibility", () => {
+    const registry = createContextLensRegistry({ visibilityDefault: "internal" });
+    const defaulted = registry.create({ messageId: "vis-default", chatType: "dm" });
+    const explicit = registry.create({
+      messageId: "vis-explicit",
+      chatType: "dm",
+      visibility: "participants",
+    });
+
+    expect(defaulted.visibility).toBe("internal");
+    expect(explicit.visibility).toBe("participants");
+  });
+
+  it("does not retain lenses when disabled, so record calls no-op", () => {
+    const registry = createContextLensRegistry({ disabled: true });
+    const lens = registry.create({ messageId: "disabled-lens", chatType: "dm" });
+
+    expect(lens.lensId).toBeTruthy();
+    expect(registry.get(lens.lensId)).toBeNull();
+    expect(registry.recordToolCall(lens.lensId, "tlon")).toBeNull();
+    expect(registry.setStatus(lens.lensId, "dispatching")).toBeNull();
+    expect(registry.listRecent()).toEqual([]);
+  });
+
   it("expires old lenses and caps registry size", () => {
     const registry = createContextLensRegistry({ ttlMs: 1_000_000, maxEntries: 2 });
     const now = Date.now();

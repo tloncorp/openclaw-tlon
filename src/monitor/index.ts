@@ -135,7 +135,10 @@ import {
 } from "./approval.js";
 import { setBridge, removeBridge, type ApprovalCommandBridge } from "./command-bridge.js";
 import { createComputingPresenceTracker } from "./computing-presence.js";
-import { publishContextLensEvent } from "../context-lens-events.js";
+import {
+  publishContextLensEvent,
+  setContextLensEventCapacity,
+} from "../context-lens-events.js";
 import { fetchAllChannels, fetchInitData } from "./discovery.js";
 import {
   cacheMessage,
@@ -411,7 +414,15 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
   // catches all of those and runs cleanup unconditionally.
   try {
   const computingPresence = createComputingPresenceTracker({ runtime });
-  const contextLenses = createContextLensRegistry();
+  const contextLensConfig = account.contextLens;
+  const contextLensEnabled = contextLensConfig.enabled && Boolean(contextLensConfig.authToken);
+  const contextLenses = createContextLensRegistry({
+    ttlMs: contextLensConfig.ttlMs ?? undefined,
+    maxEntries: contextLensConfig.maxEntries ?? undefined,
+    visibilityDefault: contextLensConfig.visibilityDefault,
+    disabled: !contextLensEnabled,
+  });
+  setContextLensEventCapacity(contextLensConfig.maxEntries);
   const logContextLens = (
     lensId: string,
     phase: string,
@@ -583,6 +594,9 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
   }
 
   function buildContextLensReferenceBlobField(lensId: string): string | undefined {
+    if (!contextLensEnabled) {
+      return undefined;
+    }
     try {
       return serializeContextLensReferenceBlob(lensId);
     } catch (err) {

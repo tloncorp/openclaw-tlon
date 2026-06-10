@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { sharedMap } from "./shared-state.js";
+import { sharedMap, sharedSlot } from "./shared-state.js";
 
 export type ContextLensTrigger =
   | "cron"
@@ -167,6 +167,21 @@ export type CreateContextLensInput = {
   ttlMs?: number;
 };
 
+/**
+ * Patch shape for registry update(): top-level fields are optional, and the
+ * nested objects may themselves be partial because update() deep-merges them
+ * over the existing lens.
+ */
+export type ContextLensPatch = Partial<
+  Omit<ContextLens, "context" | "persistence" | "tools" | "triggerDetails" | "lifecycle">
+> & {
+  context?: Partial<ContextLens["context"]>;
+  persistence?: Partial<ContextLens["persistence"]>;
+  tools?: Partial<ContextLens["tools"]>;
+  triggerDetails?: Partial<ContextLens["triggerDetails"]>;
+  lifecycle?: Partial<ContextLens["lifecycle"]>;
+};
+
 export type ContextLensRegistry = ReturnType<typeof createContextLensRegistry>;
 
 type ActiveContextLensBinding = {
@@ -182,7 +197,9 @@ const BACKGROUND_FINALIZE_IDLE_MS = 1_500;
 const activeLensesBySession = sharedMap<string, ActiveContextLensBinding>(
   "contextLens.activeLensesBySession",
 );
-let backgroundContextLenses: ContextLensRegistry | null = null;
+const backgroundContextLensesSlot = sharedSlot<ContextLensRegistry>(
+  "contextLens.backgroundRegistry",
+);
 
 export function hashSessionKey(sessionKey: string): string {
   return createHash("sha256").update(sessionKey).digest("hex").slice(0, 16);
@@ -238,9 +255,18 @@ function serializeError(error: unknown): string {
   return String(error);
 }
 
-export function createContextLensRegistry(opts: { ttlMs?: number; maxEntries?: number } = {}) {
+export function createContextLensRegistry(
+  opts: {
+    ttlMs?: number;
+    maxEntries?: number;
+    visibilityDefault?: ContextLensVisibility;
+    disabled?: boolean;
+  } = {},
+) {
   const ttlMs = opts.ttlMs ?? DEFAULT_TTL_MS;
   const maxEntries = opts.maxEntries ?? MAX_LENSES;
+  const visibilityDefault = opts.visibilityDefault ?? "owner";
+  const disabled = opts.disabled ?? false;
   const lenses = new Map<string, ContextLens>();
 
   const prune = (now = Date.now()) => {
@@ -267,7 +293,7 @@ export function createContextLensRegistry(opts: { ttlMs?: number; maxEntries?: n
       sessionKeyHash: input.sessionKey ? hashSessionKey(input.sessionKey) : null,
       chatType: input.chatType,
       runKind: input.runKind ?? defaultRunKind(input.trigger, input.chatType),
-      visibility: input.visibility ?? "owner",
+      visibility: input.visibility ?? visibilityDefault,
       trigger: input.trigger ?? "unknown",
       triggerDetails: {
         type: input.trigger ?? "unknown",
@@ -335,12 +361,17 @@ export function createContextLensRegistry(opts: { ttlMs?: number; maxEntries?: n
       expiresAt: now + (input.ttlMs ?? ttlMs),
     };
 
-    lenses.set(lens.lensId, lens);
-    prune(now);
+    // When disabled, hand back a lens without storing it: every later
+    // get()/update()/record*() misses the map and no-ops, so call sites
+    // need no enabled checks of their own.
+    if (!disabled) {
+      lenses.set(lens.lensId, lens);
+      prune(now);
+    }
     return cloneLens(lens);
   };
 
-  const update = (lensId: string | null | undefined, patch: Partial<ContextLens>) => {
+  const update = (lensId: string | null | undefined, patch: ContextLensPatch) => {
     if (!lensId) { return null; }
     const existing = lenses.get(lensId);
     if (!existing) { return null; }
@@ -373,12 +404,12 @@ export function createContextLensRegistry(opts: { ttlMs?: number; maxEntries?: n
   const recordContext = (
     lensId: string | null | undefined,
     patch: Partial<ContextLens["context"]>,
-  ) => update(lensId, { context: patch as ContextLens["context"] });
+  ) => update(lensId, { context: patch });
 
   const recordPersistence = (
     lensId: string | null | undefined,
     patch: Partial<ContextLens["persistence"]>,
-  ) => update(lensId, { persistence: patch as ContextLens["persistence"] });
+  ) => update(lensId, { persistence: patch });
 
   const recordContextSource = (
     lensId: string | null | undefined,
@@ -619,8 +650,13 @@ export function unbindContextLensFromSession(
 }
 
 function getBackgroundContextLensRegistry(): ContextLensRegistry {
-  backgroundContextLenses ??= createContextLensRegistry();
-  return backgroundContextLenses;
+  const existing = backgroundContextLensesSlot.get();
+  if (existing) {
+    return existing;
+  }
+  const registry = createContextLensRegistry();
+  backgroundContextLensesSlot.set(registry);
+  return registry;
 }
 
 export function ensureBackgroundContextLensForSession(
