@@ -15,6 +15,7 @@ import { resolveTlonBinary } from "./src/tlon-binary.js";
 import { checkBlockedSendOperation } from "./src/tlon-tool-guard.js";
 import { publishContextLensEvent } from "./src/context-lens-events.js";
 import { registerContextLensRoutes } from "./src/context-lens-routes.js";
+import { initContextLensShipSync } from "./src/context-lens-ship-sync.js";
 import { initContextLensStore } from "./src/context-lens-store.js";
 import {
   ensureBackgroundContextLensForSession,
@@ -317,7 +318,11 @@ export default defineChannelPluginEntry({
       },
     });
 
-    const contextLensEnabled = registerContextLensRoutes(api);
+    const contextLensRoutesEnabled = registerContextLensRoutes(api);
+    const contextLensShipSyncEnabled = initContextLensShipSync(api);
+    // Recording and the disk store run when at least one reader path is
+    // live: authed gateway routes or %lens ship sync.
+    const contextLensEnabled = contextLensRoutesEnabled || contextLensShipSyncEnabled;
     if (contextLensEnabled) {
       initContextLensStore(api);
     }

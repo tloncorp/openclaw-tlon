@@ -27,6 +27,8 @@ export type TlonContextLensConfig = {
   visibilityDefault: TlonContextLensVisibility;
   authToken: string | null;
   allowedOrigins: string[];
+  /** Owner ships receiving run records via %lens ship sync; empty falls back to ownerShip. */
+  owners: string[];
   store: TlonContextLensStoreConfig;
 };
 
@@ -88,6 +90,7 @@ type TlonContextLensInput = {
   visibilityDefault?: TlonContextLensVisibility;
   authToken?: string;
   allowedOrigins?: string[];
+  owners?: string[];
   store?: TlonContextLensStoreInput;
 };
 
@@ -123,6 +126,7 @@ function resolveContextLensConfig(
     visibilityDefault: account?.visibilityDefault ?? base?.visibilityDefault ?? "owner",
     authToken: account?.authToken ?? base?.authToken ?? null,
     allowedOrigins: account?.allowedOrigins ?? base?.allowedOrigins ?? [],
+    owners: account?.owners ?? base?.owners ?? [],
     store: {
       enabled: account?.store?.enabled ?? base?.store?.enabled ?? true,
       path: account?.store?.path ?? base?.store?.path ?? null,
@@ -202,6 +206,7 @@ export function resolveTlonAccount(
         visibilityDefault: "owner",
         authToken: null,
         allowedOrigins: [],
+        owners: [],
         store: {
           enabled: true,
           path: null,
@@ -305,13 +310,18 @@ export function resolveTlonAccount(
 }
 
 /**
- * Context lens is effectively on only when enabled AND an auth token is
- * configured: without a token the routes never register, so recording and
- * blob stamping would produce data nothing can read.
+ * Context lens is effectively on only when enabled AND at least one reader
+ * path exists: an auth token (gateway HTTP/SSE routes) or owner ships
+ * (%lens ship sync). Without either, recording and blob stamping would
+ * produce data nothing can read.
  */
 export function isContextLensEnabled(cfg: OpenClawConfig, accountId?: string | null): boolean {
-  const lens = resolveTlonAccount(cfg, accountId).contextLens;
-  return lens.enabled && Boolean(lens.authToken);
+  const account = resolveTlonAccount(cfg, accountId);
+  const lens = account.contextLens;
+  if (!lens.enabled) {
+    return false;
+  }
+  return Boolean(lens.authToken) || lens.owners.length > 0 || Boolean(account.ownerShip);
 }
 
 export function listTlonAccountIds(cfg: OpenClawConfig): string[] {

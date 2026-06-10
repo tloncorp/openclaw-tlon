@@ -271,6 +271,13 @@
                         "minLength": 1
                       }
                     },
+                    "owners": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
                     "store": {
                       "type": "object",
                       "properties": {
@@ -397,6 +404,13 @@
                 "minLength": 16
               },
               "allowedOrigins": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "owners": {
                 "type": "array",
                 "items": {
                   "type": "string",

@@ -235,6 +235,7 @@ describe("resolveTlonAccount contextLens", () => {
       visibilityDefault: "owner",
       authToken: null,
       allowedOrigins: [],
+      owners: [],
       store: { enabled: true, path: null, retainDays: null, maxStored: null },
     });
   });
@@ -273,6 +274,7 @@ describe("resolveTlonAccount contextLens", () => {
       visibilityDefault: "internal",
       authToken: "a-token-of-sufficient-length",
       allowedOrigins: [],
+      owners: [],
       store: { enabled: true, path: null, retainDays: null, maxStored: null },
     });
   });
