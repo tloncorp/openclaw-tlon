@@ -1,11 +1,13 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
 const {
+  clearConversationPresence,
   createComputingStatus,
   getComputingStatusText,
   serializeComputingStatus,
   setConversationPresence,
 } = vi.hoisted(() => ({
+  clearConversationPresence: vi.fn(async () => {}),
   createComputingStatus: vi.fn(({ thinking, toolCalls }) => ({
     thinking,
     toolCalls,
@@ -19,6 +21,7 @@ const {
 }));
 
 vi.mock("@tloncorp/api", () => ({
+  clearConversationPresence,
   createComputingStatus,
   getComputingStatusText,
   serializeComputingStatus,
@@ -35,7 +38,7 @@ describe("createComputingPresenceTracker", () => {
     vi.clearAllMocks();
   });
 
-  test("publishes presence with an empty disclose array", async () => {
+  test("publishes active presence with an explicit backend timeout", async () => {
     const reporter = createComputingPresenceReporter();
 
     await reporter.publish({
@@ -48,6 +51,7 @@ describe("createComputingPresenceTracker", () => {
       conversationId: "~nec",
       topic: "computing",
       disclose: [],
+      timeout: "~m1.s30",
       display: {
         text: "Computing",
         blob: {
@@ -56,6 +60,23 @@ describe("createComputingPresenceTracker", () => {
         },
       },
     });
+    expect(clearConversationPresence).not.toHaveBeenCalled();
+  });
+
+  test("clears computing presence when publishing idle state", async () => {
+    const reporter = createComputingPresenceReporter();
+
+    await reporter.publish({
+      conversationId: "~nec",
+      thinking: false,
+      toolNames: [],
+    });
+
+    expect(clearConversationPresence).toHaveBeenCalledWith({
+      conversationId: "~nec",
+      topic: "computing",
+    });
+    expect(setConversationPresence).not.toHaveBeenCalled();
   });
 
   test("publishes thinking state for a new run and sends thinking false when the run stops", async () => {

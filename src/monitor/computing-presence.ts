@@ -1,9 +1,11 @@
 import {
+  clearConversationPresence,
   createComputingStatus,
   getComputingStatusText,
   serializeComputingStatus,
   setConversationPresence,
 } from "@tloncorp/api";
+import { dr, render } from "@urbit/aura";
 import type { RuntimeEnv } from "openclaw/plugin-sdk";
 import { describeError } from "../urbit/errors.js";
 
@@ -20,9 +22,14 @@ type PublishParams = {
 type PublishedState = Omit<PublishParams, "conversationId">;
 
 const DEFAULT_MIN_UPDATE_INTERVAL_MS = 1_000;
-// The ship's %presence agent expires %computing entries after ~m1 by default,
-// so an unchanged-but-active state must be re-published well under a minute or
-// the thinking indicator dies mid-run.
+const ACTIVE_PRESENCE_TIMEOUT_SECS = 90;
+const ACTIVE_PRESENCE_TIMEOUT = render(
+  "dr",
+  dr.fromSeconds(BigInt(ACTIVE_PRESENCE_TIMEOUT_SECS)),
+);
+// Active %computing entries carry an explicit 90s ship-side timeout. Re-publish
+// unchanged active state well inside that window so long healthy runs stay
+// visible, while disrupted gateways still age out without a final clear poke.
 const DEFAULT_MAX_PUBLISH_AGE_MS = 30_000;
 // Stopped runIds remembered per conversation so a late keepalive refresh
 // cannot resurrect a run that was just stopped. Capped because tombstones
@@ -41,6 +48,14 @@ function normalizeToolName(toolName?: string | null) {
 export function createComputingPresenceReporter(): ComputingPresenceReporter {
   return {
     publish: async ({ conversationId, thinking, toolNames }) => {
+      if (!thinking) {
+        await clearConversationPresence({
+          conversationId,
+          topic: "computing",
+        });
+        return;
+      }
+
       const toolCalls = toolNames.map((toolName) => ({ toolName }));
       const status = createComputingStatus({ thinking, toolCalls });
 
@@ -48,6 +63,7 @@ export function createComputingPresenceReporter(): ComputingPresenceReporter {
         conversationId,
         topic: "computing",
         disclose: [],
+        timeout: ACTIVE_PRESENCE_TIMEOUT,
         display: {
           text: getComputingStatusText(status),
           blob: serializeComputingStatus({ thinking, toolCalls }),
