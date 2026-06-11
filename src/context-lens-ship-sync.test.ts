@@ -5,6 +5,7 @@ import {
   buildLensRunPayload,
   createContextLensShipSync,
   initContextLensShipSync,
+  isContextLensEffectivelyEnabled,
   resolveLensOwners,
 } from "./context-lens-ship-sync.js";
 import { createContextLensRegistry, type ContextLens } from "./context-lens.js";
@@ -55,6 +56,52 @@ describe("resolveLensOwners", () => {
   it("falls back to ownerShip when owners is empty", () => {
     expect(resolveLensOwners(makeConfig({ ownerShip: "dev", contextLens: {} }))).toEqual(["~dev"]);
     expect(resolveLensOwners(makeConfig({ contextLens: {} }))).toEqual([]);
+  });
+});
+
+describe("isContextLensEffectivelyEnabled", () => {
+  function makeConfig(tlon: Record<string, unknown>): OpenClawConfig {
+    return { channels: { tlon: { ship: "~zod", ...tlon } } } as OpenClawConfig;
+  }
+
+  it("is enabled for ship-sync-only configs (owners, no authToken)", () => {
+    expect(
+      isContextLensEffectivelyEnabled(
+        makeConfig({ contextLens: { enabled: true, owners: ["~bus"] } }),
+      ),
+    ).toBe(true);
+    expect(
+      isContextLensEffectivelyEnabled(
+        makeConfig({ ownerShip: "dev", contextLens: { enabled: true } }),
+      ),
+    ).toBe(true);
+  });
+
+  it("is enabled for routes-only configs (authToken, no owners)", () => {
+    expect(
+      isContextLensEffectivelyEnabled(
+        makeConfig({
+          contextLens: { enabled: true, authToken: "a-token-of-sufficient-length" },
+        }),
+      ),
+    ).toBe(true);
+  });
+
+  it("is disabled without any consumer or when not enabled", () => {
+    expect(isContextLensEffectivelyEnabled(makeConfig({ contextLens: { enabled: true } }))).toBe(
+      false,
+    );
+    expect(
+      isContextLensEffectivelyEnabled(
+        makeConfig({
+          contextLens: {
+            enabled: false,
+            authToken: "a-token-of-sufficient-length",
+            owners: ["~bus"],
+          },
+        }),
+      ),
+    ).toBe(false);
   });
 });
 

@@ -8,6 +8,7 @@ import {
   unbindContextLensFromSession,
   type ContextLensTrigger,
 } from "../context-lens.js";
+import { isContextLensEffectivelyEnabled } from "../context-lens-ship-sync.js";
 
 // Local structural types — @tloncorp/api defines these internally but
 // does not export them from its public entrypoint.
@@ -466,7 +467,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
   try {
   const computingPresence = createComputingPresenceTracker({ runtime });
   const contextLensConfig = account.contextLens;
-  const contextLensEnabled = contextLensConfig.enabled && Boolean(contextLensConfig.authToken);
+  const contextLensEnabled = isContextLensEffectivelyEnabled(cfg, opts.accountId ?? undefined);
   const contextLenses = createContextLensRegistry({
     ttlMs: contextLensConfig.ttlMs ?? undefined,
     maxEntries: contextLensConfig.maxEntries ?? undefined,

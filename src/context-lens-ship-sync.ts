@@ -86,8 +86,8 @@ export function buildLensRunPayload(lens: ContextLens): string {
   });
 }
 
-export function resolveLensOwners(config: OpenClawConfig): string[] {
-  const account = resolveTlonAccount(config);
+export function resolveLensOwners(config: OpenClawConfig, accountId?: string | null): string[] {
+  const account = resolveTlonAccount(config, accountId);
   const configured = account.contextLens.owners
     .map((ship) => normalizeShip(ship))
     .filter((ship) => ship.length > 0);
@@ -96,6 +96,23 @@ export function resolveLensOwners(config: OpenClawConfig): string[] {
   }
   const owner = account.ownerShip ? normalizeShip(account.ownerShip) : "";
   return owner ? [owner] : [];
+}
+
+/**
+ * True when at least one context-lens consumer can read recorded runs: the
+ * HTTP routes (need authToken) or the ship sync (needs resolvable owners).
+ * The monitor must record runs whenever either path is live — gating the
+ * registry on authToken alone starves a ship-sync-only config.
+ */
+export function isContextLensEffectivelyEnabled(
+  config: OpenClawConfig,
+  accountId?: string | null,
+): boolean {
+  const account = resolveTlonAccount(config, accountId);
+  if (!account.contextLens.enabled) {
+    return false;
+  }
+  return Boolean(account.contextLens.authToken) || resolveLensOwners(config, accountId).length > 0;
 }
 
 export type ContextLensShipSync = {
