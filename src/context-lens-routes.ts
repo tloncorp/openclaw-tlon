@@ -211,14 +211,24 @@ export function registerContextLensRoutes(api: ContextLensRouteApi): boolean {
         lastEventId === null
           ? recent.slice(-SSE_REPLAY_LIMIT)
           : recent.filter((event) => event.seq > lastEventId);
+      // Guard against duplicates if an event is ever published between the
+      // snapshot above and the live subscription below (seqs are monotonic).
+      let maxSentSeq = lastEventId ?? -1;
       for (const event of replay) {
         sendOrClose(event);
+        maxSentSeq = Math.max(maxSentSeq, event.seq);
       }
       if (closed) {
         return;
       }
 
-      unsubscribe = subscribeToContextLensEvents(sendOrClose);
+      unsubscribe = subscribeToContextLensEvents((event) => {
+        if (event.seq <= maxSentSeq) {
+          return;
+        }
+        maxSentSeq = event.seq;
+        sendOrClose(event);
+      });
       keepalive = setInterval(() => {
         if (closed) {
           return;
