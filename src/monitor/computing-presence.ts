@@ -20,6 +20,10 @@ type PublishParams = {
 type PublishedState = Omit<PublishParams, "conversationId">;
 
 const DEFAULT_MIN_UPDATE_INTERVAL_MS = 1_000;
+// The ship's %presence agent expires %computing entries after ~m1 by default,
+// so an unchanged-but-active state must be re-published well under a minute or
+// the thinking indicator dies mid-run.
+const DEFAULT_MAX_PUBLISH_AGE_MS = 30_000;
 
 export type ComputingPresenceReporter = {
   publish: (params: PublishParams) => Promise<void>;
@@ -53,12 +57,17 @@ export function createComputingPresenceTracker(params?: {
   reporter?: ComputingPresenceReporter;
   runtime?: RuntimeEnv;
   minUpdateIntervalMs?: number;
+  maxPublishAgeMs?: number;
 }) {
   const reporter = params?.reporter ?? createComputingPresenceReporter();
   const runtime = params?.runtime;
   const minUpdateIntervalMs = Math.max(
     0,
     params?.minUpdateIntervalMs ?? DEFAULT_MIN_UPDATE_INTERVAL_MS,
+  );
+  const maxPublishAgeMs = Math.max(
+    minUpdateIntervalMs,
+    params?.maxPublishAgeMs ?? DEFAULT_MAX_PUBLISH_AGE_MS,
   );
   const conversations = new Map<string, Map<string, RunState>>();
   const lastPublishedState = new Map<string, PublishedState>();
@@ -133,8 +142,12 @@ export function createComputingPresenceTracker(params?: {
     state: PublishedState,
   ) => {
     if (statesEqual(lastPublishedState.get(conversationId), state)) {
-      clearPending(conversationId);
-      return;
+      const publishedAt = lastPublishedAt.get(conversationId) ?? 0;
+      if (Date.now() - publishedAt < maxPublishAgeMs) {
+        clearPending(conversationId);
+        return;
+      }
+      // fall through: re-publish before the ship-side presence expires
     }
 
     if (minUpdateIntervalMs === 0) {

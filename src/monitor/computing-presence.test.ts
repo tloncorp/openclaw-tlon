@@ -167,6 +167,48 @@ describe("createComputingPresenceTracker", () => {
     expect(reporter.publish).toHaveBeenCalledTimes(1);
   });
 
+  test("republishes unchanged active state after the keepalive window so ship presence does not expire", async () => {
+    vi.useFakeTimers();
+
+    try {
+      const reporter = {
+        publish: vi.fn(async () => {}),
+      };
+
+      const tracker = createComputingPresenceTracker({ reporter });
+
+      await tracker.refreshRun({
+        conversationId: "~nec",
+        runId: "run-1",
+      });
+
+      expect(reporter.publish).toHaveBeenCalledTimes(1);
+
+      await vi.advanceTimersByTimeAsync(29_999);
+      await tracker.refreshRun({
+        conversationId: "~nec",
+        runId: "run-1",
+      });
+
+      expect(reporter.publish).toHaveBeenCalledTimes(1);
+
+      await vi.advanceTimersByTimeAsync(1);
+      await tracker.refreshRun({
+        conversationId: "~nec",
+        runId: "run-1",
+      });
+
+      expect(reporter.publish).toHaveBeenCalledTimes(2);
+      expect(reporter.publish).toHaveBeenLastCalledWith({
+        conversationId: "~nec",
+        thinking: true,
+        toolNames: [],
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   test("unions active runs in the same conversation", async () => {
     const reporter = {
       publish: vi.fn(async () => {}),

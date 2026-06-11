@@ -2040,6 +2040,10 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
             );
           },
           keepaliveIntervalMs: 20_000,
+          // The SDK default TTL (60s) fires stopRun mid-dispatch and seals the
+          // callbacks, killing the thinking indicator for the rest of long
+          // runs. stopRun is already wired to deliver/idle/cleanup.
+          maxDurationMs: 0,
         })
       : undefined;
 
