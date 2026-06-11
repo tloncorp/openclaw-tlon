@@ -1,11 +1,9 @@
+import type { OpenClawConfig } from "openclaw/plugin-sdk/core";
 import fs from "node:fs";
 import path from "node:path";
-
-import type { OpenClawConfig } from "openclaw/plugin-sdk/core";
 import { resolveStateDir } from "openclaw/plugin-sdk/state-paths";
-
-import { subscribeToContextLensEvents } from "./context-lens-events.js";
 import type { ContextLens, ContextLensStatus } from "./context-lens.js";
+import { subscribeToContextLensEvents } from "./context-lens-events.js";
 import { sharedSlot } from "./shared-state.js";
 import { resolveTlonAccount } from "./types.js";
 
@@ -77,13 +75,10 @@ export function createContextLensStore(opts: {
   // Insertion-ordered oldest→newest by finalization time.
   const runs = new Map<string, ContextLens>();
 
-  const isRetained = (lens: ContextLens, now: number) =>
-    lensFinalizedAt(lens) > now - retainMs;
+  const isRetained = (lens: ContextLens, now: number) => lensFinalizedAt(lens) > now - retainMs;
 
   const compact = () => {
-    const lines = [...runs.values()]
-      .map((lens) => JSON.stringify(lens))
-      .join("\n");
+    const lines = [...runs.values()].map((lens) => JSON.stringify(lens)).join("\n");
     const tmpPath = `${filePath}.tmp`;
     fs.writeFileSync(tmpPath, lines.length > 0 ? `${lines}\n` : "", {
       mode: 0o600,
@@ -209,17 +204,19 @@ export function initContextLensStore(api: {
   }
   setContextLensStore(store);
   storeUnsubscribeSlot.get()?.();
-  storeUnsubscribeSlot.set(subscribeToContextLensEvents((event) => {
-    if (!TERMINAL_STATUSES.has(event.lens.status)) {
-      return;
-    }
-    try {
-      store.save(event.lens);
-    } catch (error) {
-      api.logger.warn(
-        `[tlon] Context lens store write failed for ${event.lens.lensId}: ${String(error)}`,
-      );
-    }
-  }));
+  storeUnsubscribeSlot.set(
+    subscribeToContextLensEvents((event) => {
+      if (!TERMINAL_STATUSES.has(event.lens.status)) {
+        return;
+      }
+      try {
+        store.save(event.lens);
+      } catch (error) {
+        api.logger.warn(
+          `[tlon] Context lens store write failed for ${event.lens.lensId}: ${String(error)}`,
+        );
+      }
+    }),
+  );
   return store;
 }

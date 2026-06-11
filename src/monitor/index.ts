@@ -421,7 +421,9 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
   // effect.
   let gatewayStatusCleanupRan = false;
   const cleanupGatewayStatus = (): void => {
-    if (gatewayStatusCleanupRan) return;
+    if (gatewayStatusCleanupRan) {
+      return;
+    }
     gatewayStatusCleanupRan = true;
     gsManager?.stopHeartbeat();
     // Deliberately do NOT call gsManager.markStopped() here. The manager is
@@ -520,7 +522,9 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     const out = new Set<string>();
     for (const raw of list) {
       const canonical = canonicalizeNest(raw);
-      if (canonical) out.add(canonical);
+      if (canonical) {
+        out.add(canonical);
+      }
     }
     return [...out];
   };
@@ -2363,8 +2367,8 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       OriginatingTo: `tlon:${isGroup ? groupChannel : senderShip}`,
       // Include thread context for automatic reply routing
       ...(parentId && {
-        MessageThreadId: String(parentId),
-        ReplyToId: String(parentId),
+        MessageThreadId: parentId,
+        ReplyToId: parentId,
       }),
     });
 
@@ -2403,7 +2407,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     ).responsePrefix;
     const humanDelay = core.channel.reply.resolveHumanDelayConfig(cfg, route.agentId);
     const presenceConversationId = isGroup ? (groupChannel ?? null) : senderShip;
-    const presenceRunId = String(messageId);
+    const presenceRunId = messageId;
 
     const typingCallbacks = presenceConversationId
       ? createTypingCallbacks({
@@ -2573,7 +2577,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
                   outputMessageId = result.messageId;
                   // Track thread participation for future replies without mention
                   if (deliverParentId) {
-                    participatedThreads.add(String(deliverParentId));
+                    participatedThreads.add(deliverParentId);
                     runtime.log?.(
                       `[tlon] Now tracking thread for future replies: ${deliverParentId}`,
                     );
@@ -2584,7 +2588,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
                     fromShip: botShipName,
                     toShip: senderShip,
                     text: replyText,
-                    replyToId: deliverParentId ? String(deliverParentId) : undefined,
+                    replyToId: deliverParentId ?? undefined,
                     blob: contextLensBlob,
                   });
                   outputMessageId = result.messageId;
@@ -2893,7 +2897,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       //    channel is not in the per-channel disabled list
       const mentioned = isBotMentioned(messageText, botShipName, botNickname ?? undefined);
       const inParticipatedThread = Boolean(
-        isThreadReply && parentId && participatedThreads.has(String(parentId)),
+        isThreadReply && parentId && participatedThreads.has(parentId),
       );
       const isOwnerBlob = hasBlob && isOwner(senderShip);
       const engageDecision = shouldEngageInGroup({
@@ -3418,7 +3422,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
     const applySettingsSnapshot = (
       newSettings: TlonSettingsStore,
       source: "subscription" | "refresh",
-      opts: { fresh?: boolean } = {},
+      snapshotOpts: { fresh?: boolean } = {},
     ) => {
       const prevSettings = currentSettings;
 
@@ -3558,7 +3562,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       // Gating on a prev/new diff means a subscription event for some
       // unrelated key (e.g. channelRules) cannot reset the shadow via the
       // snapshot's unchanged owner-activity fields.
-      const shadowReconcileTrusted = source === "subscription" || opts.fresh === true;
+      const shadowReconcileTrusted = source === "subscription" || snapshotOpts.fresh === true;
       const ownerActivityChanged =
         prevSettings.lastOwnerMessageAt !== newSettings.lastOwnerMessageAt ||
         prevSettings.lastOwnerMessageDate !== newSettings.lastOwnerMessageDate;

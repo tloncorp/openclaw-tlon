@@ -1,18 +1,9 @@
-import { sendGatewayStop } from "./src/gateway-status.js";
 import { spawn } from "node:child_process";
 import { createRequire } from "node:module";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineChannelPluginEntry } from "openclaw/plugin-sdk/core";
 import { tlonPlugin } from "./src/channel.js";
-import { createGatewayStatusManager, setGatewayStatusManager } from "./src/gateway-status.js";
-import { resolveBridgeForCommand } from "./src/monitor/command-auth.js";
-import { handleOwnerListenCommand } from "./src/owner-listen-command.js";
-import { setTlonRuntime } from "./src/runtime.js";
-import { getSessionRole } from "./src/session-roles.js";
-import { recordToolCall } from "./src/telemetry.js";
-import { resolveTlonBinary } from "./src/tlon-binary.js";
-import { checkBlockedSendOperation } from "./src/tlon-tool-guard.js";
 import { publishContextLensEvent } from "./src/context-lens-events.js";
 import { registerContextLensRoutes } from "./src/context-lens-routes.js";
 import { initContextLensShipSync } from "./src/context-lens-ship-sync.js";
@@ -23,6 +14,15 @@ import {
   recordContextLensToolStartForSession,
   scheduleBackgroundContextLensFinalization,
 } from "./src/context-lens.js";
+import { sendGatewayStop } from "./src/gateway-status.js";
+import { createGatewayStatusManager, setGatewayStatusManager } from "./src/gateway-status.js";
+import { resolveBridgeForCommand } from "./src/monitor/command-auth.js";
+import { handleOwnerListenCommand } from "./src/owner-listen-command.js";
+import { setTlonRuntime } from "./src/runtime.js";
+import { getSessionRole } from "./src/session-roles.js";
+import { recordToolCall } from "./src/telemetry.js";
+import { resolveTlonBinary } from "./src/tlon-binary.js";
+import { checkBlockedSendOperation } from "./src/tlon-tool-guard.js";
 import {
   formatToolTraceEvent,
   liveToolTraceContentsEnabled,
@@ -37,13 +37,17 @@ export { setTlonRuntime } from "./src/runtime.js";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 function readToolCallId(event: unknown): string | undefined {
-  if (!event || typeof event !== "object") { return undefined; }
+  if (!event || typeof event !== "object") {
+    return undefined;
+  }
   const value =
-    (event as {
-      toolCallId?: unknown;
-      callId?: unknown;
-      id?: unknown;
-    }).toolCallId ??
+    (
+      event as {
+        toolCallId?: unknown;
+        callId?: unknown;
+        id?: unknown;
+      }
+    ).toolCallId ??
     (event as { callId?: unknown }).callId ??
     (event as { id?: unknown }).id;
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
@@ -229,7 +233,9 @@ function runTlonCommand(
       }
       settled = true;
       clearTimeout(timeout);
-      if (killTimer) clearTimeout(killTimer);
+      if (killTimer) {
+        clearTimeout(killTimer);
+      }
       reject(new Error(`Failed to run tlon: ${err.message}`));
     });
 
@@ -239,7 +245,9 @@ function runTlonCommand(
       }
       settled = true;
       clearTimeout(timeout);
-      if (killTimer) clearTimeout(killTimer);
+      if (killTimer) {
+        clearTimeout(killTimer);
+      }
       if (code !== 0) {
         reject(new Error(stderr || `tlon exited with code ${code}`));
       } else {
@@ -319,9 +327,7 @@ export default defineChannelPluginEntry({
           if (sent) {
             api.logger.info(`[gateway-status] stopped (reason=${event.reason ?? "shutdown"})`);
           } else {
-            api.logger.warn(
-              "[gateway-status] stop skipped: api-client params not published",
-            );
+            api.logger.warn("[gateway-status] stop skipped: api-client params not published");
           }
         } catch (err) {
           api.logger.warn(`[gateway-status] stop poke failed: ${String(err)}`);
@@ -489,7 +495,7 @@ export default defineChannelPluginEntry({
       }
 
       if (!isOwnerOnlyTool) {
-        return;
+        return undefined;
       }
 
       // Allow owner sessions and internal sessions (heartbeat, cron, etc.).
@@ -530,6 +536,7 @@ export default defineChannelPluginEntry({
       api.logger.info(
         `[tlon] Allowed ${event.toolName} tool for ${role ?? "internal"} session. Session: ${ctx.sessionKey}`,
       );
+      return undefined;
     });
 
     api.on("after_tool_call", (event, ctx) => {

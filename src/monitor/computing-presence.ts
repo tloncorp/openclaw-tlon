@@ -1,10 +1,10 @@
+import type { RuntimeEnv } from "openclaw/plugin-sdk";
 import {
   createComputingStatus,
   getComputingStatusText,
   serializeComputingStatus,
   setConversationPresence,
 } from "@tloncorp/api";
-import type { RuntimeEnv } from "openclaw/plugin-sdk";
 import { describeError } from "../urbit/errors.js";
 
 type RunState = {
@@ -57,21 +57,21 @@ export function createComputingPresenceReporter(): ComputingPresenceReporter {
   };
 }
 
-export function createComputingPresenceTracker(params?: {
+export function createComputingPresenceTracker(trackerOpts?: {
   reporter?: ComputingPresenceReporter;
   runtime?: RuntimeEnv;
   minUpdateIntervalMs?: number;
   maxPublishAgeMs?: number;
 }) {
-  const reporter = params?.reporter ?? createComputingPresenceReporter();
-  const runtime = params?.runtime;
+  const reporter = trackerOpts?.reporter ?? createComputingPresenceReporter();
+  const runtime = trackerOpts?.runtime;
   const minUpdateIntervalMs = Math.max(
     0,
-    params?.minUpdateIntervalMs ?? DEFAULT_MIN_UPDATE_INTERVAL_MS,
+    trackerOpts?.minUpdateIntervalMs ?? DEFAULT_MIN_UPDATE_INTERVAL_MS,
   );
   const maxPublishAgeMs = Math.max(
     minUpdateIntervalMs,
-    params?.maxPublishAgeMs ?? DEFAULT_MAX_PUBLISH_AGE_MS,
+    trackerOpts?.maxPublishAgeMs ?? DEFAULT_MAX_PUBLISH_AGE_MS,
   );
   const conversations = new Map<string, Map<string, RunState>>();
   const lastPublishedState = new Map<string, PublishedState>();
@@ -182,10 +182,7 @@ export function createComputingPresenceTracker(params?: {
     await publishNow(conversationId, nextState);
   };
 
-  const publishThrottled = async (
-    conversationId: string,
-    state: PublishedState,
-  ) => {
+  const publishThrottled = async (conversationId: string, state: PublishedState) => {
     if (statesEqual(lastPublishedState.get(conversationId), state)) {
       const publishedAt = lastPublishedAt.get(conversationId) ?? 0;
       if (Date.now() - publishedAt < maxPublishAgeMs) {
@@ -201,8 +198,7 @@ export function createComputingPresenceTracker(params?: {
     }
 
     const now = Date.now();
-    const nextAllowedAt =
-      (lastPublishedAt.get(conversationId) ?? 0) + minUpdateIntervalMs;
+    const nextAllowedAt = (lastPublishedAt.get(conversationId) ?? 0) + minUpdateIntervalMs;
     if (now >= nextAllowedAt) {
       await publishNow(conversationId, state);
       return;
@@ -285,11 +281,7 @@ export function createComputingPresenceTracker(params?: {
     return run;
   };
 
-  const safelySync = async (
-    conversationId: string,
-    action: string,
-    fn: () => Promise<void>,
-  ) => {
+  const safelySync = async (conversationId: string, action: string, fn: () => Promise<void>) => {
     try {
       await fn();
     } catch (error) {
@@ -332,10 +324,7 @@ export function createComputingPresenceTracker(params?: {
       });
     },
 
-    clearToolCalls: async (params: {
-      conversationId: string;
-      runId: string;
-    }) => {
+    clearToolCalls: async (params: { conversationId: string; runId: string }) => {
       await safelySync(params.conversationId, "clear tools for", async () => {
         const run = getRun(params.conversationId, params.runId);
         if (!run || run.toolNames.length === 0) {

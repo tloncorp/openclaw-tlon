@@ -371,11 +371,7 @@ type DeleteHeapPostParams = {
   curioId: string;
 };
 
-export async function deleteHeapPost({
-  hostShip,
-  channelName,
-  curioId,
-}: DeleteHeapPostParams) {
+export async function deleteHeapPost({ hostShip, channelName, curioId }: DeleteHeapPostParams) {
   const nest = `heap/${hostShip}/${channelName}`;
   const formattedCurioId = formatPostId(curioId);
 

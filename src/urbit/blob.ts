@@ -1,7 +1,4 @@
-export function serializeContextLensReferenceBlob(
-  lensId: string,
-  botShip?: string,
-): string {
+export function serializeContextLensReferenceBlob(lensId: string, botShip?: string): string {
   return JSON.stringify([
     {
       type: "tlon-context-lens",

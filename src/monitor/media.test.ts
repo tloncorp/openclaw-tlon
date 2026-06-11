@@ -100,7 +100,13 @@ describe("parseBlobData", () => {
   it("parses multiple entries", () => {
     const blob = JSON.stringify([
       { type: "file", version: 1, fileUri: "https://example.com/a.pdf", size: 100 },
-      { type: "voicememo", version: 1, fileUri: "https://example.com/b.m4a", size: 200, duration: 5 },
+      {
+        type: "voicememo",
+        version: 1,
+        fileUri: "https://example.com/b.m4a",
+        size: 200,
+        duration: 5,
+      },
     ]);
     const result = parseBlobData(blob);
     expect(result).toHaveLength(2);
@@ -189,7 +195,13 @@ describe("formatBlobAnnotations", () => {
   it("formats multiple entries on separate lines", () => {
     const text = formatBlobAnnotations([
       { type: "file", version: 1, fileUri: "https://example.com/a.pdf", name: "a.pdf", size: 1024 },
-      { type: "voicememo", version: 1, fileUri: "https://example.com/b.m4a", size: 2048, duration: 5 },
+      {
+        type: "voicememo",
+        version: 1,
+        fileUri: "https://example.com/b.m4a",
+        size: 2048,
+        duration: 5,
+      },
     ]);
     const lines = text.split("\n").filter(Boolean);
     expect(lines.length).toBeGreaterThanOrEqual(2);
@@ -201,21 +213,40 @@ describe("formatBlobAnnotations", () => {
 describe("formatBlobForHistory", () => {
   it("renders a file compactly", () => {
     const text = formatBlobForHistory([
-      { type: "file", version: 1, name: "report.pdf", fileUri: "https://example.com/report.pdf", size: 245760 },
+      {
+        type: "file",
+        version: 1,
+        name: "report.pdf",
+        fileUri: "https://example.com/report.pdf",
+        size: 245760,
+      },
     ]);
     expect(text).toBe("[📎 report.pdf]");
   });
 
   it("renders a voice memo with transcription prominently", () => {
     const text = formatBlobForHistory([
-      { type: "voicememo", version: 1, duration: 12.5, transcription: "Hey check this out", fileUri: "https://example.com/memo.m4a", size: 51200 },
+      {
+        type: "voicememo",
+        version: 1,
+        duration: 12.5,
+        transcription: "Hey check this out",
+        fileUri: "https://example.com/memo.m4a",
+        size: 51200,
+      },
     ]);
     expect(text).toBe('[🎙️ voice memo: "Hey check this out"]');
   });
 
   it("renders a voice memo without transcription", () => {
     const text = formatBlobForHistory([
-      { type: "voicememo", version: 1, duration: 12.5, fileUri: "https://example.com/memo.m4a", size: 51200 },
+      {
+        type: "voicememo",
+        version: 1,
+        duration: 12.5,
+        fileUri: "https://example.com/memo.m4a",
+        size: 51200,
+      },
     ]);
     expect(text).toBe("[🎙️ voice memo, 13s]");
   });
@@ -229,7 +260,13 @@ describe("formatBlobForHistory", () => {
 
   it("renders a video compactly", () => {
     const text = formatBlobForHistory([
-      { type: "video", version: 1, name: "clip.mp4", fileUri: "https://example.com/clip.mp4", size: 5242880 },
+      {
+        type: "video",
+        version: 1,
+        name: "clip.mp4",
+        fileUri: "https://example.com/clip.mp4",
+        size: 5242880,
+      },
     ]);
     expect(text).toBe("[🎬 clip.mp4]");
   });
@@ -242,7 +279,14 @@ describe("formatBlobForHistory", () => {
   it("renders multiple entries on separate lines", () => {
     const text = formatBlobForHistory([
       { type: "file", version: 1, name: "a.pdf", fileUri: "https://example.com/a.pdf", size: 1024 },
-      { type: "voicememo", version: 1, duration: 5, transcription: "Hello", fileUri: "https://example.com/b.m4a", size: 2048 },
+      {
+        type: "voicememo",
+        version: 1,
+        duration: 5,
+        transcription: "Hello",
+        fileUri: "https://example.com/b.m4a",
+        size: 2048,
+      },
     ]);
     expect(text).toBe('[📎 a.pdf]\n[🎙️ voice memo: "Hello"]');
   });
@@ -384,9 +428,9 @@ describe("blob download limits", () => {
     expect(result.notices).toEqual([]);
     expect(result.attachments).toHaveLength(1);
     expect(result.attachments[0]?.contentType).toBe("text/plain");
-    const saved = await stat(result.attachments[0]!.path);
+    const saved = await stat(result.attachments[0].path);
     expect(saved.size).toBe(10);
-    expect(result.attachments[0]!.path.startsWith(mediaDir)).toBe(true);
+    expect(result.attachments[0].path.startsWith(mediaDir)).toBe(true);
     expect(MAX_BLOB_DOWNLOAD_BYTES).toBe(100 * 1024 * 1024);
   });
 });

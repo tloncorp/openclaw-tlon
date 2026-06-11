@@ -229,11 +229,12 @@ export function resolveTlonAccount(
     ?.network;
   const accountAllowPrivateNetwork = (account as { allowPrivateNetwork?: boolean })
     ?.allowPrivateNetwork;
-  const allowPrivateNetwork = (accountNetwork?.dangerouslyAllowPrivateNetwork ??
+  const allowPrivateNetwork =
+    accountNetwork?.dangerouslyAllowPrivateNetwork ??
     accountAllowPrivateNetwork ??
     base.network?.dangerouslyAllowPrivateNetwork ??
     base.allowPrivateNetwork ??
-    null) as boolean | null;
+    null;
   const groupChannels = (account?.groupChannels ?? base.groupChannels ?? []) as string[];
   const dmAllowlist = (account?.dmAllowlist ?? base.dmAllowlist ?? []) as string[];
   const groupInviteAllowlist = (account?.groupInviteAllowlist ??

@@ -1,10 +1,6 @@
 import type { OpenClawConfig } from "openclaw/plugin-sdk/core";
-
-import {
-  subscribeToContextLensEvents,
-  type ContextLensEvent,
-} from "./context-lens-events.js";
 import type { ContextLens, ContextLensStatus } from "./context-lens.js";
+import { subscribeToContextLensEvents, type ContextLensEvent } from "./context-lens-events.js";
 import { API_CLIENT_PARAMS_SLOT, type SharedApiClientParams } from "./gateway-status.js";
 import { sharedSlot } from "./shared-state.js";
 import { normalizeShip } from "./targets.js";
@@ -33,9 +29,7 @@ const apiClientParamsSlot = sharedSlot<SharedApiClientParams>(API_CLIENT_PARAMS_
 // reloads) while the event bus listener set lives in shared state — without
 // replace semantics every re-init would stack another subscriber and each
 // run would be poked N times.
-const shipSyncUnsubscribeSlot = sharedSlot<() => void>(
-  "contextLens.shipSync.unsubscribe",
-);
+const shipSyncUnsubscribeSlot = sharedSlot<() => void>("contextLens.shipSync.unsubscribe");
 
 function truncateSummary(value: string | undefined): string | undefined {
   if (value === undefined || value.length <= MAX_SUMMARY_CHARS) {
@@ -218,8 +212,6 @@ export function initContextLensShipSync(api: {
   const sync = createContextLensShipSync({ owners, logger: api.logger });
   shipSyncUnsubscribeSlot.get()?.();
   shipSyncUnsubscribeSlot.set(subscribeToContextLensEvents(sync.handleEvent));
-  api.logger.info(
-    `[tlon] Context lens ship sync enabled, fanning out to ${owners.join(", ")}`,
-  );
+  api.logger.info(`[tlon] Context lens ship sync enabled, fanning out to ${owners.join(", ")}`);
   return true;
 }

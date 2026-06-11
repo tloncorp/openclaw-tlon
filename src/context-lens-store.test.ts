@@ -1,11 +1,8 @@
+import type { OpenClawConfig } from "openclaw/plugin-sdk/core";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-
-import type { OpenClawConfig } from "openclaw/plugin-sdk/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-
-import { createContextLensRegistry, type ContextLens } from "./context-lens.js";
 import { publishContextLensEvent } from "./context-lens-events.js";
 import {
   createContextLensStore,
@@ -13,6 +10,7 @@ import {
   initContextLensStore,
   setContextLensStore,
 } from "./context-lens-store.js";
+import { createContextLensRegistry, type ContextLens } from "./context-lens.js";
 
 let tmpDir: string;
 let filePath: string;
@@ -27,9 +25,7 @@ afterEach(() => {
   fs.rmSync(tmpDir, { recursive: true, force: true });
 });
 
-function makeLens(
-  overrides: { completedAt?: number; messageId?: string } = {},
-): ContextLens {
+function makeLens(overrides: { completedAt?: number; messageId?: string } = {}): ContextLens {
   const registry = createContextLensRegistry({ ttlMs: 60_000 });
   const lens = registry.create({
     messageId: overrides.messageId ?? "msg-1",
@@ -125,10 +121,7 @@ describe("createContextLensStore", () => {
 
   it("skips malformed lines and compacts them away", () => {
     const lens = makeLens({ messageId: "survives" });
-    fs.writeFileSync(
-      filePath,
-      `not json at all\n${JSON.stringify(lens)}\n{"lensId":42}\n`,
-    );
+    fs.writeFileSync(filePath, `not json at all\n${JSON.stringify(lens)}\n{"lensId":42}\n`);
     const warnings: string[] = [];
 
     const store = createContextLensStore({
@@ -225,9 +218,7 @@ describe("initContextLensStore", () => {
     publishContextLensEvent("final", finalized);
 
     expect(store?.get(finalized.lensId)?.messageId).toBe("replaced-writer");
-    const staleContents = fs.existsSync(stalePath)
-      ? fs.readFileSync(stalePath, "utf8")
-      : "";
+    const staleContents = fs.existsSync(stalePath) ? fs.readFileSync(stalePath, "utf8") : "";
     expect(staleContents).not.toContain(finalized.lensId);
   });
 });

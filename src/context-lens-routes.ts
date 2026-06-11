@@ -1,8 +1,6 @@
-import crypto from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
-
 import type { OpenClawConfig } from "openclaw/plugin-sdk/core";
-
+import crypto from "node:crypto";
 import {
   findRecentContextLensById,
   listRecentContextLensEvents,
@@ -35,11 +33,7 @@ type ContextLensRouteApi = {
   }) => void;
 };
 
-function setCorsHeaders(
-  req: IncomingMessage,
-  res: ServerResponse,
-  allowedOrigins: string[],
-) {
+function setCorsHeaders(req: IncomingMessage, res: ServerResponse, allowedOrigins: string[]) {
   const origin = typeof req.headers?.origin === "string" ? req.headers.origin : "";
   if (origin && (LOCALHOST_ORIGIN_RE.test(origin) || allowedOrigins.includes(origin))) {
     res.setHeader("Access-Control-Allow-Origin", origin);

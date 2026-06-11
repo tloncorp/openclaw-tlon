@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  findRecentContextLensById,
+  listRecentContextLensEvents,
+  publishContextLensEvent,
+  subscribeToContextLensEvents,
+} from "./context-lens-events.js";
+import {
   bindContextLensToSession,
   createContextLensRegistry,
   ensureBackgroundContextLensForSession,
@@ -12,12 +18,6 @@ import {
   scheduleBackgroundContextLensFinalization,
   unbindContextLensFromSession,
 } from "./context-lens.js";
-import {
-  findRecentContextLensById,
-  listRecentContextLensEvents,
-  publishContextLensEvent,
-  subscribeToContextLensEvents,
-} from "./context-lens-events.js";
 
 describe("context lens registry", () => {
   it("creates redacted receipts without storing raw session keys or prompt text", () => {
@@ -535,7 +535,10 @@ describe("context lens registry", () => {
 
   it("groups background tool calls until the session is idle", async () => {
     const sessionKey = "session-background-debounce";
-    const finalized: Array<{ lensId: string; tools: { runs: Array<{ name: string; status: string }> } }> = [];
+    const finalized: Array<{
+      lensId: string;
+      tools: { runs: Array<{ name: string; status: string }> };
+    }> = [];
     ensureBackgroundContextLensForSession(sessionKey, {
       runKind: "cron",
       trigger: "cron",
@@ -544,21 +547,13 @@ describe("context lens registry", () => {
 
     recordContextLensToolStartForSession(sessionKey, "cron");
     recordContextLensToolResultForSession(sessionKey, "cron", { durationMs: 42 });
-    scheduleBackgroundContextLensFinalization(
-      sessionKey,
-      (lens) => finalized.push(lens),
-      20,
-    );
+    scheduleBackgroundContextLensFinalization(sessionKey, (lens) => finalized.push(lens), 20);
 
     await new Promise((resolve) => setTimeout(resolve, 5));
     ensureBackgroundContextLensForSession(sessionKey);
     recordContextLensToolStartForSession(sessionKey, "tlon");
     recordContextLensToolResultForSession(sessionKey, "tlon", { durationMs: 12 });
-    scheduleBackgroundContextLensFinalization(
-      sessionKey,
-      (lens) => finalized.push(lens),
-      20,
-    );
+    scheduleBackgroundContextLensFinalization(sessionKey, (lens) => finalized.push(lens), 20);
 
     await new Promise((resolve) => setTimeout(resolve, 30));
 
@@ -608,7 +603,6 @@ describe("context lens registry", () => {
     expect(registry.get(second.lensId)).toBeNull();
     expect(registry.get(third.lensId)).toBeNull();
   });
-
 });
 
 describe("context lens event bus", () => {
@@ -626,7 +620,9 @@ describe("context lens event bus", () => {
 
     expect(findRecentContextLensById(expired.lensId)).toBeNull();
     expect(listRecentContextLensEvents()).not.toEqual(
-      expect.arrayContaining([expect.objectContaining({ lens: expect.objectContaining({ lensId: expired.lensId }) })]),
+      expect.arrayContaining([
+        expect.objectContaining({ lens: expect.objectContaining({ lensId: expired.lensId }) }),
+      ]),
     );
   });
 

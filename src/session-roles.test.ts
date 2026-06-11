@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, it } from "vitest";
-
 import { getSessionRole, setSessionRole, _testing } from "./session-roles.js";
 
 describe("session roles", () => {
@@ -15,9 +14,7 @@ describe("session roles", () => {
 
   it("falls back to the thread parent key", () => {
     setSessionRole("agent:main:tlon:direct:~ten", "user");
-    expect(
-      getSessionRole("agent:main:tlon:direct:~ten:thread:170.141.184"),
-    ).toBe("user");
+    expect(getSessionRole("agent:main:tlon:direct:~ten:thread:170.141.184")).toBe("user");
   });
 
   it("prefers a role stored under the exact thread key", () => {

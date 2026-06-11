@@ -38,8 +38,7 @@ state.maxRecentEvents ??= DEFAULT_MAX_RECENT_EVENTS;
 stateSlot.set(state);
 
 export function setContextLensEventCapacity(maxEntries: number | null | undefined) {
-  state.maxRecentEvents =
-    maxEntries && maxEntries > 0 ? maxEntries : DEFAULT_MAX_RECENT_EVENTS;
+  state.maxRecentEvents = maxEntries && maxEntries > 0 ? maxEntries : DEFAULT_MAX_RECENT_EVENTS;
 }
 
 function pruneExpiredEvents(now = Date.now()) {

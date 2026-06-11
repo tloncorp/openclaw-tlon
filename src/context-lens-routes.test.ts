@@ -1,13 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
-
 import type { OpenClawConfig } from "openclaw/plugin-sdk/core";
 import { describe, expect, it } from "vitest";
-
-import { createContextLensRegistry } from "./context-lens.js";
-import {
-  listRecentContextLensEvents,
-  publishContextLensEvent,
-} from "./context-lens-events.js";
+import { listRecentContextLensEvents, publishContextLensEvent } from "./context-lens-events.js";
 import {
   CONTEXT_LENS_EVENTS_ROUTE,
   CONTEXT_LENS_RECENT_ROUTE,
@@ -15,6 +9,7 @@ import {
   registerContextLensRoutes,
 } from "./context-lens-routes.js";
 import { setContextLensStore } from "./context-lens-store.js";
+import { createContextLensRegistry } from "./context-lens.js";
 
 const AUTH_TOKEN = "a-token-of-sufficient-length";
 
@@ -52,11 +47,13 @@ function setupRoutes(
   return { routes, registered, warnings };
 }
 
-function makeReq(opts: {
-  method?: string;
-  url?: string;
-  headers?: Record<string, string>;
-} = {}) {
+function makeReq(
+  opts: {
+    method?: string;
+    url?: string;
+    headers?: Record<string, string>;
+  } = {},
+) {
   const listeners = new Map<string, Array<() => void>>();
   const req = {
     method: opts.method ?? "GET",

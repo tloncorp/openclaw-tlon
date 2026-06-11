@@ -258,7 +258,9 @@ export async function downloadMessageImages(
  * graceful degradation behavior for malformed entries.
  */
 export function parseBlobData(blob: string | null | undefined): ClientPostBlobData | null {
-  if (!blob) return null;
+  if (!blob) {
+    return null;
+  }
   try {
     const parsed = parsePostBlob(blob);
     return parsed.length > 0 ? parsed : null;
@@ -285,7 +287,9 @@ function formatBlobEntry(entry: ClientPostBlobData[number], mode: BlobFormatMode
     const mime = entry.mimeType || "unknown";
     const size = entry.size ? formatFileSize(entry.size) : "?";
     let line = `📎 [${name}] (${mime}, ${size})`;
-    if (entry.fileUri) line += ` ${entry.fileUri}`;
+    if (entry.fileUri) {
+      line += ` ${entry.fileUri}`;
+    }
     return [line];
   }
 
@@ -300,7 +304,9 @@ function formatBlobEntry(entry: ClientPostBlobData[number], mode: BlobFormatMode
 
     const dur = entry.duration ? `${Math.round(entry.duration)}s` : "?";
     let line = `🎙️ [voice memo] (${dur})`;
-    if (entry.fileUri) line += ` ${entry.fileUri}`;
+    if (entry.fileUri) {
+      line += ` ${entry.fileUri}`;
+    }
     const lines = [line];
     if (entry.transcription) {
       lines.push(`  "${entry.transcription}"`);
@@ -316,7 +322,9 @@ function formatBlobEntry(entry: ClientPostBlobData[number], mode: BlobFormatMode
     const mime = entry.mimeType || "video";
     const size = entry.size ? formatFileSize(entry.size) : "?";
     let line = `🎬 [${name}] (${mime}, ${size})`;
-    if (entry.fileUri) line += ` ${entry.fileUri}`;
+    if (entry.fileUri) {
+      line += ` ${entry.fileUri}`;
+    }
     return [line];
   }
 
@@ -359,15 +367,21 @@ export async function downloadBlobAttachments(
   const notices: string[] = [];
 
   for (const entry of blobData) {
-    if (!isDownloadableBlobEntry(entry)) continue;
+    if (!isDownloadableBlobEntry(entry)) {
+      continue;
+    }
 
     const uri = entry.fileUri;
-    if (!uri) continue;
+    if (!uri) {
+      continue;
+    }
 
     // Only download http/https URIs
     try {
       const parsed = new URL(uri);
-      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") continue;
+      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+        continue;
+      }
     } catch {
       continue;
     }
@@ -394,21 +408,24 @@ export async function downloadBlobAttachments(
   return { attachments, notices };
 }
 
-function formatBlobTooLargeNotice(
-  entry: DownloadableBlobEntry,
-  sizeBytes?: number,
-): string {
+function formatBlobTooLargeNotice(entry: DownloadableBlobEntry, sizeBytes?: number): string {
   const label = entry.type === "voicememo" ? "voice memo" : entry.name || "blob attachment";
   const sizeText = sizeBytes !== undefined ? formatFileSize(sizeBytes) : "unknown size";
   return `[blob not downloaded: ${label} is ${sizeText}, over the ${formatFileSize(MAX_BLOB_DOWNLOAD_BYTES)} limit]`;
 }
 
-function isDownloadableBlobEntry(entry: ClientPostBlobData[number]): entry is DownloadableBlobEntry {
+function isDownloadableBlobEntry(
+  entry: ClientPostBlobData[number],
+): entry is DownloadableBlobEntry {
   return entry.type === "file" || entry.type === "voicememo" || entry.type === "video";
 }
 
 function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes}B`;
-  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)}KB`;
+  if (bytes < 1024) {
+    return `${bytes}B`;
+  }
+  if (bytes < 1024 * 1024) {
+    return `${Math.round(bytes / 1024)}KB`;
+  }
   return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
 }

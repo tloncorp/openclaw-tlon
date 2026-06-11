@@ -282,7 +282,9 @@ export function createContextLensRegistry(
 
     while (lenses.size > maxEntries) {
       const oldest = lenses.keys().next().value;
-      if (!oldest) { break; }
+      if (!oldest) {
+        break;
+      }
       lenses.delete(oldest);
     }
   };
@@ -376,9 +378,13 @@ export function createContextLensRegistry(
   };
 
   const update = (lensId: string | null | undefined, patch: ContextLensPatch) => {
-    if (!lensId) { return null; }
+    if (!lensId) {
+      return null;
+    }
     const existing = lenses.get(lensId);
-    if (!existing) { return null; }
+    if (!existing) {
+      return null;
+    }
 
     const next: ContextLens = {
       ...existing,
@@ -415,13 +421,14 @@ export function createContextLensRegistry(
     patch: Partial<ContextLens["persistence"]>,
   ) => update(lensId, { persistence: patch });
 
-  const recordContextSource = (
-    lensId: string | null | undefined,
-    source: ContextLensSource,
-  ) => {
-    if (!lensId) { return null; }
+  const recordContextSource = (lensId: string | null | undefined, source: ContextLensSource) => {
+    if (!lensId) {
+      return null;
+    }
     const existing = lenses.get(lensId);
-    if (!existing) { return null; }
+    if (!existing) {
+      return null;
+    }
     const existingIndex = existing.context.sources.findIndex(
       (item) =>
         item.kind === source.kind &&
@@ -431,8 +438,8 @@ export function createContextLensRegistry(
     const sources =
       existingIndex >= 0
         ? existing.context.sources.map((item, index) =>
-          index === existingIndex ? { ...item, ...source } : item,
-        )
+            index === existingIndex ? { ...item, ...source } : item,
+          )
         : [...existing.context.sources, source];
     return update(lensId, {
       context: {
@@ -446,9 +453,13 @@ export function createContextLensRegistry(
     lensId: string | null | undefined,
     event: Omit<ContextLensPersistenceEvent, "at"> & { at?: number },
   ) => {
-    if (!lensId) { return null; }
+    if (!lensId) {
+      return null;
+    }
     const existing = lenses.get(lensId);
-    if (!existing) { return null; }
+    if (!existing) {
+      return null;
+    }
     return update(lensId, {
       persistence: {
         ...existing.persistence,
@@ -472,10 +483,17 @@ export function createContextLensRegistry(
       toolCallId?: string;
     } = {},
   ) => {
-    if (!lensId || !toolName) { return null; }
+    if (!lensId || !toolName) {
+      return null;
+    }
     const existing = lenses.get(lensId);
-    if (!existing) { return null; }
-    if (detail.toolCallId && existing.tools.runs.some((run) => run.toolCallId === detail.toolCallId)) {
+    if (!existing) {
+      return null;
+    }
+    if (
+      detail.toolCallId &&
+      existing.tools.runs.some((run) => run.toolCallId === detail.toolCallId)
+    ) {
       return cloneLens(existing);
     }
     const now = Date.now();
@@ -518,9 +536,13 @@ export function createContextLensRegistry(
     status: ContextLensToolRun["status"] = "completed",
     error?: unknown,
   ) => {
-    if (!lensId) { return null; }
+    if (!lensId) {
+      return null;
+    }
     const existing = lenses.get(lensId);
-    if (!existing) { return null; }
+    if (!existing) {
+      return null;
+    }
     const now = Date.now();
     return update(lensId, {
       tools: {
@@ -529,12 +551,12 @@ export function createContextLensRegistry(
           run.completedAt
             ? run
             : {
-              ...run,
-              completedAt: now,
-              durationMs: now - run.startedAt,
-              status,
-              ...(error === undefined ? {} : { error: serializeError(error) }),
-            },
+                ...run,
+                completedAt: now,
+                durationMs: now - run.startedAt,
+                status,
+                ...(error === undefined ? {} : { error: serializeError(error) }),
+              },
         ),
       },
     });
@@ -551,9 +573,13 @@ export function createContextLensRegistry(
       toolCallId?: string;
     } = {},
   ) => {
-    if (!lensId || !toolName) { return null; }
+    if (!lensId || !toolName) {
+      return null;
+    }
     const existing = lenses.get(lensId);
-    if (!existing) { return null; }
+    if (!existing) {
+      return null;
+    }
     const now = Date.now();
     let completed = false;
     const hasToolCallIdMatch = detail.toolCallId
@@ -566,9 +592,8 @@ export function createContextLensRegistry(
         return run;
       }
       completed = true;
-      const durationMs = typeof detail.durationMs === "number"
-        ? detail.durationMs
-        : now - run.startedAt;
+      const durationMs =
+        typeof detail.durationMs === "number" ? detail.durationMs : now - run.startedAt;
       const status: ContextLensToolRun["status"] =
         detail.status ?? (detail.error === undefined ? "completed" : "error");
       return {
@@ -580,7 +605,9 @@ export function createContextLensRegistry(
         ...(detail.error === undefined ? {} : { error: serializeError(detail.error) }),
       };
     });
-    if (!completed) { return null; }
+    if (!completed) {
+      return null;
+    }
     const nextStatus =
       existing.status === "tool_running" && !runs.some((run) => run.status === "running")
         ? "dispatching"
@@ -594,13 +621,14 @@ export function createContextLensRegistry(
     });
   };
 
-  const recordOutput = (
-    lensId: string | null | undefined,
-    output: ContextLensOutput,
-  ) => {
-    if (!lensId) { return null; }
+  const recordOutput = (lensId: string | null | undefined, output: ContextLensOutput) => {
+    if (!lensId) {
+      return null;
+    }
     const existing = lenses.get(lensId);
-    if (!existing) { return null; }
+    if (!existing) {
+      return null;
+    }
     return update(lensId, {
       outputs: [...existing.outputs, output],
     });
@@ -652,14 +680,20 @@ function resolveActiveBinding(
   sessionKey: string | null | undefined,
 ): { key: string; binding: ActiveContextLensBinding } | null {
   const key = sessionKey?.trim();
-  if (!key) { return null; }
+  if (!key) {
+    return null;
+  }
   const direct = activeLensesBySession.get(key);
-  if (direct) { return { key, binding: direct }; }
+  if (direct) {
+    return { key, binding: direct };
+  }
   const threadIndex = key.indexOf(":thread:");
   if (threadIndex > 0) {
     const parentKey = key.slice(0, threadIndex);
     const binding = activeLensesBySession.get(parentKey);
-    if (binding) { return { key: parentKey, binding }; }
+    if (binding) {
+      return { key: parentKey, binding };
+    }
   }
   return null;
 }
@@ -708,7 +742,9 @@ export function ensureBackgroundContextLensForSession(
   } = {},
 ): { lens: ContextLens; created: boolean } | null {
   const key = sessionKey?.trim();
-  if (!key) { return null; }
+  if (!key) {
+    return null;
+  }
   const resolved = resolveActiveBinding(key);
   if (resolved) {
     const existing = resolved.binding;
@@ -751,10 +787,16 @@ export function ensureBackgroundContextLensForSession(
 export function getActiveBackgroundContextLens(): ContextLens | null {
   let best: ContextLens | null = null;
   for (const binding of activeLensesBySession.values()) {
-    if (!binding.background) { continue; }
+    if (!binding.background) {
+      continue;
+    }
     const lens = binding.registry.get(binding.lensId);
-    if (!lens) { continue; }
-    if (!best || lens.updatedAt > best.updatedAt) { best = lens; }
+    if (!lens) {
+      continue;
+    }
+    if (!best || lens.updatedAt > best.updatedAt) {
+      best = lens;
+    }
   }
   return best;
 }
@@ -777,9 +819,13 @@ export function recordContextLensToolStartForSession(
   } = {},
 ): ContextLens | null {
   const binding = resolveActiveBinding(sessionKey)?.binding;
-  if (!binding) { return null; }
+  if (!binding) {
+    return null;
+  }
   const lens = binding.registry.recordToolCall(binding.lensId, toolName, detail);
-  if (!lens) { return null; }
+  if (!lens) {
+    return null;
+  }
   return binding.registry.setStatus(binding.lensId, "tool_running");
 }
 
@@ -795,7 +841,9 @@ export function recordContextLensToolResultForSession(
   } = {},
 ): ContextLens | null {
   const binding = resolveActiveBinding(sessionKey)?.binding;
-  if (!binding) { return null; }
+  if (!binding) {
+    return null;
+  }
   return binding.registry.completeToolRun(binding.lensId, toolName, detail);
 }
 
@@ -803,7 +851,9 @@ export function finalizeBackgroundContextLensForSession(
   sessionKey: string | null | undefined,
 ): ContextLens | null {
   const resolved = resolveActiveBinding(sessionKey);
-  if (!resolved?.binding.background) { return null; }
+  if (!resolved?.binding.background) {
+    return null;
+  }
   const { key, binding } = resolved;
   if (binding.finalizeTimer) {
     clearTimeout(binding.finalizeTimer);
@@ -829,7 +879,9 @@ export function scheduleBackgroundContextLensFinalization(
   idleMs = BACKGROUND_FINALIZE_IDLE_MS,
 ): void {
   const resolved = resolveActiveBinding(sessionKey);
-  if (!resolved?.binding.background) { return; }
+  if (!resolved?.binding.background) {
+    return;
+  }
   const { key, binding } = resolved;
   if (binding.finalizeTimer) {
     clearTimeout(binding.finalizeTimer);
