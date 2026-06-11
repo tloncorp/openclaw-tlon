@@ -118,6 +118,27 @@ function summarizeToolParams(params: unknown): string | undefined {
   return typeof params;
 }
 
+const MAX_TOOL_PARAM_DETAIL_CHARS = 2000;
+
+function detailToolParams(params: unknown): string | undefined {
+  if (params === null || params === undefined) {
+    return undefined;
+  }
+  let serialized: string | undefined;
+  try {
+    serialized = JSON.stringify(params, null, 1);
+  } catch {
+    return undefined;
+  }
+  if (!serialized) {
+    return undefined;
+  }
+  if (serialized.length > MAX_TOOL_PARAM_DETAIL_CHARS) {
+    return `${serialized.slice(0, MAX_TOOL_PARAM_DETAIL_CHARS)}… [truncated]`;
+  }
+  return serialized;
+}
+
 /**
  * Shell-like argument splitter that respects quotes
  */
@@ -438,6 +459,7 @@ export default defineChannelPluginEntry({
         const lens = recordContextLensToolStartForSession(ctx.sessionKey, event.toolName, {
           phase: "before",
           argumentSummary: summarizeToolParams(event.params),
+          argumentDetail: detailToolParams(event.params),
           toolCallId,
         });
         if (lens) {

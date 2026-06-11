@@ -67,6 +67,7 @@ export function buildLensRunPayload(lens: ContextLens): string {
       runs: lens.tools.runs.map((run) => ({
         ...run,
         argumentSummary: truncateSummary(run.argumentSummary),
+        argumentDetail: truncateSummary(run.argumentDetail),
         resultSummary: truncateSummary(run.resultSummary),
       })),
     },

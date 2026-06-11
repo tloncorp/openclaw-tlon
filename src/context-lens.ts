@@ -72,6 +72,7 @@ export type ContextLensToolRun = {
   durationMs: number | null;
   status: "running" | "completed" | "error" | "blocked";
   argumentSummary?: string;
+  argumentDetail?: string;
   resultSummary?: string;
   error?: string;
 };
@@ -464,7 +465,12 @@ export function createContextLensRegistry(
   const recordToolCall = (
     lensId: string | null | undefined,
     toolName: string,
-    detail: { phase?: string; argumentSummary?: string; toolCallId?: string } = {},
+    detail: {
+      phase?: string;
+      argumentSummary?: string;
+      argumentDetail?: string;
+      toolCallId?: string;
+    } = {},
   ) => {
     if (!lensId || !toolName) { return null; }
     const existing = lenses.get(lensId);
@@ -496,6 +502,7 @@ export function createContextLensRegistry(
             durationMs: null,
             status: "running",
             ...(detail.argumentSummary ? { argumentSummary: detail.argumentSummary } : {}),
+            ...(detail.argumentDetail ? { argumentDetail: detail.argumentDetail } : {}),
           },
         ],
       },
@@ -765,6 +772,7 @@ export function recordContextLensToolStartForSession(
   detail: {
     phase?: string;
     argumentSummary?: string;
+    argumentDetail?: string;
     toolCallId?: string;
   } = {},
 ): ContextLens | null {
