@@ -256,6 +256,83 @@ describe("createComputingPresenceTracker", () => {
     expect(reporter.publish).toHaveBeenCalledTimes(4);
   });
 
+  test("keepalive refresh does not resurrect a stopped run", async () => {
+    const reporter = {
+      publish: vi.fn(async () => {}),
+    };
+
+    const tracker = createComputingPresenceTracker({ reporter, minUpdateIntervalMs: 0 });
+
+    await tracker.refreshRun({
+      conversationId: "~nec",
+      runId: "run-1",
+    });
+
+    await tracker.stopRun({
+      conversationId: "~nec",
+      runId: "run-1",
+    });
+
+    expect(reporter.publish).toHaveBeenLastCalledWith({
+      conversationId: "~nec",
+      thinking: false,
+      toolNames: [],
+    });
+
+    await tracker.refreshRun({
+      conversationId: "~nec",
+      runId: "run-1",
+    });
+
+    expect(reporter.publish).toHaveBeenCalledTimes(2);
+  });
+
+  test("a tool call resumes a stopped run", async () => {
+    const reporter = {
+      publish: vi.fn(async () => {}),
+    };
+
+    const tracker = createComputingPresenceTracker({ reporter, minUpdateIntervalMs: 0 });
+
+    await tracker.refreshRun({
+      conversationId: "~nec",
+      runId: "run-1",
+    });
+
+    await tracker.stopRun({
+      conversationId: "~nec",
+      runId: "run-1",
+    });
+
+    await tracker.addToolCall({
+      conversationId: "~nec",
+      runId: "run-1",
+      toolName: "exec",
+    });
+
+    expect(reporter.publish).toHaveBeenLastCalledWith({
+      conversationId: "~nec",
+      thinking: true,
+      toolNames: ["exec"],
+    });
+
+    await tracker.refreshRun({
+      conversationId: "~nec",
+      runId: "run-1",
+    });
+
+    await tracker.stopRun({
+      conversationId: "~nec",
+      runId: "run-1",
+    });
+
+    expect(reporter.publish).toHaveBeenLastCalledWith({
+      conversationId: "~nec",
+      thinking: false,
+      toolNames: [],
+    });
+  });
+
   test("does not republish thinking false when a stopped run is already missing", async () => {
     const reporter = {
       publish: vi.fn(async () => {}),

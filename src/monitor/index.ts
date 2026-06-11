@@ -2364,6 +2364,10 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
           // callbacks, killing the thinking indicator for the rest of long
           // runs. stopRun is already wired to deliver/idle/cleanup.
           maxDurationMs: 0,
+          // The SDK default (2) trips the keepalive permanently after two
+          // transient poke failures, which lets the ship-side presence expire
+          // mid-run. Failures are already logged via onStartError.
+          maxConsecutiveFailures: 5,
         })
       : undefined;
 
