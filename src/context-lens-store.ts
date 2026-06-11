@@ -35,6 +35,10 @@ type StoreLogger = {
 
 const storeSlot = sharedSlot<ContextLensStore>("contextLens.store");
 
+// Replace semantics for the shared event-bus subscription: plugin re-inits
+// (fresh module contexts) must not stack additional store writers.
+const storeUnsubscribeSlot = sharedSlot<() => void>("contextLens.store.unsubscribe");
+
 export function getContextLensStore(): ContextLensStore | null {
   return storeSlot.get();
 }
@@ -204,7 +208,8 @@ export function initContextLensStore(api: {
     return null;
   }
   setContextLensStore(store);
-  subscribeToContextLensEvents((event) => {
+  storeUnsubscribeSlot.get()?.();
+  storeUnsubscribeSlot.set(subscribeToContextLensEvents((event) => {
     if (!TERMINAL_STATUSES.has(event.lens.status)) {
       return;
     }
@@ -215,6 +220,6 @@ export function initContextLensStore(api: {
         `[tlon] Context lens store write failed for ${event.lens.lensId}: ${String(error)}`,
       );
     }
-  });
+  }));
   return store;
 }

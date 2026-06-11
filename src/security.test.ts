@@ -8,7 +8,7 @@
  * - Bot mention detection boundaries
  */
 
-import { describe, expect, it, beforeEach } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
   isDmAllowed,
   isGroupInviteAllowed,
@@ -17,11 +17,6 @@ import {
   sanitizeMessageText,
 } from "./monitor/utils.js";
 import { normalizeShip } from "./targets.js";
-import {
-  setSessionRole,
-  getSessionRole,
-  _testing as sessionRolesTesting,
-} from "./session-roles.js";
 
 describe("Security: DM Allowlist", () => {
   describe("isDmAllowed", () => {

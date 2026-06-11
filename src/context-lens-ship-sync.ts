@@ -29,6 +29,14 @@ type SyncLogger = {
 
 const apiClientParamsSlot = sharedSlot<SharedApiClientParams>(API_CLIENT_PARAMS_SLOT);
 
+// The host re-initializes the plugin in fresh module contexts (run starts,
+// reloads) while the event bus listener set lives in shared state — without
+// replace semantics every re-init would stack another subscriber and each
+// run would be poked N times.
+const shipSyncUnsubscribeSlot = sharedSlot<() => void>(
+  "contextLens.shipSync.unsubscribe",
+);
+
 function truncateSummary(value: string | undefined): string | undefined {
   if (value === undefined || value.length <= MAX_SUMMARY_CHARS) {
     return value;
@@ -207,7 +215,8 @@ export function initContextLensShipSync(api: {
     return false;
   }
   const sync = createContextLensShipSync({ owners, logger: api.logger });
-  subscribeToContextLensEvents(sync.handleEvent);
+  shipSyncUnsubscribeSlot.get()?.();
+  shipSyncUnsubscribeSlot.set(subscribeToContextLensEvents(sync.handleEvent));
   api.logger.info(
     `[tlon] Context lens ship sync enabled, fanning out to ${owners.join(", ")}`,
   );

@@ -193,7 +193,10 @@ type ActiveContextLensBinding = {
 
 const DEFAULT_TTL_MS = 30 * 60 * 1000;
 const MAX_LENSES = 200;
-const BACKGROUND_FINALIZE_IDLE_MS = 1_500;
+// Long enough for the gateway to deliver the run's reply (cron DMs etc.)
+// after the last tool result, so the outbound stamp/output land on the lens
+// before it finalizes.
+const BACKGROUND_FINALIZE_IDLE_MS = 30_000;
 const activeLensesBySession = sharedMap<string, ActiveContextLensBinding>(
   "contextLens.activeLensesBySession",
 );
@@ -624,28 +627,58 @@ export function createContextLensRegistry(
   };
 }
 
-export function bindContextLensToSession(
+export type ContextLensSessionKeys = string | readonly string[] | null | undefined;
+
+function normalizeSessionKeys(sessionKeys: ContextLensSessionKeys): string[] {
+  const list = typeof sessionKeys === "string" ? [sessionKeys] : (sessionKeys ?? []);
+  return [...new Set(list.map((key) => key.trim()).filter((key) => key.length > 0))];
+}
+
+/**
+ * Hook session keys can differ from the bound key in two ways: core hands
+ * tool hooks the per-peer key form regardless of the configured dmScope
+ * (callers bind under every form to cover that), and thread sessions append
+ * a `:thread:<id>` suffix that was never bound. Fall back to the thread's
+ * parent key on a miss.
+ */
+function resolveActiveBinding(
   sessionKey: string | null | undefined,
+): { key: string; binding: ActiveContextLensBinding } | null {
+  const key = sessionKey?.trim();
+  if (!key) { return null; }
+  const direct = activeLensesBySession.get(key);
+  if (direct) { return { key, binding: direct }; }
+  const threadIndex = key.indexOf(":thread:");
+  if (threadIndex > 0) {
+    const parentKey = key.slice(0, threadIndex);
+    const binding = activeLensesBySession.get(parentKey);
+    if (binding) { return { key: parentKey, binding }; }
+  }
+  return null;
+}
+
+export function bindContextLensToSession(
+  sessionKeys: ContextLensSessionKeys,
   registry: ContextLensRegistry,
   lensId: string,
 ): void {
-  const key = sessionKey?.trim();
-  if (!key) { return; }
-  activeLensesBySession.set(key, { registry, lensId, background: false });
+  for (const key of normalizeSessionKeys(sessionKeys)) {
+    activeLensesBySession.set(key, { registry, lensId, background: false });
+  }
 }
 
 export function unbindContextLensFromSession(
-  sessionKey: string | null | undefined,
+  sessionKeys: ContextLensSessionKeys,
   lensId: string,
 ): void {
-  const key = sessionKey?.trim();
-  if (!key) { return; }
-  const binding = activeLensesBySession.get(key);
-  if (binding?.lensId === lensId) {
-    if (binding.finalizeTimer) {
-      clearTimeout(binding.finalizeTimer);
+  for (const key of normalizeSessionKeys(sessionKeys)) {
+    const binding = activeLensesBySession.get(key);
+    if (binding?.lensId === lensId) {
+      if (binding.finalizeTimer) {
+        clearTimeout(binding.finalizeTimer);
+      }
+      activeLensesBySession.delete(key);
     }
-    activeLensesBySession.delete(key);
   }
 }
 
@@ -666,18 +699,20 @@ export function ensureBackgroundContextLensForSession(
     trigger?: ContextLensTrigger;
     preview?: string;
   } = {},
-): ContextLens | null {
+): { lens: ContextLens; created: boolean } | null {
   const key = sessionKey?.trim();
   if (!key) { return null; }
-  const existing = activeLensesBySession.get(key);
-  if (existing) {
+  const resolved = resolveActiveBinding(key);
+  if (resolved) {
+    const existing = resolved.binding;
     if (existing.finalizeTimer) {
       clearTimeout(existing.finalizeTimer);
       const cleared = { ...existing };
       delete cleared.finalizeTimer;
-      activeLensesBySession.set(key, cleared);
+      activeLensesBySession.set(resolved.key, cleared);
     }
-    return existing.registry.get(existing.lensId);
+    const lens = existing.registry.get(existing.lensId);
+    return lens ? { lens, created: false } : null;
   }
 
   const registry = getBackgroundContextLensRegistry();
@@ -695,7 +730,33 @@ export function ensureBackgroundContextLensForSession(
     preview: input.preview,
   });
   activeLensesBySession.set(key, { registry, lensId: lens.lensId, background: true });
-  return lens;
+  return { lens, created: true };
+}
+
+/**
+ * Most recently updated background lens that is still bound (not yet
+ * finalized). Used by the outbound send path to stamp gateway-delivered
+ * messages (cron announcements, CLI sends) with a lens pointer — those
+ * sends carry no session context, so this correlation is best-effort:
+ * the binding's bounded lifetime (finalized after a short idle window)
+ * keeps stale matches out.
+ */
+export function getActiveBackgroundContextLens(): ContextLens | null {
+  let best: ContextLens | null = null;
+  for (const binding of activeLensesBySession.values()) {
+    if (!binding.background) { continue; }
+    const lens = binding.registry.get(binding.lensId);
+    if (!lens) { continue; }
+    if (!best || lens.updatedAt > best.updatedAt) { best = lens; }
+  }
+  return best;
+}
+
+export function recordBackgroundContextLensOutput(
+  lensId: string,
+  output: ContextLensOutput,
+): ContextLens | null {
+  return getBackgroundContextLensRegistry().recordOutput(lensId, output);
 }
 
 export function recordContextLensToolStartForSession(
@@ -707,9 +768,7 @@ export function recordContextLensToolStartForSession(
     toolCallId?: string;
   } = {},
 ): ContextLens | null {
-  const key = sessionKey?.trim();
-  if (!key) { return null; }
-  const binding = activeLensesBySession.get(key);
+  const binding = resolveActiveBinding(sessionKey)?.binding;
   if (!binding) { return null; }
   const lens = binding.registry.recordToolCall(binding.lensId, toolName, detail);
   if (!lens) { return null; }
@@ -727,9 +786,7 @@ export function recordContextLensToolResultForSession(
     toolCallId?: string;
   } = {},
 ): ContextLens | null {
-  const key = sessionKey?.trim();
-  if (!key) { return null; }
-  const binding = activeLensesBySession.get(key);
+  const binding = resolveActiveBinding(sessionKey)?.binding;
   if (!binding) { return null; }
   return binding.registry.completeToolRun(binding.lensId, toolName, detail);
 }
@@ -737,10 +794,9 @@ export function recordContextLensToolResultForSession(
 export function finalizeBackgroundContextLensForSession(
   sessionKey: string | null | undefined,
 ): ContextLens | null {
-  const key = sessionKey?.trim();
-  if (!key) { return null; }
-  const binding = activeLensesBySession.get(key);
-  if (!binding?.background) { return null; }
+  const resolved = resolveActiveBinding(sessionKey);
+  if (!resolved?.binding.background) { return null; }
+  const { key, binding } = resolved;
   if (binding.finalizeTimer) {
     clearTimeout(binding.finalizeTimer);
   }
@@ -764,10 +820,9 @@ export function scheduleBackgroundContextLensFinalization(
   onFinalize: (lens: ContextLens) => void,
   idleMs = BACKGROUND_FINALIZE_IDLE_MS,
 ): void {
-  const key = sessionKey?.trim();
-  if (!key) { return; }
-  const binding = activeLensesBySession.get(key);
-  if (!binding?.background) { return; }
+  const resolved = resolveActiveBinding(sessionKey);
+  if (!resolved?.binding.background) { return; }
+  const { key, binding } = resolved;
   if (binding.finalizeTimer) {
     clearTimeout(binding.finalizeTimer);
   }

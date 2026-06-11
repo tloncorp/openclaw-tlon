@@ -203,4 +203,31 @@ describe("initContextLensStore", () => {
     const reloaded = createContextLensStore({ filePath });
     expect(reloaded.get(finalized.lensId)?.messageId).toBe("finalized");
   });
+
+  it("replaces the event subscription on re-init instead of stacking writers", () => {
+    const stalePath = path.join(tmpDir, "stale.jsonl");
+    initContextLensStore(
+      makeApi({
+        enabled: true,
+        authToken: "a-token-of-sufficient-length",
+        store: { path: stalePath },
+      }),
+    );
+    const store = initContextLensStore(
+      makeApi({
+        enabled: true,
+        authToken: "a-token-of-sufficient-length",
+        store: { path: filePath },
+      }),
+    );
+
+    const finalized = makeLens({ messageId: "replaced-writer" });
+    publishContextLensEvent("final", finalized);
+
+    expect(store?.get(finalized.lensId)?.messageId).toBe("replaced-writer");
+    const staleContents = fs.existsSync(stalePath)
+      ? fs.readFileSync(stalePath, "utf8")
+      : "";
+    expect(staleContents).not.toContain(finalized.lensId);
+  });
 });

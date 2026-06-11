@@ -2,13 +2,18 @@ import type { OpenClawConfig } from "openclaw/plugin-sdk/core";
 import { describe, expect, it } from "vitest";
 
 import { createContextLensRegistry, type ContextLens } from "./context-lens.js";
-import type { ContextLensEvent } from "./context-lens-events.js";
+import {
+  publishContextLensEvent,
+  type ContextLensEvent,
+} from "./context-lens-events.js";
 import {
   buildLensRunPayload,
   createContextLensShipSync,
+  initContextLensShipSync,
   resolveLensOwners,
 } from "./context-lens-ship-sync.js";
-import type { SharedApiClientParams } from "./gateway-status.js";
+import { API_CLIENT_PARAMS_SLOT, type SharedApiClientParams } from "./gateway-status.js";
+import { sharedSlot } from "./shared-state.js";
 
 function makeLens(overrides: Partial<ContextLens> = {}): ContextLens {
   const registry = createContextLensRegistry({ ttlMs: 60_000 });
@@ -243,5 +248,46 @@ describe("createContextLensShipSync", () => {
       "configure",
       "run-final",
     ]);
+  });
+});
+
+// Keep this block last: initContextLensShipSync subscribes to the global lens
+// event stream, and the final subscription persists for the rest of the file.
+describe("initContextLensShipSync", () => {
+  it("replaces the event subscription on re-init instead of stacking pokes", async () => {
+    const pokes: RecordedPoke[] = [];
+    const slot = sharedSlot<SharedApiClientParams>(API_CLIENT_PARAMS_SLOT);
+    const previousParams = slot.get();
+    slot.set(makeParams(pokes));
+    const api = {
+      config: {
+        channels: {
+          tlon: {
+            ship: "~zod",
+            contextLens: {
+              enabled: true,
+              authToken: "a-token-of-sufficient-length",
+              owners: ["~bus"],
+            },
+          },
+        },
+      } as OpenClawConfig,
+      logger: silentLogger,
+    };
+
+    try {
+      expect(initContextLensShipSync(api)).toBe(true);
+      expect(initContextLensShipSync(api)).toBe(true);
+
+      publishContextLensEvent("final", makeLens({ status: "completed" }));
+      await new Promise((resolve) => setTimeout(resolve, 20));
+
+      expect(pokes.map((p) => Object.keys(p.json as object)[0])).toEqual([
+        "configure",
+        "run-final",
+      ]);
+    } finally {
+      slot.set(previousParams);
+    }
   });
 });

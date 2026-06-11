@@ -4,7 +4,9 @@ import {
   createContextLensRegistry,
   ensureBackgroundContextLensForSession,
   finalizeBackgroundContextLensForSession,
+  getActiveBackgroundContextLens,
   hashSessionKey,
+  recordBackgroundContextLensOutput,
   recordContextLensToolResultForSession,
   recordContextLensToolStartForSession,
   scheduleBackgroundContextLensFinalization,
@@ -344,6 +346,121 @@ describe("context lens registry", () => {
     expect(registry.get(lens.lensId)?.status).toBe("dispatching");
   });
 
+  it("attributes thread-suffixed session keys to the parent binding", () => {
+    const registry = createContextLensRegistry();
+    const sessionKey = "agent:main:tlon:channel:chat/~zod/general";
+    const lens = registry.create({
+      messageId: "message-thread-fallback",
+      chatType: "channel",
+      sessionKey,
+    });
+
+    bindContextLensToSession(sessionKey, registry, lens.lensId);
+
+    try {
+      const threadKey = `${sessionKey}:thread:170.141.184`;
+      recordContextLensToolStartForSession(threadKey, "read");
+      recordContextLensToolResultForSession(threadKey, "read", { durationMs: 7 });
+    } finally {
+      unbindContextLensFromSession(sessionKey, lens.lensId);
+    }
+
+    expect(registry.get(lens.lensId)?.tools.runs).toEqual([
+      expect.objectContaining({ name: "read", status: "completed", durationMs: 7 }),
+    ]);
+  });
+
+  it("binds and unbinds a lens under multiple session key forms", () => {
+    const registry = createContextLensRegistry();
+    const keys = ["agent:main:tlon", "agent:main:tlon:direct:~ten"] as const;
+    const lens = registry.create({ messageId: "message-multi-key", chatType: "dm" });
+
+    bindContextLensToSession(keys, registry, lens.lensId);
+
+    try {
+      recordContextLensToolStartForSession(keys[1], "read");
+      recordContextLensToolResultForSession(keys[0], "read", { durationMs: 3 });
+    } finally {
+      unbindContextLensFromSession(keys, lens.lensId);
+    }
+
+    expect(registry.get(lens.lensId)?.tools.runs).toEqual([
+      expect.objectContaining({ name: "read", status: "completed", durationMs: 3 }),
+    ]);
+    expect(recordContextLensToolStartForSession(keys[0], "read")).toBeNull();
+    expect(recordContextLensToolStartForSession(keys[1], "read")).toBeNull();
+  });
+
+  it("reuses the parent background binding for thread-suffixed session keys", () => {
+    const sessionKey = "session-background-thread";
+    const first = ensureBackgroundContextLensForSession(sessionKey, {
+      runKind: "cron",
+      trigger: "cron",
+    });
+    const second = ensureBackgroundContextLensForSession(`${sessionKey}:thread:7`);
+
+    try {
+      expect(first?.created).toBe(true);
+      expect(second?.created).toBe(false);
+      expect(second?.lens.lensId).toBe(first?.lens.lensId);
+    } finally {
+      finalizeBackgroundContextLensForSession(sessionKey);
+    }
+  });
+
+  it("exposes the most recent background lens for stamping and records its outputs", async () => {
+    const registry = createContextLensRegistry();
+    const conversationKey = "session-active-conversation";
+    const conversation = registry.create({
+      messageId: "message-active-conversation",
+      chatType: "dm",
+      sessionKey: conversationKey,
+    });
+    bindContextLensToSession(conversationKey, registry, conversation.lensId);
+
+    const older = ensureBackgroundContextLensForSession("session-active-bg-a", {
+      runKind: "internal",
+      trigger: "tool",
+    });
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    const newer = ensureBackgroundContextLensForSession("session-active-bg-b", {
+      runKind: "cron",
+      trigger: "cron",
+    });
+
+    try {
+      // Conversation bindings are never stamp candidates; the most recently
+      // updated background lens wins.
+      expect(getActiveBackgroundContextLens()?.lensId).toBe(newer?.lens.lensId);
+
+      recordBackgroundContextLensOutput(newer?.lens.lensId ?? "", {
+        messageId: "~zod/170.141.184",
+        conversationId: "~ten",
+        kind: "dm",
+        sentAt: 123,
+        preview: "cron reply",
+      });
+      const finalNewer = finalizeBackgroundContextLensForSession("session-active-bg-b");
+      expect(finalNewer?.outputs).toEqual([
+        expect.objectContaining({
+          messageId: "~zod/170.141.184",
+          conversationId: "~ten",
+          kind: "dm",
+          preview: "cron reply",
+        }),
+      ]);
+
+      // Finalized lenses drop out of the candidate set.
+      expect(getActiveBackgroundContextLens()?.lensId).toBe(older?.lens.lensId);
+      finalizeBackgroundContextLensForSession("session-active-bg-a");
+      expect(getActiveBackgroundContextLens()).toBeNull();
+    } finally {
+      finalizeBackgroundContextLensForSession("session-active-bg-a");
+      finalizeBackgroundContextLensForSession("session-active-bg-b");
+      unbindContextLensFromSession(conversationKey, conversation.lensId);
+    }
+  });
+
   it("records blocked tool calls from session tool results", () => {
     const registry = createContextLensRegistry();
     const sessionKey = "session-blocked-tool";
@@ -376,13 +493,14 @@ describe("context lens registry", () => {
 
   it("creates and finalizes owner-visible background tool runs", () => {
     const sessionKey = "session-background-tool";
-    const lens = ensureBackgroundContextLensForSession(sessionKey, {
+    const background = ensureBackgroundContextLensForSession(sessionKey, {
       runKind: "cron",
       trigger: "cron",
       preview: "cron tool activity",
     });
 
-    expect(lens).toMatchObject({
+    expect(background?.created).toBe(true);
+    expect(background?.lens).toMatchObject({
       chatType: "internal",
       runKind: "cron",
       visibility: "owner",

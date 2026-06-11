@@ -422,15 +422,18 @@ export default defineChannelPluginEntry({
       const isBlocked = isOwnerOnlyTool && role === "user";
       const blockReason = isBlocked ? `The ${event.toolName} tool is not available.` : undefined;
       if (contextLensEnabled) {
-        if (role === null) {
-          const backgroundLens = ensureBackgroundContextLensForSession(ctx.sessionKey, {
-            runKind: event.toolName === "cron" ? "cron" : "internal",
-            trigger: event.toolName === "cron" ? "cron" : "tool",
-            preview: `${event.toolName} tool activity`,
-          });
-          if (backgroundLens && backgroundLens.tools.callCount === 0) {
-            publishContextLensEvent("created", backgroundLens);
-          }
+        // Capture tool activity even when no conversation run owns this
+        // session (cron wakes — including jobs that reuse the main session
+        // and so inherit a sender-role entry — heartbeats, subagents).
+        // No-ops when a conversation lens is already bound.
+        const isCronSession = (ctx.sessionKey ?? "").includes(":cron:");
+        const background = ensureBackgroundContextLensForSession(ctx.sessionKey, {
+          runKind: isCronSession ? "cron" : "internal",
+          trigger: isCronSession ? "cron" : "tool",
+          preview: `${event.toolName} tool activity`,
+        });
+        if (background?.created) {
+          publishContextLensEvent("created", background.lens);
         }
         const lens = recordContextLensToolStartForSession(ctx.sessionKey, event.toolName, {
           phase: "before",
@@ -549,6 +552,43 @@ export default defineChannelPluginEntry({
           });
         }
       }
+    });
+
+    // Cron jobs can run inside the main session, where the session key has
+    // no `:cron:` marker — the agent-level hook context is the only place
+    // the gateway exposes the cron trigger, so tag the run's lens here
+    // before any tool fires. Idempotent across both hooks.
+    const ensureCronContextLens = (ctx: {
+      sessionKey?: string;
+      trigger?: string;
+      jobId?: string;
+    }) => {
+      if (!contextLensEnabled || ctx.trigger !== "cron") {
+        return;
+      }
+      const background = ensureBackgroundContextLensForSession(ctx.sessionKey, {
+        runKind: "cron",
+        trigger: "cron",
+        preview: ctx.jobId ? `cron job ${ctx.jobId}` : "cron run",
+      });
+      if (background?.created) {
+        publishContextLensEvent("created", background.lens);
+      }
+    };
+    api.on("agent_turn_prepare", (_event, ctx) => ensureCronContextLens(ctx));
+    api.on("model_call_started", (_event, ctx) => ensureCronContextLens(ctx));
+
+    // Background lenses normally finalize on tool-result idle; agent_end
+    // re-arms the window so runs that end with model output (no trailing
+    // tool call) still finalize, while leaving time for the gateway to
+    // deliver the reply (stamped + recorded via the outbound send path).
+    api.on("agent_end", (_event, ctx) => {
+      if (!contextLensEnabled) {
+        return;
+      }
+      scheduleBackgroundContextLensFinalization(ctx.sessionKey, (finalLens) => {
+        publishContextLensEvent("final", finalLens);
+      });
     });
 
     // ── Slash commands for approval & admin ────────────────────────────

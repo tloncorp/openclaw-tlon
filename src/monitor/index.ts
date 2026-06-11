@@ -1670,6 +1670,26 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       },
     });
 
+    // Core's tool hooks receive a per-peer session key form regardless of the
+    // configured dmScope, while route.sessionKey follows the config (default
+    // "main"). Register lens bindings and sender roles under every form core
+    // might hand the hooks so tool calls attribute to this run.
+    const lensSessionKeys: string[] = isGroup
+      ? [route.sessionKey]
+      : [
+        route.sessionKey,
+        ...(["per-account-channel-peer", "per-channel-peer", "per-peer"] as const).map(
+          (dmScope) =>
+            core.channel.routing.buildAgentSessionKey({
+              agentId: route.agentId,
+              channel: "tlon",
+              accountId: route.accountId,
+              peer: { kind: "direct", id: senderShip },
+              dmScope,
+            }),
+        ),
+      ];
+
     const lens = contextLenses.create({
       messageId,
       chatType: isGroup ? "channel" : "dm",
@@ -2168,8 +2188,12 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
       });
     }
     // Store role for before_tool_call hook (tool access control)
-    setSessionRole(route.sessionKey, senderRole);
-    runtime.log?.(`[tlon] Stored session role: sessionKey=${route.sessionKey}, role=${senderRole}`);
+    for (const sessionKey of lensSessionKeys) {
+      setSessionRole(sessionKey, senderRole);
+    }
+    runtime.log?.(
+      `[tlon] Stored session role: sessionKeys=${lensSessionKeys.join(", ")}, role=${senderRole}`,
+    );
 
     const senderDisplay = formatShipWithNickname(senderShip);
     const fromLabel = isGroup
@@ -2399,7 +2423,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
           dispatchStartedAt: Date.now(),
           timeoutMs: dispatchTimeoutMs,
         });
-        bindContextLensToSession(route.sessionKey, contextLenses, lens.lensId);
+        bindContextLensToSession(lensSessionKeys, contextLenses, lens.lensId);
         logContextLens(lens.lensId, "dispatching");
         timeoutId = setTimeout(() => {
           dispatchTimedOut = true;
@@ -2548,7 +2572,7 @@ export async function monitorTlonProvider(opts: MonitorTlonOpts = {}): Promise<v
         dispatchError ? "error" : "completed",
         dispatchError,
       );
-      unbindContextLensFromSession(route.sessionKey, lens.lensId);
+      unbindContextLensFromSession(lensSessionKeys, lens.lensId);
       contextLenses.recordLifecycle(lens.lensId, {
         completedAt: Date.now(),
         durationMs: dispatchDurationMs,
