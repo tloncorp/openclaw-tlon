@@ -1,5 +1,13 @@
 # OpenClaw Tlon Plugin
 
+> [!IMPORTANT]
+> **This repository has moved.** Development now happens in the
+> [`tloncorp/tlon-apps`](https://github.com/tloncorp/tlon-apps) monorepo, under
+> [`packages/openclaw`](https://github.com/tloncorp/tlon-apps/tree/develop/packages/openclaw).
+>
+> This repo is **archived and read-only**. Please open issues and pull requests
+> against `tlon-apps` instead. The history here is preserved for reference.
+
 Tlon/Urbit channel plugin for [OpenClaw](https://github.com/openclaw/openclaw). Enables your AI agent to communicate via Tlon DMs and group channels.
 
 ## Features
