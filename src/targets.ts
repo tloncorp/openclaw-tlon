@@ -5,8 +5,15 @@ export type TlonTarget =
 const SHIP_RE = /^~?[a-z-]+$/i;
 const NEST_RE = /^(chat|heap|diary)\/([^/]+)\/([^/]+)$/i;
 
+/**
+ * Normalize a ship name to canonical form: lowercase with a leading `~`.
+ * Urbit @p phonemes are inherently lowercase — different case can only mean
+ * the input was wrong, not that it refers to a different ship. Lowercasing
+ * here lets every caller compare ships by exact string equality without
+ * worrying about case variants in user input or stored values.
+ */
 export function normalizeShip(raw: string): string {
-  const trimmed = raw.trim();
+  const trimmed = raw.trim().toLowerCase();
   if (!trimmed) {
     return trimmed;
   }

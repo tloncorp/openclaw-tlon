@@ -7,6 +7,8 @@
  * (which provides sessionId, not sessionKey).
  */
 
+import { sharedMap } from "./shared-state.js";
+
 export type SenderRole = "owner" | "user";
 
 interface RoleEntry {
@@ -14,7 +16,7 @@ interface RoleEntry {
   timestamp: number;
 }
 
-const sessionRoles = new Map<string, RoleEntry>();
+const sessionRoles = sharedMap<string, RoleEntry>("session-roles");
 
 // TTL for role entries (1 hour - sessions shouldn't last longer)
 const ROLE_TTL_MS = 60 * 60 * 1000;

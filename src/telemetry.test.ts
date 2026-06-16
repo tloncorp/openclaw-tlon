@@ -263,7 +263,7 @@ describe("telemetry tool tracking", () => {
   });
 
   describe("captureHeartbeatNudge", () => {
-    it("emits correct PostHog event with all properties", () => {
+    it("emits correct PostHog event with all properties (success case includes messageId and nudgeSentAtMs)", () => {
       const telemetry = createEnabledTelemetry()!;
       telemetry.captureHeartbeatNudge({
         ownerShip: "~zod",
@@ -273,6 +273,8 @@ describe("telemetry tool tracking", () => {
         channel: "tlon",
         success: true,
         accountId: "default",
+        messageId: "~nec/170.141.184.506.511.632.882.809.306.892.730.368.000",
+        nudgeSentAtMs: 1700000000000,
       });
 
       expect(postHogMocks.capture).toHaveBeenCalledWith({
@@ -288,8 +290,30 @@ describe("telemetry tool tracking", () => {
           channel: "tlon",
           success: true,
           accountId: "default",
+          messageId: "~nec/170.141.184.506.511.632.882.809.306.892.730.368.000",
+          nudgeSentAtMs: 1700000000000,
         },
       });
+    });
+
+    it("writes null messageId and null nudgeSentAtMs on send failure", () => {
+      const telemetry = createEnabledTelemetry()!;
+      telemetry.captureHeartbeatNudge({
+        ownerShip: "~zod",
+        botShip: "~nec",
+        nudgeStage: 1,
+        nudgeTarget: "~zod",
+        channel: "tlon",
+        success: false,
+        accountId: "default",
+        messageId: null,
+        nudgeSentAtMs: null,
+      });
+
+      const captured = postHogMocks.capture.mock.calls.at(-1)?.[0];
+      expect(captured.properties.success).toBe(false);
+      expect(captured.properties.messageId).toBeNull();
+      expect(captured.properties.nudgeSentAtMs).toBeNull();
     });
 
     it("identifies owner on first call", () => {
@@ -302,6 +326,8 @@ describe("telemetry tool tracking", () => {
         channel: "tlon",
         success: true,
         accountId: null,
+        messageId: "~nec/some-id",
+        nudgeSentAtMs: 1700000000000,
       });
 
       expect(postHogMocks.identify).toHaveBeenCalledWith({
@@ -324,6 +350,8 @@ describe("telemetry tool tracking", () => {
         channel: "tlon",
         success: true,
         accountId: null,
+        messageId: null,
+        nudgeSentAtMs: null,
       });
 
       expect(postHogMocks.capture).not.toHaveBeenCalled();

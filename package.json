@@ -33,10 +33,13 @@
     "dev": "./dev/run.sh",
     "dev:api:link": "./dev/link-local-api.sh",
     "dev:api:unlink": "./dev/unlink-local-api.sh",
+    "dev:skill:link": "./dev/link-local-skill.sh",
+    "dev:skill:unlink": "./dev/unlink-local-skill.sh",
     "format": "oxfmt --check",
     "format:fix": "oxfmt --write",
     "lint": "oxlint --type-aware",
     "lint:fix": "pnpm format:fix && oxlint --type-aware --fix",
+    "postinstall": "node scripts/generate-version.js",
     "prebuild": "node scripts/generate-version.js",
     "test": "vitest run src/",
     "test:all": "vitest run",
@@ -58,18 +61,9 @@
     "zod": "^4.4.1"
   },
   "devDependencies": {
-    "@grammyjs/runner": "^2.0.3",
-    "@grammyjs/transformer-throttler": "^1.2.1",
-    "@slack/bolt": "^4.7.2",
-    "@slack/logger": "^4.0.1",
-    "@slack/oauth": "^3.0.5",
-    "@slack/socket-mode": "^2.0.7",
-    "@slack/types": "^2.21.1",
-    "@slack/web-api": "^7.15.2",
     "@types/node": "^25.4.0",
     "dotenv": "^17.2.4",
-    "grammy": "^1.42.0",
-    "openclaw": "2026.4.2",
+    "openclaw": "2026.5.7",
     "oxfmt": "0.27.0",
     "oxlint": "^1.42.0",
     "oxlint-tsgolint": "^0.16.0",
@@ -78,7 +72,7 @@
     "zod": "^4.4.1"
   },
   "peerDependencies": {
-    "openclaw": ">=2026.3.22"
+    "openclaw": ">=2026.4.27"
   },
   "openclaw": {
     "extensions": [
@@ -96,7 +90,7 @@
       "quickstartAllowFrom": true
     },
     "install": {
-      "minHostVersion": ">=2026.3.22",
+      "minHostVersion": ">=2026.4.27",
       "npmSpec": "@tloncorp/openclaw",
       "localPath": "extensions/tlon",
       "defaultChoice": "npm"

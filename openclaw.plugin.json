@@ -3,6 +3,11 @@
   "channels": [
     "tlon"
   ],
+  "contracts": {
+    "tools": [
+      "tlon"
+    ]
+  },
   "skills": [
     "node_modules/@tloncorp/tlon-skill"
   ],
@@ -32,6 +37,15 @@
           },
           "code": {
             "type": "string"
+          },
+          "network": {
+            "type": "object",
+            "properties": {
+              "dangerouslyAllowPrivateNetwork": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": false
           },
           "allowPrivateNetwork": {
             "type": "boolean"
@@ -125,6 +139,15 @@
                 },
                 "code": {
                   "type": "string"
+                },
+                "network": {
+                  "type": "object",
+                  "properties": {
+                    "dangerouslyAllowPrivateNetwork": {
+                      "type": "boolean"
+                    }
+                  },
+                  "additionalProperties": false
                 },
                 "allowPrivateNetwork": {
                   "type": "boolean"
